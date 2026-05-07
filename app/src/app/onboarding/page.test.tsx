@@ -1,0 +1,64 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+import OnboardingPage from "./page";
+import { routerPushMock } from "../../../test/setup";
+
+const loadTrainingProfileMock = vi.fn();
+const saveTrainingProfileMock = vi.fn();
+const useTrainingProfileMock = vi.fn();
+
+vi.mock("@/lib/profile", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/profile")>("@/lib/profile");
+  return {
+    ...actual,
+    loadTrainingProfile: () => loadTrainingProfileMock(),
+    saveTrainingProfile: (profile: unknown) => saveTrainingProfileMock(profile),
+    useTrainingProfile: () => useTrainingProfileMock(),
+  };
+});
+
+describe("OnboardingPage", () => {
+  it("renders the saved profile and persists updates", async () => {
+    const user = userEvent.setup();
+    loadTrainingProfileMock.mockReturnValue({
+      goal: "physique",
+      daysPerWeek: 4,
+      equipment: "full_gym",
+      experience: "beginner",
+    });
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "beginner",
+      },
+    });
+
+    render(<OnboardingPage />);
+
+    await user.click(screen.getByText("Strength"));
+    await user.click(screen.getByText("3 days / week"));
+    await user.click(screen.getByText("Home"));
+    await user.click(screen.getByText("Intermediate"));
+    await user.click(screen.getByText("Save profile"));
+
+    expect(saveTrainingProfileMock).toHaveBeenCalledWith({
+      goal: "strength",
+      daysPerWeek: 3,
+      equipment: "home",
+      experience: "intermediate",
+    });
+    expect(routerPushMock).toHaveBeenCalledWith("/next");
+  });
+
+  it("shows loading state until the profile hook is ready", () => {
+    loadTrainingProfileMock.mockReturnValue(null);
+    useTrainingProfileMock.mockReturnValue({ ready: false, profile: null });
+
+    render(<OnboardingPage />);
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+  });
+});

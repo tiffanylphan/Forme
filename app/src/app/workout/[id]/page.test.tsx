@@ -1,0 +1,88 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+import WorkoutDetailPage from "./page";
+import {
+  routerPushMock,
+  useParamsMock,
+} from "../../../../test/setup";
+
+const deleteWorkoutMock = vi.fn();
+const stashEditWorkoutMock = vi.fn();
+const useWorkoutsMock = vi.fn();
+
+vi.mock("@/lib/storage", () => ({
+  deleteWorkout: (id: string) => deleteWorkoutMock(id),
+  stashEditWorkout: (workout: unknown) => stashEditWorkoutMock(workout),
+  useWorkouts: () => useWorkoutsMock(),
+}));
+
+describe("WorkoutDetailPage", () => {
+  it("renders workout detail and stashes edit handoff", async () => {
+    const user = userEvent.setup();
+    useParamsMock.mockReturnValue({ id: "workout-1" });
+    useWorkoutsMock.mockReturnValue({
+      ready: true,
+      workouts: [
+        {
+          id: "workout-1",
+          date: "2026-05-06",
+          source: "manual",
+          notes: "Felt strong",
+          createdAt: 1,
+          updatedAt: 1,
+          exercises: [
+            {
+              id: "e1",
+              exerciseName: "Cable row",
+              supersetGroup: null,
+              sets: [
+                { id: "s1", reps: 12, weight: 70, unit: "lb" },
+                { id: "s2", reps: 10, weight: 75, unit: "lb" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    render(<WorkoutDetailPage />);
+    expect(screen.getByText("Cable row")).toBeInTheDocument();
+    expect(screen.getByText("Felt strong")).toBeInTheDocument();
+
+    await user.click(screen.getByText("Edit"));
+    expect(stashEditWorkoutMock).toHaveBeenCalledTimes(1);
+    expect(routerPushMock).toHaveBeenCalledWith("/log");
+  });
+
+  it("deletes a workout after confirmation", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("confirm", vi.fn(() => true));
+    useParamsMock.mockReturnValue({ id: "workout-1" });
+    useWorkoutsMock.mockReturnValue({
+      ready: true,
+      workouts: [
+        {
+          id: "workout-1",
+          date: "2026-05-06",
+          source: "manual",
+          createdAt: 1,
+          updatedAt: 1,
+          exercises: [
+            {
+              id: "e1",
+              exerciseName: "Cable row",
+              supersetGroup: null,
+              sets: [{ id: "s1", reps: 12, weight: 70, unit: "lb" }],
+            },
+          ],
+        },
+      ],
+    });
+
+    render(<WorkoutDetailPage />);
+    await user.click(screen.getByText("Delete workout"));
+    expect(deleteWorkoutMock).toHaveBeenCalledWith("workout-1");
+    expect(routerPushMock).toHaveBeenCalledWith("/");
+  });
+});

@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #FAFAF7;
+  --surface: #ffffff;
+  --surface-muted: #F1EFE8;
+  --text: #1a1a18;
+  --text-muted: #5F5E5A;
+  --text-subtle: #888780;
+  --border: #E6E3D8;
+  --divider: #F1EFE8;
+  --accent: #993C1D;
+  --accent-soft: #FAECE7;
+  --success: #085041;
+  --success-soft: #E1F5EE;
+  --warning: #633806;
+  --warning-soft: #FAEEDA;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-text-subtle: var(--text-subtle);
+  --color-border: var(--border);
+  --color-divider: var(--divider);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-dm-sans);
+  --font-mono: var(--font-dm-mono);
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-dm-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+button,
+select,
+textarea {
+  font-family: inherit;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.label-eyebrow {
+  font-family: var(--font-dm-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+
+@media (display-mode: standalone) {
+  body {
+    overscroll-behavior-y: none;
+  }
+}
