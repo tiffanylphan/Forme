@@ -20,7 +20,7 @@ import {
 } from "@/lib/profile";
 import { useWorkouts } from "@/lib/storage";
 import type { DraftExercise, DraftSection, WorkoutDraft } from "@/lib/generator";
-import type { MovementPattern } from "@/lib/types";
+import type { Exercise, MovementPattern } from "@/lib/types";
 
 const SECTION_TITLE: Record<DraftSection["kind"], string> = {
   compound: "Compound",
@@ -35,9 +35,92 @@ const formatTarget = (t: number | string): string =>
 type SwapTarget = {
   sectionIdx: number;
   exerciseIdx: number;
+  currentName: string;
   movement: MovementPattern | null;
   targets: (number | string)[];
 };
+
+const familyOf = (ex: Exercise): string => {
+  const name = ex.name.toLowerCase();
+  if (name.includes("hip thrust") || name.includes("glute bridge")) return "hip_thrust";
+  if (name.includes("romanian deadlift") || name.includes("rdl")) return "rdl";
+  if (name.includes("deadlift")) return "deadlift";
+  if (name.includes("split squat") || name.includes("bulgarian")) return "split_squat";
+  if (name.includes("lunge")) return "lunge";
+  if (name.includes("step-up")) return "step_up";
+  if (name.includes("row")) return "row";
+  if (
+    name.includes("pulldown") ||
+    name.includes("pull-up") ||
+    name.includes("chin-up")
+  ) {
+    return "vertical_pull";
+  }
+  if (
+    name.includes("face pull") ||
+    name.includes("reverse fly") ||
+    name.includes("pull-apart")
+  ) {
+    return "rear_delt";
+  }
+  if (
+    name.includes("lateral raise") ||
+    name.includes("front raise") ||
+    name.includes("arnold")
+  ) {
+    return "shoulder_isolation";
+  }
+  if (name.includes("overhead press") || name.includes("landmine press")) {
+    return "vertical_press";
+  }
+  if (name.includes("squat") || name.includes("leg press") || name.includes("hack squat")) {
+    return "squat_pattern";
+  }
+  if (name.includes("leg curl")) return "leg_curl";
+  if (name.includes("carry")) return "carry";
+  if (ex.pattern === "core") return "core";
+  return `${ex.pattern}_${ex.equipment}`;
+};
+
+const overlapCount = (a: readonly string[], b: readonly string[]): number =>
+  a.filter((item) => b.includes(item)).length;
+
+const similarityScore = (
+  candidate: Exercise,
+  current: Exercise | undefined,
+  knownExercises: Set<string>,
+): number => {
+  let score = 0;
+  if (!current) return knownExercises.has(candidate.name) ? 1 : 0;
+
+  if (familyOf(candidate) === familyOf(current)) score += 12;
+  score += overlapCount(candidate.primary, current.primary) * 5;
+  score += overlapCount(candidate.secondary, current.secondary) * 2;
+  score += overlapCount(candidate.primary, current.secondary) * 1;
+  score += overlapCount(candidate.secondary, current.primary) * 1;
+  if (candidate.equipment === current.equipment) score += 3;
+  if (candidate.pattern === current.pattern) score += 2;
+  if (knownExercises.has(candidate.name)) score += 1;
+
+  return score;
+};
+
+const DEFAULT_RATIONALE_COUNT = 2;
+const LONG_RATIONALE_LENGTH = 90;
+
+const prioritizeRationale = (rationale: string[]): string[] =>
+  [...rationale].sort((a, b) => {
+    const score = (line: string): number => {
+      let value = 0;
+      if (line.includes("This is")) value += 5;
+      if (line.includes("Still building")) value += 4;
+      if (line.includes("Avoiding muscles")) value += 3;
+      if (line.includes("Untouched this week")) value += 2;
+      if (line.includes("Hit only once")) value += 1;
+      return value;
+    };
+    return score(b) - score(a);
+  });
 
 export default function NextPage() {
   const { workouts, ready } = useWorkouts();
@@ -188,17 +271,7 @@ export default function NextPage() {
             </section>
           )}
 
-          {/* Rationale */}
-          <section className="mb-5 rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-4">
-            <p className="label-eyebrow mb-2">Why this routine</p>
-            <ul className="space-y-1.5">
-              {draft.rationale.map((r, i) => (
-                <li key={i} className="text-[13px] leading-snug text-text">
-                  · {r}
-                </li>
-              ))}
-            </ul>
-          </section>
+          <RationaleCard rationale={draft.rationale} />
 
           {/* Sections */}
           <div className="space-y-3">
@@ -211,6 +284,7 @@ export default function NextPage() {
                   setSwapTarget({
                     sectionIdx: si,
                     exerciseIdx: ei,
+                    currentName: sec.exercises[ei].name,
                     movement,
                     targets,
                   })
@@ -254,6 +328,7 @@ export default function NextPage() {
       <SwapPicker
         key={swapTarget ? `${swapTarget.sectionIdx}-${swapTarget.exerciseIdx}` : "closed"}
         open={swapTarget !== null}
+        currentName={swapTarget?.currentName ?? null}
         movement={swapTarget?.movement ?? null}
         excludeNames={draftNames}
         knownExercises={knownExercises}
@@ -269,6 +344,41 @@ function ProfileChip({ children }: { children: React.ReactNode }) {
     <span className="rounded-full bg-[#F1EFE8] px-3 py-1 text-[12px] font-medium text-text-muted">
       {children}
     </span>
+  );
+}
+
+function RationaleCard({ rationale }: { rationale: string[] }) {
+  const ordered = useMemo(() => prioritizeRationale(rationale), [rationale]);
+  const shouldCollapse =
+    ordered.length > DEFAULT_RATIONALE_COUNT ||
+    ordered.some((line) => line.length > LONG_RATIONALE_LENGTH);
+  const [expanded, setExpanded] = useState(false);
+  const visible = shouldCollapse && !expanded
+    ? ordered.slice(0, DEFAULT_RATIONALE_COUNT)
+    : ordered;
+
+  return (
+    <section className="mb-5 rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-4">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="label-eyebrow">Why this routine</p>
+        {shouldCollapse && (
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            className="text-[12px] font-medium text-text-muted"
+          >
+            {expanded ? "Show less" : `Show ${ordered.length - DEFAULT_RATIONALE_COUNT} more`}
+          </button>
+        )}
+      </div>
+      <ul className="space-y-1.5">
+        {visible.map((line, index) => (
+          <li key={`${index}-${line}`} className="text-[13px] leading-snug text-text">
+            · {line}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -381,6 +491,7 @@ function ExerciseRow({
 
 function SwapPicker({
   open,
+  currentName,
   movement,
   excludeNames,
   knownExercises,
@@ -388,6 +499,7 @@ function SwapPicker({
   onPick,
 }: {
   open: boolean;
+  currentName: string | null;
   movement: MovementPattern | null;
   excludeNames: Set<string>;
   knownExercises: Set<string>;
@@ -396,6 +508,10 @@ function SwapPicker({
 }) {
   const [search, setSearch] = useState("");
   const movColor = movement ? MOVEMENT_COLORS[movement] : null;
+  const currentExercise = useMemo(
+    () => EXERCISES.find((ex) => ex.name === currentName),
+    [currentName],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -413,12 +529,15 @@ function SwapPicker({
         return false;
       return true;
     }).sort((a, b) => {
-      // Familiar exercises first.
+      const scoreDiff =
+        similarityScore(b, currentExercise, knownExercises) -
+        similarityScore(a, currentExercise, knownExercises);
+      if (scoreDiff !== 0) return scoreDiff;
       const af = knownExercises.has(a.name) ? 0 : 1;
       const bf = knownExercises.has(b.name) ? 0 : 1;
       return af - bf || a.name.localeCompare(b.name);
     });
-  }, [movement, excludeNames, knownExercises, search]);
+  }, [currentExercise, movement, excludeNames, knownExercises, search]);
 
   if (!open) return null;
 
@@ -470,7 +589,7 @@ function SwapPicker({
 
         <p className="px-4 pb-1 text-[11px] text-text-subtle">
           {options.length} alternative{options.length !== 1 ? "s" : ""} ·
-          familiar exercises shown first
+          closest matches shown first
         </p>
 
         {/* List */}

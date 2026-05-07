@@ -60,6 +60,26 @@ type SplitSlot = {
   targetPrimarySets: Partial<Record<MuscleGroup, number>>;
 };
 
+const PHYSIQUE_UPPER_A_SLOT: SplitSlot = {
+  id: "upper_back_shoulder",
+  title: "Upper A",
+  summary: "Back and shoulder emphasis.",
+  focusMuscles: ["back", "shoulders", "rear_delts", "core"],
+  preferredMovements: ["pull", "push"],
+  allowedMovements: ["pull", "push", "carry_core"],
+  targetPrimarySets: { back: 8, shoulders: 5, rear_delts: 4, core: 2 },
+};
+
+const PHYSIQUE_UPPER_B_SLOT: SplitSlot = {
+  id: "upper_back_shoulder_arms",
+  title: "Upper B",
+  summary: "Back, shoulder, and arm emphasis.",
+  focusMuscles: ["back", "shoulders", "rear_delts", "biceps", "triceps"],
+  preferredMovements: ["pull", "push"],
+  allowedMovements: ["pull", "push", "carry_core"],
+  targetPrimarySets: { back: 7, shoulders: 5, rear_delts: 4, biceps: 3, triceps: 2 },
+};
+
 // Deterministic PRNG so a given seed → same output.
 function mulberry32(seed: number): () => number {
   let s = seed >>> 0;
@@ -225,10 +245,10 @@ const familyOf = (ex: Exercise): string => {
   return `${ex.pattern}_${ex.equipment}`;
 };
 
-const getNextSplitSlotIndex = (
+const getIncompleteSplitSlotIndices = (
   split: SplitSlot[],
   workouts: Workout[],
-): number => {
+): number[] => {
   const completedSlotIds = new Set(
     workouts
       .map((workout) => workout.planSlot?.slotId)
@@ -236,13 +256,83 @@ const getNextSplitSlotIndex = (
   );
 
   if (completedSlotIds.size > 0) {
-    const firstIncompleteIndex = split.findIndex(
-      (slot) => !completedSlotIds.has(slot.id),
-    );
+    const incompleteIndices = split
+      .map((slot, index) => ({ slot, index }))
+      .filter(({ slot }) => !completedSlotIds.has(slot.id))
+      .map(({ index }) => index);
+    if (incompleteIndices.length > 0) return incompleteIndices;
+  }
+
+  return [];
+};
+
+const getNextSplitSlotIndex = (
+  split: SplitSlot[],
+  workouts: Workout[],
+  need: Record<MovementPattern, number>,
+): number => {
+  const incompleteIndices = getIncompleteSplitSlotIndices(split, workouts);
+
+  if (incompleteIndices.length > 0) {
+    let bestIndex = incompleteIndices[0];
+    let bestScore = -Infinity;
+
+    for (const index of incompleteIndices) {
+      const slot = split[index];
+      const preferredScores = slot.preferredMovements
+        .map((movement) => (need[movement] ?? 0) * (MOVEMENT_PRIORITY[movement] ?? 1))
+        .sort((a, b) => b - a);
+      const allowedScores = slot.allowedMovements
+        .filter((movement) => !slot.preferredMovements.includes(movement))
+        .map((movement) => (need[movement] ?? 0) * (MOVEMENT_PRIORITY[movement] ?? 1))
+        .sort((a, b) => b - a);
+
+      let score = 0;
+      if (preferredScores[0]) score += preferredScores[0] * 5;
+      if (preferredScores[1]) score += preferredScores[1] * 2;
+      if (allowedScores[0]) score += allowedScores[0];
+
+      // Keep a slight bias toward the earliest missing slot so the split does
+      // not drift unless another open slot closes a more urgent weekly gap.
+      score -= index * 0.25;
+
+      if (score > bestScore) {
+        bestIndex = index;
+        bestScore = score;
+      }
+    }
+
+    if (bestScore > 0) return bestIndex;
+    const firstIncompleteIndex = incompleteIndices[0];
     if (firstIncompleteIndex >= 0) return firstIncompleteIndex;
   }
 
   return workouts.length % split.length;
+};
+
+const compareWorkoutsDesc = (a: Workout, b: Workout): number =>
+  a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt;
+
+const resolveSplitVariants = (
+  split: SplitSlot[],
+  profile: TrainingProfile,
+  workouts: Workout[],
+): SplitSlot[] => {
+  if (!(profile.goal === "physique" && profile.daysPerWeek === 3)) return split;
+
+  const lastUpperSlotId = [...workouts]
+    .sort(compareWorkoutsDesc)
+    .map((workout) => workout.planSlot?.slotId)
+    .find((slotId) =>
+      slotId === PHYSIQUE_UPPER_A_SLOT.id || slotId === PHYSIQUE_UPPER_B_SLOT.id,
+    );
+
+  const upperSlot =
+    lastUpperSlotId === PHYSIQUE_UPPER_A_SLOT.id
+      ? PHYSIQUE_UPPER_B_SLOT
+      : PHYSIQUE_UPPER_A_SLOT;
+
+  return split.map((slot, index) => (index === 1 ? upperSlot : slot));
 };
 
 const isStrengthFriendly = (ex: Exercise): boolean => {
@@ -272,15 +362,7 @@ const getSplitTemplate = (
           allowedMovements: ["hinge", "single_leg", "squat", "carry_core"],
           targetPrimarySets: { glutes: 8, hamstrings: 6, core: 2 },
         },
-        {
-          id: "upper_back_shoulder",
-          title: "Upper A",
-          summary: "Back and shoulder emphasis.",
-          focusMuscles: ["back", "shoulders", "rear_delts", "core"],
-          preferredMovements: ["pull", "push"],
-          allowedMovements: ["pull", "push", "carry_core"],
-          targetPrimarySets: { back: 8, shoulders: 5, rear_delts: 4, core: 2 },
-        },
+        PHYSIQUE_UPPER_A_SLOT,
         {
           id: "lower_glute_quad",
           title: "Lower B",
@@ -303,15 +385,7 @@ const getSplitTemplate = (
           allowedMovements: ["hinge", "single_leg", "squat", "carry_core"],
           targetPrimarySets: { glutes: 8, hamstrings: 6, core: 2 },
         },
-        {
-          id: "upper_back_shoulder",
-          title: "Upper A",
-          summary: "Back and shoulder emphasis.",
-          focusMuscles: ["back", "shoulders", "rear_delts", "core"],
-          preferredMovements: ["pull", "push"],
-          allowedMovements: ["pull", "push", "carry_core"],
-          targetPrimarySets: { back: 8, shoulders: 5, rear_delts: 4, core: 2 },
-        },
+        PHYSIQUE_UPPER_A_SLOT,
         {
           id: "lower_glute_quad",
           title: "Lower B",
@@ -321,15 +395,7 @@ const getSplitTemplate = (
           allowedMovements: ["single_leg", "squat", "hinge", "carry_core"],
           targetPrimarySets: { glutes: 7, quads: 6, hamstrings: 4, core: 2 },
         },
-        {
-          id: "upper_back_shoulder_arms",
-          title: "Upper B",
-          summary: "Back, shoulder, and arm finishers.",
-          focusMuscles: ["back", "shoulders", "rear_delts", "biceps", "triceps"],
-          preferredMovements: ["pull", "push"],
-          allowedMovements: ["pull", "push", "carry_core"],
-          targetPrimarySets: { back: 7, shoulders: 5, rear_delts: 4, biceps: 3, triceps: 2 },
-        },
+        PHYSIQUE_UPPER_B_SLOT,
       ];
     }
     return [
@@ -342,15 +408,7 @@ const getSplitTemplate = (
         allowedMovements: ["hinge", "single_leg", "squat", "carry_core"],
         targetPrimarySets: { glutes: 8, hamstrings: 6, core: 2 },
       },
-      {
-        id: "upper_back_shoulder",
-        title: "Upper A",
-        summary: "Back and shoulder emphasis.",
-        focusMuscles: ["back", "shoulders", "rear_delts", "core"],
-        preferredMovements: ["pull", "push"],
-        allowedMovements: ["pull", "push", "carry_core"],
-        targetPrimarySets: { back: 8, shoulders: 5, rear_delts: 4, core: 2 },
-      },
+      PHYSIQUE_UPPER_A_SLOT,
       {
         id: "lower_glute_quad",
         title: "Lower B",
@@ -360,15 +418,7 @@ const getSplitTemplate = (
         allowedMovements: ["single_leg", "squat", "hinge", "carry_core"],
         targetPrimarySets: { glutes: 7, quads: 6, hamstrings: 4, core: 2 },
       },
-      {
-        id: "upper_back_shoulder_arms",
-        title: "Upper B",
-        summary: "Back, shoulder, and arm finishers.",
-        focusMuscles: ["back", "shoulders", "rear_delts", "biceps", "triceps"],
-        preferredMovements: ["pull", "push"],
-        allowedMovements: ["pull", "push", "carry_core"],
-        targetPrimarySets: { back: 7, shoulders: 5, rear_delts: 4, biceps: 3, triceps: 2 },
-      },
+      PHYSIQUE_UPPER_B_SLOT,
       {
         id: "glute_shoulder_accessory",
         title: "Accessory day",
@@ -563,8 +613,23 @@ export function generateNextWorkout(
   const coverage = computeCoverage(workouts, window);
   const recent = recentMusclesWithin(workouts, todayISO, 48);
   const rng = mulberry32(seed);
-  const split = getSplitTemplate(activeProfile);
-  const sessionIndex = getNextSplitSlotIndex(split, coverage.workouts);
+  const split = resolveSplitVariants(
+    getSplitTemplate(activeProfile),
+    activeProfile,
+    workouts,
+  );
+
+  // Movement neediness: 0 days → 3, 1 day → 1, 2+ → 0.
+  const need: Record<MovementPattern, number> = {} as Record<
+    MovementPattern,
+    number
+  >;
+  MOVEMENT_PATTERNS.forEach((mp) => {
+    const days = coverage.movementStats[mp]?.daysHit.length ?? 0;
+    need[mp] = days === 0 ? 3 : days === 1 ? 1 : 0;
+  });
+
+  const sessionIndex = getNextSplitSlotIndex(split, coverage.workouts, need);
   const slot = split[sessionIndex];
   const currentWeekExerciseNames = new Set(
     coverage.workouts.flatMap((workout) =>
@@ -579,16 +644,6 @@ export function generateNextWorkout(
         .map((exercise) => familyOf(exercise)),
     ),
   );
-
-  // Movement neediness: 0 days → 3, 1 day → 1, 2+ → 0.
-  const need: Record<MovementPattern, number> = {} as Record<
-    MovementPattern,
-    number
-  >;
-  MOVEMENT_PATTERNS.forEach((mp) => {
-    const days = coverage.movementStats[mp]?.daysHit.length ?? 0;
-    need[mp] = days === 0 ? 3 : days === 1 ? 1 : 0;
-  });
 
   const known = new Set<string>();
   workouts.forEach((w) =>
@@ -903,24 +958,39 @@ export function generateNextWorkout(
         movementOf(ex) === "carry_core"),
   );
 
-  // 5. Finisher — always carry/core.
-  const fin = pickBest(
-    (ex) =>
-      movementOf(ex) === "carry_core" &&
-      environmentAllows(ex, activeProfile.equipment),
-  );
+  // 5. Finisher — for 3-day physique plans, allow short conditioning on lower
+  // days. Otherwise keep it carry/core.
+  const lowerDay =
+    slot.preferredMovements.includes("hinge") ||
+    slot.preferredMovements.includes("squat") ||
+    slot.preferredMovements.includes("single_leg");
+  const allowConditioningFinisher =
+    activeProfile.goal === "physique" &&
+    activeProfile.daysPerWeek === 3 &&
+    lowerDay;
+  const fin = pickBest((ex) => {
+    if (!environmentAllows(ex, activeProfile.equipment)) return false;
+    if (movementOf(ex) === "carry_core") return true;
+    if (!allowConditioningFinisher) return false;
+    return ex.pattern === "conditioning";
+  });
   if (fin) {
     claim(fin);
-    pushMovement("carry_core");
+    if (movementOf(fin) === "carry_core") pushMovement("carry_core");
     const isCarry = fin.pattern === "carry";
+    const isConditioning = fin.pattern === "conditioning";
     sections.push({
       kind: "finisher",
       rounds: finisherRounds,
-      repScheme: isCarry ? "40–60 sec walk" : "12–15 reps",
+      repScheme: isCarry
+        ? "40–60 sec walk"
+        : isConditioning
+          ? "45 sec hard / 45 sec easy"
+          : "12–15 reps",
       exercises: [
         makeDraftEx(
           fin,
-          isCarry
+          isCarry || isConditioning
             ? Array.from({ length: finisherRounds }, () => "45s")
             : finisherRounds === 2
               ? [15, 12]

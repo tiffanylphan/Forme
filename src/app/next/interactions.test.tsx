@@ -39,7 +39,11 @@ vi.mock("@/lib/generator", () => ({
       sessionIndex: 1,
       totalSessions: 4,
     },
-    rationale: ["This is Upper A: Back and shoulder emphasis."],
+    rationale: [
+      "This is Upper A: Back and shoulder emphasis.",
+      "Still building this slot's focus volume: back, shoulders.",
+      "Hit only once: pull, push.",
+    ],
     sections: [
       {
         kind: "compound",
@@ -92,6 +96,38 @@ describe("NextPage interactions", () => {
     expect(screen.queryByText("Swap exercise")).not.toBeInTheDocument();
   });
 
+  it("shows the closest swap options first", async () => {
+    const user = userEvent.setup();
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "beginner",
+      },
+    });
+    useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
+
+    render(<NextPage />);
+    await user.click(screen.getByText("Swap"));
+
+    const optionButtons = screen.getAllByRole("button");
+    const swapStart = optionButtons.findIndex((button) =>
+      within(button).queryByText("DB bent-over row"),
+    );
+    const verticalPullIndex = optionButtons.findIndex((button) =>
+      within(button).queryByText("Lat pulldown"),
+    );
+
+    expect(swapStart).toBeGreaterThanOrEqual(0);
+    expect(verticalPullIndex).toBeGreaterThanOrEqual(0);
+    expect(swapStart).toBeLessThan(verticalPullIndex);
+    expect(
+      screen.getByText((content) => content.includes("closest matches shown first")),
+    ).toBeInTheDocument();
+  });
+
   it("stashes the selected routine when accepted", async () => {
     const user = userEvent.setup();
     useTrainingProfileMock.mockReturnValue({
@@ -111,5 +147,42 @@ describe("NextPage interactions", () => {
     const payload = stashDraftMock.mock.calls[0][0] as { source: string; draft: { split: { title: string } } };
     expect(payload.source).toBe("manual");
     expect(payload.draft.split.title).toBe("Upper A");
+  });
+
+  it("shows only the rationale highlights until expanded", async () => {
+    const user = userEvent.setup();
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "beginner",
+      },
+    });
+    useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
+
+    render(<NextPage />);
+
+    expect(
+      screen.getByText((content) =>
+        content.includes("This is Upper A: Back and shoulder emphasis."),
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText((content) =>
+        content.includes("Still building this slot's focus volume: back, shoulders."),
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText((content) => content.includes("Hit only once: pull, push.")),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByText("Show 1 more"));
+
+    expect(
+      screen.getByText((content) => content.includes("Hit only once: pull, push.")),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Show less")).toBeInTheDocument();
   });
 });

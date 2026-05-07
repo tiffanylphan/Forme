@@ -9,6 +9,13 @@ const profile: TrainingProfile = {
   experience: "beginner",
 };
 
+const threeDayProfile: TrainingProfile = {
+  goal: "physique",
+  daysPerWeek: 3,
+  equipment: "full_gym",
+  experience: "beginner",
+};
+
 const workout = (
   id: string,
   date: string,
@@ -39,6 +46,11 @@ describe("generateNextWorkout", () => {
     const draft = generateNextWorkout([], "2026-05-06", 123, profile);
     expect(draft.split.title).toBe("Lower A");
     expect(draft.rationale.some((line) => line.includes("Lower A"))).toBe(true);
+  });
+
+  it("starts a 3-day physique week on Lower A", () => {
+    const draft = generateNextWorkout([], "2026-05-06", 123, threeDayProfile);
+    expect(draft.split.title).toBe("Lower A");
   });
 
   it("advances the split based on logged workouts this week", () => {
@@ -157,5 +169,62 @@ describe("generateNextWorkout", () => {
 
     const draft = generateNextWorkout(workouts, "2026-05-08", 4242, profile);
     expect(draft.split.title).toBe("Lower B");
+  });
+
+  it("prefers an open upper slot when pull is still untouched this week", () => {
+    const workouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "DB Bulgarian split squat", sets: 3 },
+      ], {
+        slotId: "lower_glute_ham",
+        title: "Lower A",
+      }),
+      workout("w2", "2026-05-06", [
+        { name: "DB overhead press", sets: 4 },
+        { name: "DB lateral raise", sets: 3 },
+      ], {
+        slotId: "upper_back_shoulder",
+        title: "Upper A",
+      }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-07", 5150, profile);
+    expect(draft.split.title).toBe("Upper B");
+  });
+
+  it("alternates the 3-day upper slot to include direct arms across weeks", () => {
+    const workouts = [
+      workout("w1", "2026-05-01", [
+        { name: "Cable row", sets: 4 },
+        { name: "DB overhead press", sets: 3 },
+      ], {
+        slotId: "upper_back_shoulder",
+        title: "Upper A",
+      }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-06", 8080, threeDayProfile);
+    expect(draft.split.title).toBe("Lower A");
+
+    const secondDraft = generateNextWorkout([
+      ...workouts,
+      workout("w2", "2026-05-05", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "DB Bulgarian split squat", sets: 3 },
+      ], {
+        slotId: "lower_glute_ham",
+        title: "Lower A",
+      }),
+    ], "2026-05-06", 8081, threeDayProfile);
+    expect(secondDraft.split.title).toBe("Upper B");
+  });
+
+  it("allows a short conditioning finisher on 3-day lower sessions", () => {
+    const draft = generateNextWorkout([], "2026-05-06", 9090, threeDayProfile);
+    const finisherSection = draft.sections.find((section) => section.kind === "finisher");
+
+    expect(finisherSection).toBeDefined();
+    expect(finisherSection?.exercises[0].pattern === "carry" || finisherSection?.exercises[0].pattern === "core" || finisherSection?.exercises[0].pattern === "conditioning").toBe(true);
   });
 });
