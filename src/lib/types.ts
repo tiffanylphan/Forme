@@ -95,6 +95,7 @@ export type ExerciseLog = {
   exerciseName: string;
   sets: SetEntry[];
   supersetGroup: string | null;
+  progressionStatus?: "progressed" | "held" | "missed" | "baseline";
   notes?: string;
 };
 

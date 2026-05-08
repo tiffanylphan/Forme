@@ -6,6 +6,8 @@ import {
   recentMusclesWithin,
   weekContaining,
 } from "./coverage";
+import { getExerciseHistory, getRecentProgressionStatuses } from "./progression";
+import type { ExerciseHistoryEntry } from "./progression";
 import type {
   Exercise,
   GoalMode,
@@ -36,6 +38,12 @@ export type DraftExercise = {
   suggestedWeight: number | null;
   unit: WeightUnit;
   isFamiliar: boolean;
+  progression: {
+    lastSummary: string | null;
+    goal: string;
+    nextStep: string;
+    recentHistory: ExerciseHistoryEntry[];
+  };
 };
 
 export type WorkoutDraft = {
@@ -45,6 +53,7 @@ export type WorkoutDraft = {
     summary: string;
     sessionIndex: number;
     totalSessions: number;
+    targetPrimarySets: Partial<Record<MuscleGroup, number>>;
   };
   rationale: string[];
   sections: DraftSection[];
@@ -67,7 +76,7 @@ const PHYSIQUE_UPPER_A_SLOT: SplitSlot = {
   focusMuscles: ["back", "shoulders", "rear_delts", "core"],
   preferredMovements: ["pull", "push"],
   allowedMovements: ["pull", "push", "carry_core"],
-  targetPrimarySets: { back: 8, shoulders: 5, rear_delts: 4, core: 2 },
+  targetPrimarySets: { back: 8, shoulders: 5, rear_delts: 4, core: 3 },
 };
 
 const PHYSIQUE_UPPER_B_SLOT: SplitSlot = {
@@ -77,7 +86,7 @@ const PHYSIQUE_UPPER_B_SLOT: SplitSlot = {
   focusMuscles: ["back", "shoulders", "rear_delts", "biceps", "triceps"],
   preferredMovements: ["pull", "push"],
   allowedMovements: ["pull", "push", "carry_core"],
-  targetPrimarySets: { back: 7, shoulders: 5, rear_delts: 4, biceps: 3, triceps: 2 },
+  targetPrimarySets: { back: 7, shoulders: 5, rear_delts: 4, biceps: 3, triceps: 2, core: 2 },
 };
 
 // Deterministic PRNG so a given seed → same output.
@@ -112,6 +121,142 @@ const lastWorkingWeight = (
     }
   }
   return null;
+};
+
+const lastPerformance = (
+  name: string,
+  workouts: Workout[],
+): { date: string; reps: (number | null)[]; weight: number | null; unit: WeightUnit } | null => {
+  const sorted = [...workouts].sort((a, b) =>
+    a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt,
+  );
+  for (const w of sorted) {
+    for (const e of w.exercises) {
+      if (e.exerciseName !== name) continue;
+      const weightedSets = e.sets.filter(
+        (s): s is typeof s & { weight: number } => typeof s.weight === "number",
+      );
+      const lastWeightedSet = weightedSets[weightedSets.length - 1];
+      return {
+        date: w.date,
+        reps: e.sets.map((set) => set.reps),
+        weight: lastWeightedSet?.weight ?? null,
+        unit: lastWeightedSet?.unit ?? "lb",
+      };
+    }
+  }
+  return null;
+};
+
+const summarizePerformance = (performance: ReturnType<typeof lastPerformance>): string | null => {
+  if (!performance) return null;
+  const repList = performance.reps
+    .map((rep) => (typeof rep === "number" ? rep.toString() : "—"))
+    .join("/");
+  const load = performance.weight != null ? `${performance.weight} ${performance.unit}` : "bodyweight";
+  return `${load} x ${repList}`;
+};
+
+const buildProgression = (
+  ex: Exercise,
+  targets: (number | string)[],
+  workouts: Workout[],
+): DraftExercise["progression"] => {
+  const performance = lastPerformance(ex.name, workouts);
+  const recentHistory = getExerciseHistory(ex.name, workouts, undefined, 3);
+  const recentStatuses = getRecentProgressionStatuses(ex.name, workouts, undefined, 3);
+  const latestStatus = recentStatuses[0];
+  const repeatedStall =
+    recentStatuses.length >= 2 &&
+    recentStatuses.slice(0, 2).every((status) => status === "held" || status === "missed");
+  const numericTargets = targets.filter((target): target is number => typeof target === "number");
+  const timedTargets = targets.filter((target): target is string => typeof target === "string");
+  const lastSummary = summarizePerformance(performance);
+  const plannedRepSummary = numericTargets.join("/");
+
+  if (numericTargets.length === 0 && timedTargets.length > 0) {
+    return {
+      lastSummary,
+      goal: `Complete ${timedTargets.join(" / ")} with steady form.`,
+      nextStep: repeatedStall
+        ? "You have been flat here. Keep the intervals even and clean before pushing pace again."
+        : performance
+          ? "Keep the effort smooth and extend the pace only if the rounds feel controlled."
+          : "Start controlled and keep all timed rounds even.",
+      recentHistory,
+    };
+  }
+
+  if (latestStatus === "missed" && repeatedStall && performance?.weight != null) {
+    return {
+      lastSummary,
+      goal: `Rebuild ${plannedRepSummary} reps with clean form.`,
+      nextStep: `You have missed this twice. Drop 5-10 ${performance.unit} or reduce effort, then rebuild the reps cleanly.`,
+      recentHistory,
+    };
+  }
+
+  if (latestStatus === "missed" && performance?.weight != null) {
+    return {
+      lastSummary,
+      goal: `Recover ${plannedRepSummary} reps before pushing load.`,
+      nextStep: `Missed last time. Hold at ${performance.weight} ${performance.unit} and win back the reps first.`,
+      recentHistory,
+    };
+  }
+
+  if (latestStatus === "held" && repeatedStall && performance?.weight != null) {
+    return {
+      lastSummary,
+      goal: `Break past ${plannedRepSummary} reps.`,
+      nextStep: `This lift has been flat. Keep ${performance.weight} ${performance.unit} and beat total reps before you add load.`,
+      recentHistory,
+    };
+  }
+
+  if (latestStatus === "progressed" && performance?.weight != null) {
+    return {
+      lastSummary,
+      goal: `Consolidate the last jump with ${plannedRepSummary} reps.`,
+      nextStep: `You progressed last time. Stay aggressive, and add load again only if today's sets stay crisp.`,
+      recentHistory,
+    };
+  }
+
+  const hitAllPlanned =
+    performance &&
+    numericTargets.length > 0 &&
+    numericTargets.every((target, index) => {
+      const actual = performance.reps[index];
+      return typeof actual === "number" && actual >= target;
+    });
+
+  if (performance?.weight != null && hitAllPlanned) {
+    return {
+      lastSummary,
+      goal: `Match or beat ${plannedRepSummary} reps with solid form.`,
+      nextStep: `Last time cleared the target. Add 2.5-5 ${performance.unit} if technique stays crisp.`,
+      recentHistory,
+    };
+  }
+
+  if (performance?.weight != null) {
+    return {
+      lastSummary,
+      goal: `Work toward ${plannedRepSummary} reps before increasing load.`,
+      nextStep: `Stay at ${performance.weight} ${performance.unit} and add 1-2 total reps across the work sets.`,
+      recentHistory,
+    };
+  }
+
+  return {
+    lastSummary,
+    goal: numericTargets.length > 0
+      ? `Work toward ${plannedRepSummary} reps with repeatable form.`
+      : "Build a repeatable baseline.",
+    nextStep: "Start conservative and leave 1-2 reps in reserve on each set.",
+    recentHistory,
+  };
 };
 
 const COMPOUND_MOVEMENTS: MovementPattern[] = ["squat", "hinge", "push", "pull"];
@@ -212,6 +357,13 @@ const isGluteBiasedLower = (ex: Exercise): boolean =>
 const isBackOrShoulderFocused = (ex: Exercise): boolean =>
   hasAnyMuscle(ex, ["back", "shoulders", "rear_delts"]);
 
+const isDirectArmFocus = (ex: Exercise): boolean =>
+  hasPrimary(ex, "biceps") || hasPrimary(ex, "triceps");
+
+const isDirectGluteFocus = (ex: Exercise): boolean =>
+  hasPrimary(ex, "glutes") &&
+  (movementOf(ex) === "hinge" || movementOf(ex) === "single_leg");
+
 const isPhysiqueFriendly = (ex: Exercise): boolean => {
   const movement = movementOf(ex);
   if (!movement) return false;
@@ -266,6 +418,31 @@ const getIncompleteSplitSlotIndices = (
   return [];
 };
 
+const scoreSplitSlot = (
+  slot: SplitSlot,
+  index: number,
+  need: Record<MovementPattern, number>,
+): number => {
+  const preferredScores = slot.preferredMovements
+    .map((movement) => (need[movement] ?? 0) * (MOVEMENT_PRIORITY[movement] ?? 1))
+    .sort((a, b) => b - a);
+  const allowedScores = slot.allowedMovements
+    .filter((movement) => !slot.preferredMovements.includes(movement))
+    .map((movement) => (need[movement] ?? 0) * (MOVEMENT_PRIORITY[movement] ?? 1))
+    .sort((a, b) => b - a);
+
+  let score = 0;
+  if (preferredScores[0]) score += preferredScores[0] * 5;
+  if (preferredScores[1]) score += preferredScores[1] * 2;
+  if (allowedScores[0]) score += allowedScores[0];
+
+  // Keep a slight bias toward the earliest missing slot so the split does not
+  // drift unless another slot closes a more urgent weekly gap.
+  score -= index * 0.25;
+
+  return score;
+};
+
 const getNextSplitSlotIndex = (
   split: SplitSlot[],
   workouts: Workout[],
@@ -278,24 +455,7 @@ const getNextSplitSlotIndex = (
     let bestScore = -Infinity;
 
     for (const index of incompleteIndices) {
-      const slot = split[index];
-      const preferredScores = slot.preferredMovements
-        .map((movement) => (need[movement] ?? 0) * (MOVEMENT_PRIORITY[movement] ?? 1))
-        .sort((a, b) => b - a);
-      const allowedScores = slot.allowedMovements
-        .filter((movement) => !slot.preferredMovements.includes(movement))
-        .map((movement) => (need[movement] ?? 0) * (MOVEMENT_PRIORITY[movement] ?? 1))
-        .sort((a, b) => b - a);
-
-      let score = 0;
-      if (preferredScores[0]) score += preferredScores[0] * 5;
-      if (preferredScores[1]) score += preferredScores[1] * 2;
-      if (allowedScores[0]) score += allowedScores[0];
-
-      // Keep a slight bias toward the earliest missing slot so the split does
-      // not drift unless another open slot closes a more urgent weekly gap.
-      score -= index * 0.25;
-
+      const score = scoreSplitSlot(split[index], index, need);
       if (score > bestScore) {
         bestIndex = index;
         bestScore = score;
@@ -308,6 +468,42 @@ const getNextSplitSlotIndex = (
   }
 
   return workouts.length % split.length;
+};
+
+const maybeOverrideForCriticalGap = (
+  split: SplitSlot[],
+  baseIndex: number,
+  need: Record<MovementPattern, number>,
+): number => {
+  const baseSlot = split[baseIndex];
+  const criticalMovements = MOVEMENT_PATTERNS
+    .filter((movement) => (need[movement] ?? 0) >= 3)
+    .sort(
+      (a, b) => (MOVEMENT_PRIORITY[b] ?? 0) - (MOVEMENT_PRIORITY[a] ?? 0),
+    );
+
+  if (criticalMovements.length === 0) return baseIndex;
+
+  for (const movement of criticalMovements) {
+    if (baseSlot.allowedMovements.includes(movement)) return baseIndex;
+
+    let bestIndex = baseIndex;
+    let bestScore = scoreSplitSlot(baseSlot, baseIndex, need);
+
+    split.forEach((slot, index) => {
+      if (!slot.allowedMovements.includes(movement)) return;
+      let score = scoreSplitSlot(slot, index, need);
+      if (slot.preferredMovements.includes(movement)) score += 6;
+      if (score > bestScore) {
+        bestIndex = index;
+        bestScore = score;
+      }
+    });
+
+    if (bestIndex !== baseIndex) return bestIndex;
+  }
+
+  return baseIndex;
 };
 
 const compareWorkoutsDesc = (a: Workout, b: Workout): number =>
@@ -360,7 +556,7 @@ const getSplitTemplate = (
           focusMuscles: ["glutes", "hamstrings", "core"],
           preferredMovements: ["hinge", "single_leg", "squat"],
           allowedMovements: ["hinge", "single_leg", "squat", "carry_core"],
-          targetPrimarySets: { glutes: 8, hamstrings: 6, core: 2 },
+          targetPrimarySets: { glutes: 8, hamstrings: 6, core: 4 },
         },
         PHYSIQUE_UPPER_A_SLOT,
         {
@@ -370,7 +566,7 @@ const getSplitTemplate = (
           focusMuscles: ["glutes", "quads", "hamstrings", "core"],
           preferredMovements: ["single_leg", "squat", "hinge"],
           allowedMovements: ["single_leg", "squat", "hinge", "carry_core"],
-          targetPrimarySets: { glutes: 7, quads: 6, hamstrings: 4, core: 2 },
+          targetPrimarySets: { glutes: 7, quads: 6, hamstrings: 4, core: 4 },
         },
       ];
     }
@@ -383,7 +579,7 @@ const getSplitTemplate = (
           focusMuscles: ["glutes", "hamstrings", "core"],
           preferredMovements: ["hinge", "single_leg", "squat"],
           allowedMovements: ["hinge", "single_leg", "squat", "carry_core"],
-          targetPrimarySets: { glutes: 8, hamstrings: 6, core: 2 },
+          targetPrimarySets: { glutes: 8, hamstrings: 6, core: 4 },
         },
         PHYSIQUE_UPPER_A_SLOT,
         {
@@ -393,7 +589,7 @@ const getSplitTemplate = (
           focusMuscles: ["glutes", "quads", "hamstrings", "core"],
           preferredMovements: ["single_leg", "squat", "hinge"],
           allowedMovements: ["single_leg", "squat", "hinge", "carry_core"],
-          targetPrimarySets: { glutes: 7, quads: 6, hamstrings: 4, core: 2 },
+          targetPrimarySets: { glutes: 7, quads: 6, hamstrings: 4, core: 4 },
         },
         PHYSIQUE_UPPER_B_SLOT,
       ];
@@ -406,7 +602,7 @@ const getSplitTemplate = (
         focusMuscles: ["glutes", "hamstrings", "core"],
         preferredMovements: ["hinge", "single_leg", "squat"],
         allowedMovements: ["hinge", "single_leg", "squat", "carry_core"],
-        targetPrimarySets: { glutes: 8, hamstrings: 6, core: 2 },
+        targetPrimarySets: { glutes: 8, hamstrings: 6, core: 4 },
       },
       PHYSIQUE_UPPER_A_SLOT,
       {
@@ -416,7 +612,7 @@ const getSplitTemplate = (
         focusMuscles: ["glutes", "quads", "hamstrings", "core"],
         preferredMovements: ["single_leg", "squat", "hinge"],
         allowedMovements: ["single_leg", "squat", "hinge", "carry_core"],
-        targetPrimarySets: { glutes: 7, quads: 6, hamstrings: 4, core: 2 },
+        targetPrimarySets: { glutes: 7, quads: 6, hamstrings: 4, core: 4 },
       },
       PHYSIQUE_UPPER_B_SLOT,
       {
@@ -426,7 +622,7 @@ const getSplitTemplate = (
         focusMuscles: ["glutes", "shoulders", "rear_delts", "core"],
         preferredMovements: ["single_leg", "hinge", "push", "pull"],
         allowedMovements: ["single_leg", "hinge", "push", "pull", "carry_core"],
-        targetPrimarySets: { glutes: 8, shoulders: 6, rear_delts: 4, core: 2 },
+        targetPrimarySets: { glutes: 8, shoulders: 6, rear_delts: 4, core: 4 },
       },
     ];
   }
@@ -441,7 +637,7 @@ const getSplitTemplate = (
           focusMuscles: ["quads", "glutes", "hamstrings", "core"],
           preferredMovements: ["squat", "hinge"],
           allowedMovements: ["squat", "hinge", "carry_core"],
-          targetPrimarySets: { quads: 7, glutes: 5, hamstrings: 5, core: 2 },
+          targetPrimarySets: { quads: 7, glutes: 5, hamstrings: 5, core: 3 },
         },
         {
           id: "upper_strength",
@@ -450,7 +646,7 @@ const getSplitTemplate = (
           focusMuscles: ["back", "shoulders", "chest", "triceps"],
           preferredMovements: ["pull", "push"],
           allowedMovements: ["pull", "push", "carry_core"],
-          targetPrimarySets: { back: 6, shoulders: 5, chest: 5, triceps: 3 },
+          targetPrimarySets: { back: 6, shoulders: 5, chest: 5, triceps: 3, core: 2 },
         },
         {
           id: "full_strength",
@@ -459,7 +655,7 @@ const getSplitTemplate = (
           focusMuscles: ["glutes", "back", "quads", "shoulders", "core"],
           preferredMovements: ["hinge", "squat", "pull", "push"],
           allowedMovements: ["hinge", "squat", "pull", "push", "carry_core"],
-          targetPrimarySets: { glutes: 5, back: 5, quads: 4, shoulders: 4, core: 2 },
+          targetPrimarySets: { glutes: 5, back: 5, quads: 4, shoulders: 4, core: 3 },
         },
       ];
     }
@@ -471,7 +667,7 @@ const getSplitTemplate = (
         focusMuscles: ["quads", "glutes", "core"],
         preferredMovements: ["squat", "single_leg"],
         allowedMovements: ["squat", "single_leg", "carry_core"],
-        targetPrimarySets: { quads: 7, glutes: 5, core: 2 },
+        targetPrimarySets: { quads: 7, glutes: 5, core: 3 },
       },
       {
         id: "push_day",
@@ -480,7 +676,7 @@ const getSplitTemplate = (
         focusMuscles: ["shoulders", "chest", "triceps", "core"],
         preferredMovements: ["push"],
         allowedMovements: ["push", "carry_core"],
-        targetPrimarySets: { shoulders: 6, chest: 5, triceps: 4, core: 2 },
+        targetPrimarySets: { shoulders: 6, chest: 5, triceps: 4, core: 3 },
       },
       {
         id: "hinge_day",
@@ -489,7 +685,7 @@ const getSplitTemplate = (
         focusMuscles: ["hamstrings", "glutes", "back", "core"],
         preferredMovements: ["hinge"],
         allowedMovements: ["hinge", "single_leg", "carry_core"],
-        targetPrimarySets: { hamstrings: 7, glutes: 5, back: 4, core: 2 },
+        targetPrimarySets: { hamstrings: 7, glutes: 5, back: 4, core: 3 },
       },
       {
         id: "pull_day",
@@ -498,7 +694,7 @@ const getSplitTemplate = (
         focusMuscles: ["back", "rear_delts", "biceps", "core"],
         preferredMovements: ["pull"],
         allowedMovements: ["pull", "carry_core"],
-        targetPrimarySets: { back: 8, rear_delts: 4, biceps: 4, core: 2 },
+        targetPrimarySets: { back: 8, rear_delts: 4, biceps: 4, core: 3 },
       },
     ];
   }
@@ -512,7 +708,7 @@ const getSplitTemplate = (
         focusMuscles: ["glutes", "back", "shoulders", "core"],
         preferredMovements: ["hinge", "pull", "push"],
         allowedMovements: ["hinge", "squat", "single_leg", "pull", "push", "carry_core"],
-        targetPrimarySets: { glutes: 6, back: 5, shoulders: 4, core: 2 },
+        targetPrimarySets: { glutes: 6, back: 5, shoulders: 4, core: 3 },
       },
       {
         id: "full_b",
@@ -521,7 +717,7 @@ const getSplitTemplate = (
         focusMuscles: ["glutes", "quads", "back", "shoulders", "core"],
         preferredMovements: ["single_leg", "pull", "push"],
         allowedMovements: ["hinge", "squat", "single_leg", "pull", "push", "carry_core"],
-        targetPrimarySets: { glutes: 5, quads: 5, back: 4, shoulders: 4, core: 2 },
+        targetPrimarySets: { glutes: 5, quads: 5, back: 4, shoulders: 4, core: 3 },
       },
       {
         id: "full_c",
@@ -530,7 +726,7 @@ const getSplitTemplate = (
         focusMuscles: ["quads", "glutes", "back", "core"],
         preferredMovements: ["squat", "pull", "push"],
         allowedMovements: ["hinge", "squat", "single_leg", "pull", "push", "carry_core"],
-        targetPrimarySets: { quads: 5, glutes: 4, back: 5, core: 2 },
+        targetPrimarySets: { quads: 5, glutes: 4, back: 5, core: 3 },
       },
     ];
   }
@@ -543,7 +739,7 @@ const getSplitTemplate = (
       focusMuscles: ["glutes", "quads", "hamstrings", "core"],
       preferredMovements: ["hinge", "squat", "single_leg"],
       allowedMovements: ["hinge", "squat", "single_leg", "carry_core"],
-      targetPrimarySets: { glutes: 6, quads: 5, hamstrings: 4, core: 2 },
+      targetPrimarySets: { glutes: 6, quads: 5, hamstrings: 4, core: 3 },
     },
     {
       id: "upper_balanced",
@@ -552,7 +748,7 @@ const getSplitTemplate = (
       focusMuscles: ["back", "shoulders", "chest", "core"],
       preferredMovements: ["pull", "push"],
       allowedMovements: ["pull", "push", "carry_core"],
-      targetPrimarySets: { back: 6, shoulders: 4, chest: 4, core: 2 },
+      targetPrimarySets: { back: 6, shoulders: 4, chest: 4, core: 3 },
     },
     {
       id: "full_balanced",
@@ -561,7 +757,7 @@ const getSplitTemplate = (
       focusMuscles: ["glutes", "back", "shoulders", "core"],
       preferredMovements: ["hinge", "single_leg", "pull", "push"],
       allowedMovements: ["hinge", "squat", "single_leg", "pull", "push", "carry_core"],
-      targetPrimarySets: { glutes: 5, back: 5, shoulders: 4, core: 2 },
+      targetPrimarySets: { glutes: 5, back: 5, shoulders: 4, core: 3 },
     },
     {
       id: "upper_pull_bias",
@@ -570,7 +766,7 @@ const getSplitTemplate = (
       focusMuscles: ["back", "shoulders", "rear_delts", "core"],
       preferredMovements: ["pull", "push"],
       allowedMovements: ["pull", "push", "carry_core"],
-      targetPrimarySets: { back: 6, shoulders: 4, rear_delts: 3, core: 2 },
+      targetPrimarySets: { back: 6, shoulders: 4, rear_delts: 3, core: 3 },
     },
   ];
 };
@@ -594,6 +790,7 @@ export function buildDraftExercise(
     suggestedWeight: last?.weight ?? null,
     unit: last?.unit ?? "lb",
     isFamiliar: knownNames.has(ex.name),
+    progression: buildProgression(ex, targets, workouts),
   };
 }
 
@@ -629,7 +826,11 @@ export function generateNextWorkout(
     need[mp] = days === 0 ? 3 : days === 1 ? 1 : 0;
   });
 
-  const sessionIndex = getNextSplitSlotIndex(split, coverage.workouts, need);
+  const sessionIndex = maybeOverrideForCriticalGap(
+    split,
+    getNextSplitSlotIndex(split, coverage.workouts, need),
+    need,
+  );
   const slot = split[sessionIndex];
   const currentWeekExerciseNames = new Set(
     coverage.workouts.flatMap((workout) =>
@@ -690,10 +891,12 @@ export function generateNextWorkout(
       if (movement === "push" && ex.primary.includes("triceps")) s -= 0.6;
       if (movement === "hinge" && ex.primary.includes("glutes")) s += 0.8;
       if (movement === "single_leg" && ex.primary.includes("glutes")) s += 0.8;
+      if (isDirectGluteFocus(ex)) s += 0.7;
       if (movement === "pull" && ex.primary.includes("back")) s += 0.7;
       if (ex.primary.includes("shoulders") || ex.primary.includes("rear_delts")) {
         s += 0.5;
       }
+      if (armBiasSlot && isDirectArmFocus(ex)) s += 1.2;
     }
 
     if (activeProfile.goal === "strength" && isHeavyEquipment(ex)) {
@@ -765,6 +968,7 @@ export function generateNextWorkout(
       suggestedWeight: last?.weight ?? null,
       unit: last?.unit ?? "lb",
       isFamiliar: known.has(ex.name),
+      progression: buildProgression(ex, targets, workouts),
     };
   };
 
@@ -779,6 +983,15 @@ export function generateNextWorkout(
   const accessoryMovements = ACCESSORY_MOVEMENTS.filter((movement) =>
     slot.allowedMovements.includes(movement),
   );
+  const lowerBiasSlot =
+    slot.preferredMovements.includes("hinge") ||
+    slot.preferredMovements.includes("squat") ||
+    slot.preferredMovements.includes("single_leg");
+  const upperBiasSlot =
+    slot.preferredMovements.includes("pull") ||
+    slot.preferredMovements.includes("push");
+  const armBiasSlot =
+    slot.focusMuscles.includes("biceps") || slot.focusMuscles.includes("triceps");
 
   // Pre-generate per-movement noise so sort comparators are pure functions.
   // JavaScript sort calls comparators a variable number of times, so calling
@@ -940,7 +1153,13 @@ export function generateNextWorkout(
     (ex) =>
       environmentAllows(ex, activeProfile.equipment) &&
       goalAllows(ex, activeProfile.goal) &&
-      (activeProfile.goal !== "physique" || !isChestDominantPush(ex)),
+      (activeProfile.goal !== "physique" ||
+        (!isChestDominantPush(ex) &&
+          ((lowerBiasSlot &&
+            (isGluteBiasedLower(ex) || isDirectGluteFocus(ex))) ||
+            (upperBiasSlot &&
+              (isBackOrShoulderFocused(ex) ||
+                (armBiasSlot && isDirectArmFocus(ex))))))),
   );
 
   // 4. Second accessory superset — add enough volume for a fuller session.
@@ -953,9 +1172,13 @@ export function generateNextWorkout(
       environmentAllows(ex, activeProfile.equipment) &&
       goalAllows(ex, activeProfile.goal) &&
       (activeProfile.goal !== "physique" ||
-        isGluteBiasedLower(ex) ||
-        isBackOrShoulderFocused(ex) ||
-        movementOf(ex) === "carry_core"),
+        ((lowerBiasSlot &&
+          (isGluteBiasedLower(ex) ||
+            isDirectGluteFocus(ex) ||
+            isBackOrShoulderFocused(ex))) ||
+          (upperBiasSlot &&
+            (isBackOrShoulderFocused(ex) ||
+              (armBiasSlot && isDirectArmFocus(ex)))))),
   );
 
   // 5. Finisher — for 3-day physique plans, allow short conditioning on lower
@@ -1003,6 +1226,13 @@ export function generateNextWorkout(
   const totalExercises = (): number =>
     sections.reduce((count, section) => count + section.exercises.length, 0);
 
+  const hasDirectArmWork = (): boolean =>
+    sections.some((section) =>
+      section.exercises.some((exercise) =>
+        exercise.primary.includes("biceps") || exercise.primary.includes("triceps"),
+      ),
+    );
+
   if (totalExercises() < 5) {
     addAccessoryBlock(
       accessoryMovements,
@@ -1015,6 +1245,19 @@ export function generateNextWorkout(
         slot.focusMuscles.some(
           (muscle) => ex.primary.includes(muscle) || ex.secondary.includes(muscle),
         ),
+    );
+  }
+
+  if (activeProfile.goal === "physique" && armBiasSlot && !hasDirectArmWork()) {
+    addAccessoryBlock(
+      accessoryMovements,
+      2,
+      "12–15 reps — direct arm finish",
+      [15, 12],
+      (ex) =>
+        environmentAllows(ex, activeProfile.equipment) &&
+        goalAllows(ex, activeProfile.goal) &&
+        isDirectArmFocus(ex),
     );
   }
 
@@ -1098,6 +1341,7 @@ export function generateNextWorkout(
       summary: slot.summary,
       sessionIndex: sessionIndex + 1,
       totalSessions: split.length,
+      targetPrimarySets: slot.targetPrimarySets,
     },
     sections,
     rationale,

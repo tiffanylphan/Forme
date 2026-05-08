@@ -84,6 +84,21 @@ describe("generateNextWorkout", () => {
     expect(exerciseNames).not.toContain("Barbell Romanian deadlift");
   });
 
+  it("builds progression guidance from the last logged performance", () => {
+    const workouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Barbell hip thrust", sets: 4 },
+      ]),
+    ];
+    const draft = generateNextWorkout(workouts, "2026-05-06", 123, profile);
+    const allExercises = draft.sections.flatMap((section) => section.exercises);
+    const firstExercise = allExercises[0];
+
+    expect(firstExercise?.progression.goal.length).toBeGreaterThan(0);
+    expect(firstExercise?.progression.nextStep.length).toBeGreaterThan(0);
+    expect(Array.isArray(firstExercise?.progression.recentHistory)).toBe(true);
+  });
+
   it("respects equipment restrictions from the training profile", () => {
     const draft = generateNextWorkout([], "2026-05-06", 321, {
       ...profile,
@@ -226,5 +241,74 @@ describe("generateNextWorkout", () => {
 
     expect(finisherSection).toBeDefined();
     expect(finisherSection?.exercises[0].pattern === "carry" || finisherSection?.exercises[0].pattern === "core" || finisherSection?.exercises[0].pattern === "conditioning").toBe(true);
+  });
+
+  it("overrides lower-b-in-order when pull is still untouched this week", () => {
+    const workouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "DB Bulgarian split squat", sets: 3 },
+      ], {
+        slotId: "lower_glute_ham",
+        title: "Lower A",
+      }),
+      workout("w2", "2026-05-06", [
+        { name: "DB overhead press", sets: 4 },
+        { name: "DB lateral raise", sets: 3 },
+      ], {
+        slotId: "upper_back_shoulder",
+        title: "Upper A",
+      }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-07", 9191, threeDayProfile);
+    expect(draft.split.title).toBe("Upper B");
+  });
+
+  it("keeps lower physique days glute-biased across the session", () => {
+    const draft = generateNextWorkout([], "2026-05-06", 9292, profile);
+    const glutePrimaryExercises = draft.sections
+      .flatMap((section) => section.exercises)
+      .filter((exercise) => exercise.primary.includes("glutes"));
+
+    expect(draft.split.title).toBe("Lower A");
+    expect(glutePrimaryExercises.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("inserts direct arm work on upper-b physique days", () => {
+    const workouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "DB Bulgarian split squat", sets: 3 },
+      ], {
+        slotId: "lower_glute_ham",
+        title: "Lower A",
+      }),
+      workout("w2", "2026-05-06", [
+        { name: "Cable row", sets: 4 },
+        { name: "DB overhead press", sets: 3 },
+      ], {
+        slotId: "upper_back_shoulder",
+        title: "Upper A",
+      }),
+      workout("w3", "2026-05-07", [
+        { name: "Goblet squat", sets: 4 },
+        { name: "DB reverse lunge", sets: 3 },
+      ], {
+        slotId: "lower_glute_quad",
+        title: "Lower B",
+      }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-08", 9393, profile);
+    const directArmExercises = draft.sections
+      .flatMap((section) => section.exercises)
+      .filter(
+        (exercise) =>
+          exercise.primary.includes("biceps") || exercise.primary.includes("triceps"),
+      );
+
+    expect(draft.split.title).toBe("Upper B");
+    expect(directArmExercises.length).toBeGreaterThanOrEqual(1);
   });
 });

@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { MuscleTag } from "@/components/MuscleTag";
+import { computeCoverage, weekContaining } from "@/lib/coverage";
 import { EXERCISES } from "@/lib/exercises";
-import { todayISO } from "@/lib/format";
+import { formatMuscle, todayISO } from "@/lib/format";
 import {
   buildDraftExercise,
   generateNextWorkout,
@@ -20,7 +21,7 @@ import {
 } from "@/lib/profile";
 import { useWorkouts } from "@/lib/storage";
 import type { DraftExercise, DraftSection, WorkoutDraft } from "@/lib/generator";
-import type { Exercise, MovementPattern } from "@/lib/types";
+import type { Exercise, MovementPattern, MuscleGroup } from "@/lib/types";
 
 const SECTION_TITLE: Record<DraftSection["kind"], string> = {
   compound: "Compound",
@@ -39,6 +40,22 @@ type SwapTarget = {
   movement: MovementPattern | null;
   targets: (number | string)[];
 };
+
+type SwapRole =
+  | "horizontal_pull"
+  | "vertical_pull"
+  | "rear_delt_pull"
+  | "arm_pull"
+  | "vertical_press"
+  | "shoulder_isolation"
+  | "chest_press"
+  | "arm_push"
+  | "hinge_glute"
+  | "hinge_hamstring"
+  | "single_leg_lower"
+  | "bilateral_squat"
+  | "carry_core"
+  | "general";
 
 const familyOf = (ex: Exercise): string => {
   const name = ex.name.toLowerCase();
@@ -85,6 +102,83 @@ const familyOf = (ex: Exercise): string => {
 const overlapCount = (a: readonly string[], b: readonly string[]): number =>
   a.filter((item) => b.includes(item)).length;
 
+const sameMuscleSet = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((item) => b.includes(item));
+
+const hasPrimary = (ex: Exercise, muscle: MuscleGroup): boolean =>
+  ex.primary.includes(muscle);
+
+const similarityTier = (
+  candidate: Exercise,
+  current: Exercise | undefined,
+): number => {
+  if (!current) return 99;
+  const sameFamily = familyOf(candidate) === familyOf(current);
+  const exactPrimaryMatch = sameMuscleSet(candidate.primary, current.primary);
+  const primaryOverlap = overlapCount(candidate.primary, current.primary);
+  const secondaryOverlap = overlapCount(candidate.secondary, current.secondary);
+
+  if (sameFamily && exactPrimaryMatch) return 0;
+  if (exactPrimaryMatch) return 1;
+  if (primaryOverlap > 0 && secondaryOverlap > 0) return 2;
+  if (primaryOverlap > 0) return 3;
+  return 4;
+};
+
+const roleOf = (ex: Exercise): SwapRole => {
+  const name = ex.name.toLowerCase();
+  if (ex.pattern === "pull") {
+    if (
+      name.includes("face pull") ||
+      name.includes("reverse fly") ||
+      name.includes("pull-apart")
+    ) {
+      return "rear_delt_pull";
+    }
+    if (
+      name.includes("pulldown") ||
+      name.includes("pull-up") ||
+      name.includes("chin-up")
+    ) {
+      return "vertical_pull";
+    }
+    if (name.includes("curl")) return "arm_pull";
+    if (name.includes("row")) return "horizontal_pull";
+  }
+  if (ex.pattern === "push") {
+    if (
+      name.includes("lateral raise") ||
+      name.includes("front raise") ||
+      name.includes("arnold") ||
+      name.includes("sunrise raise") ||
+      name.includes("prone press")
+    ) {
+      return "shoulder_isolation";
+    }
+    if (
+      name.includes("tricep") ||
+      name.includes("skull crusher") ||
+      name.includes("pushdown")
+    ) {
+      return "arm_push";
+    }
+    if (name.includes("overhead press") || name.includes("landmine press") || name.includes("pike push-up")) {
+      return "vertical_press";
+    }
+    return "chest_press";
+  }
+  if (ex.pattern === "hinge") {
+    if (hasPrimary(ex, "glutes")) return "hinge_glute";
+    return "hinge_hamstring";
+  }
+  if (movementOf(ex) === "single_leg") return "single_leg_lower";
+  if (ex.pattern === "squat") return "bilateral_squat";
+  if (movementOf(ex) === "carry_core" || ex.pattern === "carry" || ex.pattern === "core") {
+    return "carry_core";
+  }
+  return "general";
+};
+
 const similarityScore = (
   candidate: Exercise,
   current: Exercise | undefined,
@@ -126,7 +220,7 @@ export default function NextPage() {
   const { workouts, ready } = useWorkouts();
   const { profile, ready: profileReady } = useTrainingProfile();
   const today = todayISO();
-  const [seed, setSeed] = useState<number>(() => Math.floor(Math.random() * 1e9));
+  const [seed, setSeed] = useState<number>(0);
   const router = useRouter();
 
   const baseDraft = useMemo(
@@ -169,6 +263,10 @@ export default function NextPage() {
   const knownExercises = useMemo(
     () => new Set(workouts.flatMap((w) => w.exercises.map((e) => e.exerciseName))),
     [workouts],
+  );
+  const coverage = useMemo(
+    () => computeCoverage(workouts, weekContaining(today)),
+    [workouts, today],
   );
 
   const [swapTarget, setSwapTarget] = useState<SwapTarget | null>(null);
@@ -272,6 +370,10 @@ export default function NextPage() {
           )}
 
           <RationaleCard rationale={draft.rationale} />
+          <WeeklyTargetCard
+            targetPrimarySets={draft.split.targetPrimarySets}
+            coverage={coverage}
+          />
 
           {/* Sections */}
           <div className="space-y-3">
@@ -382,6 +484,77 @@ function RationaleCard({ rationale }: { rationale: string[] }) {
   );
 }
 
+function WeeklyTargetCard({
+  targetPrimarySets,
+  coverage,
+}: {
+  targetPrimarySets: Partial<Record<MuscleGroup, number>>;
+  coverage: ReturnType<typeof computeCoverage>;
+}) {
+  const rows = useMemo(
+    () =>
+      Object.entries(targetPrimarySets)
+        .filter((entry): entry is [MuscleGroup, number] => {
+          const [, target] = entry;
+          return typeof target === "number" && target > 0;
+        })
+        .sort((a, b) => b[1] - a[1])
+        .map(([muscle, target]) => {
+          const done = coverage.muscleStats[muscle]?.asPrimarySets ?? 0;
+          const pct = Math.min(100, Math.round((done / target) * 100));
+          return {
+            muscle,
+            target,
+            done,
+            pct,
+            remaining: Math.max(0, target - done),
+          };
+        }),
+    [coverage, targetPrimarySets],
+  );
+
+  if (rows.length === 0) return null;
+
+  return (
+    <section className="mb-5 rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-4">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div>
+          <p className="label-eyebrow">Weekly target sets</p>
+          <p className="mt-1 text-[12px] text-text-subtle">
+            Primary sets for this slot&apos;s main muscles.
+          </p>
+        </div>
+      </div>
+      <div className="space-y-3">
+        {rows.map((row) => (
+          <div key={row.muscle}>
+            <div className="mb-1.5 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <MuscleTag muscle={row.muscle} size="md" />
+                <span className="text-[12px] text-text-subtle capitalize">
+                  {row.remaining === 0
+                    ? "On target"
+                    : `${row.remaining} set${row.remaining !== 1 ? "s" : ""} left`}
+                </span>
+              </div>
+              <span className="font-mono text-[13px] text-text">
+                {row.done}/{row.target}
+              </span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-[#ECE8DE]">
+              <div
+                className="h-full rounded-full bg-text"
+                style={{ width: `${row.pct}%` }}
+                aria-label={`${formatMuscle(row.muscle)} ${row.done} of ${row.target} sets`}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 // ---------- Section card ----------
 
 function SectionCard({
@@ -428,6 +601,8 @@ function ExerciseRow({
   onSwap: () => void;
 }) {
   const movColor = ex.movement ? MOVEMENT_COLORS[ex.movement] : null;
+  const recentTrend = ex.progression.recentHistory.slice(0, 3);
+  const trendLabel = recentTrend.map((entry) => entry.status).join(" → ");
   return (
     <div className="px-4 py-3">
       <div className="flex items-start justify-between gap-2">
@@ -457,7 +632,7 @@ function ExerciseRow({
           </div>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <div className="text-right">
+        <div className="text-right">
             <div className="font-mono text-[14px] text-text">
               {ex.suggestedWeight != null
                 ? `${ex.suggestedWeight} ${ex.unit}`
@@ -472,6 +647,36 @@ function ExerciseRow({
             Swap
           </button>
         </div>
+      </div>
+      <div className="mt-2 space-y-1">
+        {ex.progression.lastSummary && (
+          <p className="text-[11px] text-text-subtle">
+            Last: <span className="font-mono">{ex.progression.lastSummary}</span>
+          </p>
+        )}
+        {recentTrend.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-[11px] text-text-subtle">
+              Trend: <span className="capitalize">{trendLabel}</span>
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {recentTrend.map((entry) => (
+                <span
+                  key={`${entry.date}-${entry.summary}-${entry.status}`}
+                  className="rounded-full bg-[#F1EFE8] px-2 py-0.5 text-[10px] text-text-muted"
+                >
+                  {entry.status} · {entry.summary}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        <p className="text-[11px] text-text-subtle">
+          Goal: {ex.progression.goal}
+        </p>
+        <p className="text-[11px] text-text-subtle">
+          Next: {ex.progression.nextStep}
+        </p>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1">
         {ex.targets.map((t, i) => (
@@ -522,13 +727,49 @@ function SwapPicker({
   }, [open]);
 
   const options = useMemo(() => {
-    return EXERCISES.filter((ex) => {
+    const filtered = EXERCISES.filter((ex) => {
       if (excludeNames.has(ex.name)) return false;
       if (movement && movementOf(ex) !== movement) return false;
       if (search && !ex.name.toLowerCase().includes(search.toLowerCase()))
         return false;
       return true;
-    }).sort((a, b) => {
+    });
+
+    if (search || !currentExercise) {
+      return filtered.sort((a, b) => {
+        const scoreDiff =
+          similarityScore(b, currentExercise, knownExercises) -
+          similarityScore(a, currentExercise, knownExercises);
+        if (scoreDiff !== 0) return scoreDiff;
+        const af = knownExercises.has(a.name) ? 0 : 1;
+        const bf = knownExercises.has(b.name) ? 0 : 1;
+        return af - bf || a.name.localeCompare(b.name);
+      });
+    }
+
+    const currentRole = roleOf(currentExercise);
+    const sameRole = filtered.filter((exercise) => roleOf(exercise) === currentRole);
+    const roleScoped = sameRole.length > 0 ? sameRole : filtered;
+    const sortedRoleScoped = [...roleScoped].sort((a, b) => {
+      const scoreDiff =
+        similarityScore(b, currentExercise, knownExercises) -
+        similarityScore(a, currentExercise, knownExercises);
+      if (scoreDiff !== 0) return scoreDiff;
+      const af = knownExercises.has(a.name) ? 0 : 1;
+      const bf = knownExercises.has(b.name) ? 0 : 1;
+      return af - bf || a.name.localeCompare(b.name);
+    });
+    const bestTier = Math.min(
+      ...roleScoped.map((exercise) => similarityTier(exercise, currentExercise)),
+    );
+    let directMatches = roleScoped.filter(
+      (exercise) => similarityTier(exercise, currentExercise) <= Math.min(bestTier + 1, 2),
+    );
+    if (directMatches.length < 4) {
+      directMatches = sortedRoleScoped.slice(0, Math.min(4, sortedRoleScoped.length));
+    }
+
+    return directMatches.sort((a, b) => {
       const scoreDiff =
         similarityScore(b, currentExercise, knownExercises) -
         similarityScore(a, currentExercise, knownExercises);
@@ -589,7 +830,7 @@ function SwapPicker({
 
         <p className="px-4 pb-1 text-[11px] text-text-subtle">
           {options.length} alternative{options.length !== 1 ? "s" : ""} ·
-          closest matches shown first
+          most directly comparable matches shown first
         </p>
 
         {/* List */}

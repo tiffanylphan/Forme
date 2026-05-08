@@ -15,11 +15,19 @@ vi.mock("next/link", () => ({
   }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
     href: string | { pathname?: string };
     children: React.ReactNode;
-  }) => (
-    <a href={typeof href === "string" ? href : href.pathname} {...props}>
-      {children}
-    </a>
-  ),
+  }) => {
+    const hrefObject = href as { pathname?: string } | string;
+    const resolvedHref =
+      typeof hrefObject === "string"
+        ? hrefObject
+        : hrefObject.pathname ?? "/";
+
+    return (
+      <a href={resolvedHref} {...props}>
+        {children}
+      </a>
+    );
+  },
 }));
 
 vi.mock("next/navigation", () => ({

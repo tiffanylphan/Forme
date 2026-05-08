@@ -25,6 +25,25 @@ describe("WorkoutDetailPage", () => {
       ready: true,
       workouts: [
         {
+          id: "workout-0",
+          date: "2026-05-04",
+          source: "manual",
+          createdAt: 0,
+          updatedAt: 0,
+          exercises: [
+            {
+              id: "e0",
+              exerciseName: "Cable row",
+              progressionStatus: "held",
+              supersetGroup: null,
+              sets: [
+                { id: "s0-1", reps: 12, weight: 65, unit: "lb" },
+                { id: "s0-2", reps: 10, weight: 65, unit: "lb" },
+              ],
+            },
+          ],
+        },
+        {
           id: "workout-1",
           date: "2026-05-06",
           source: "manual",
@@ -35,6 +54,7 @@ describe("WorkoutDetailPage", () => {
             {
               id: "e1",
               exerciseName: "Cable row",
+              progressionStatus: "progressed",
               supersetGroup: null,
               sets: [
                 { id: "s1", reps: 12, weight: 70, unit: "lb" },
@@ -48,6 +68,9 @@ describe("WorkoutDetailPage", () => {
 
     render(<WorkoutDetailPage />);
     expect(screen.getByText("Cable row")).toBeInTheDocument();
+    expect(screen.getByText("Progressed")).toBeInTheDocument();
+    expect(screen.getByText("Recent history")).toBeInTheDocument();
+    expect(screen.getByText(/65 lb x 12\/10/)).toBeInTheDocument();
     expect(screen.getByText("Felt strong")).toBeInTheDocument();
 
     await user.click(screen.getByText("Edit"));

@@ -40,6 +40,7 @@ describe("NextPage", () => {
     expect(screen.getByText("Training profile")).toBeInTheDocument();
     expect(screen.getByText("Physique")).toBeInTheDocument();
     expect(screen.getByText("Why this routine")).toBeInTheDocument();
+    expect(screen.getByText("Weekly target sets")).toBeInTheDocument();
   });
 
   it("prompts for setup when no training profile exists", () => {

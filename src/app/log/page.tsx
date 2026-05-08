@@ -1,15 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { ExercisePicker } from "@/components/ExercisePicker";
 import { MuscleTag } from "@/components/MuscleTag";
+import { formatExerciseEquipment, getExerciseCoaching } from "@/lib/exerciseCoaching";
 import { findExercise } from "@/lib/exercises";
 import { SUPERSET_COLORS } from "@/lib/colors";
 import { formatDate, todayISO, uid } from "@/lib/format";
 import { popDraft } from "@/lib/generator";
-import { getWorkout, popEditWorkout, upsertWorkout } from "@/lib/storage";
+import { evaluateProgressionStatus } from "@/lib/progression";
+import { getWorkout, loadWorkouts, popEditWorkout, upsertWorkout } from "@/lib/storage";
 import type { WorkoutDraft } from "@/lib/generator";
 import type {
   ExerciseLog,
@@ -230,8 +232,13 @@ const groupColorFor = (
   return SUPERSET_COLORS[idx % SUPERSET_COLORS.length];
 };
 
+const noopSubscribe = (): (() => void) => () => {};
+const getClientHydrated = (): boolean => true;
+const getServerHydrated = (): boolean => false;
+
 export default function LogPage() {
   const router = useRouter();
+  const hydrated = useSyncExternalStore(noopSubscribe, getClientHydrated, getServerHydrated);
   const [init] = useState(resolveInitialState);
   const [workoutId] = useState(init.workoutId);
   const [date, setDate] = useState(init.date);
@@ -239,6 +246,7 @@ export default function LogPage() {
   const [exercises, setExercises] = useState<ExerciseLog[]>(init.exercises);
   const [planSlot] = useState(init.planSlot);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [guideExerciseName, setGuideExerciseName] = useState<string | null>(null);
   const [notes, setNotes] = useState(init.notes);
   const isEditing = init.isEditing;
   const [defaultUnit, setDefaultUnit] = useState<WeightUnit>(() => {
@@ -248,6 +256,7 @@ export default function LogPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!hydrated || !workoutId) return;
     saveLogDraft({
       workoutId,
       date,
@@ -258,7 +267,7 @@ export default function LogPage() {
       isEditing,
       defaultUnit,
     });
-  }, [workoutId, date, source, exercises, planSlot, notes, isEditing, defaultUnit]);
+  }, [hydrated, workoutId, date, source, exercises, planSlot, notes, isEditing, defaultUnit]);
 
   const blocks = useMemo(() => buildBlocks(exercises), [exercises]);
 
@@ -290,6 +299,11 @@ export default function LogPage() {
     });
     return Array.from(set);
   }, [exercises]);
+
+  const selectedGuideExercise = useMemo(
+    () => (guideExerciseName ? findExercise(guideExerciseName) ?? null : null),
+    [guideExerciseName],
+  );
 
   const addExercise = (name: string) => {
     setSaveError(null);
@@ -418,16 +432,26 @@ export default function LogPage() {
   const canSave = exercises.length > 0;
 
   const save = () => {
-    if (!canSave) return;
+    if (!hydrated || !canSave) return;
     const now = Date.now();
+    const existingCreatedAt = isEditing ? (getWorkout(workoutId)?.createdAt ?? now) : now;
+    const allWorkoutsForProgression = loadWorkouts();
     const workout: Workout = {
       id: workoutId,
       date,
       source,
-      exercises,
+      exercises: exercises.map((exercise) => ({
+        ...exercise,
+        progressionStatus: evaluateProgressionStatus(
+          exercise.exerciseName,
+          exercise.sets,
+          allWorkoutsForProgression,
+          isEditing ? workoutId : undefined,
+        ),
+      })),
       planSlot,
       notes: notes.trim() || undefined,
-      createdAt: init.isEditing ? (getWorkout(workoutId)?.createdAt ?? now) : now,
+      createdAt: existingCreatedAt,
       updatedAt: now,
     };
     try {
@@ -438,11 +462,21 @@ export default function LogPage() {
       }
       clearLogDraft();
       // Return to the detail page when editing; go home for new entries.
-      router.push(init.isEditing ? `/workout/${workoutId}` : "/");
+      router.push(isEditing ? `/workout/${workoutId}` : "/");
     } catch {
       setSaveError("Save failed. Your workout is still kept in this browser so you can try again.");
     }
   };
+
+  if (!hydrated) {
+    return (
+      <div className="mx-auto flex min-h-screen max-w-[480px] flex-col px-4 pt-6">
+        <div className="rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-5 text-[13px] text-text-subtle">
+          Loading workout…
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex min-h-screen max-w-[480px] flex-col">
@@ -564,6 +598,7 @@ export default function LogPage() {
                     color={groupColor}
                     onMoveExercise={moveExercise}
                     onRemoveExercise={removeExercise}
+                    onOpenGuide={(exerciseName) => setGuideExerciseName(exerciseName)}
                     onBreakGroup={() =>
                       block.groupId && breakGroup(block.groupId)
                     }
@@ -583,6 +618,7 @@ export default function LogPage() {
                     onMoveExercise={moveExercise}
                     onRemoveExercise={removeExercise}
                     onAddSet={addSet}
+                    onOpenGuide={(exerciseName) => setGuideExerciseName(exerciseName)}
                     onUpdateSet={updateSet}
                     onRemoveSet={removeSet}
                     onUnitChange={setDefaultUnit}
@@ -625,6 +661,11 @@ export default function LogPage() {
         onPick={addExercise}
         alreadyAddedCounts={addedCounts}
       />
+
+      <ExerciseGuideSheet
+        exercise={selectedGuideExercise}
+        onClose={() => setGuideExerciseName(null)}
+      />
     </div>
   );
 }
@@ -637,6 +678,7 @@ function StandaloneBlockView({
   onMoveExercise,
   onRemoveExercise,
   onAddSet,
+  onOpenGuide,
   onUpdateSet,
   onRemoveSet,
   onUnitChange,
@@ -646,6 +688,7 @@ function StandaloneBlockView({
   onMoveExercise: (id: string, dir: -1 | 1) => void;
   onRemoveExercise: (id: string) => void;
   onAddSet: (id: string) => void;
+  onOpenGuide: (exerciseName: string) => void;
   onUpdateSet: (exId: string, setId: string, patch: Partial<SetEntry>) => void;
   onRemoveSet: (exId: string, setId: string) => void;
   onUnitChange: (u: WeightUnit) => void;
@@ -674,6 +717,12 @@ function StandaloneBlockView({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          <button
+            onClick={() => onOpenGuide(ex.exerciseName)}
+            className="rounded-full border border-[#E6E3D8] px-2.5 py-0.5 text-[10px] font-medium text-text-muted"
+          >
+            How
+          </button>
           <button
             onClick={() => onMoveExercise(ex.id, -1)}
             disabled={isFirst}
@@ -781,6 +830,7 @@ function SupersetBlockView({
   color,
   onMoveExercise,
   onRemoveExercise,
+  onOpenGuide,
   onBreakGroup,
   onAddRound,
   onRemoveRound,
@@ -791,6 +841,7 @@ function SupersetBlockView({
   color: ColorPair;
   onMoveExercise: (id: string, dir: -1 | 1) => void;
   onRemoveExercise: (id: string) => void;
+  onOpenGuide: (exerciseName: string) => void;
   onBreakGroup: () => void;
   onAddRound: () => void;
   onRemoveRound: (i: number) => void;
@@ -847,6 +898,12 @@ function SupersetBlockView({
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-1">
+                <button
+                  onClick={() => onOpenGuide(ex.exerciseName)}
+                  className="rounded-full border border-[#E6E3D8] px-2.5 py-0.5 text-[10px] font-medium text-text-muted"
+                >
+                  How
+                </button>
                 <button
                   onClick={() => onMoveExercise(ex.id, -1)}
                   disabled={i === 0}
@@ -961,6 +1018,113 @@ function SupersetBlockView({
           + Add round
         </button>
       </div>
+    </div>
+  );
+}
+
+function ExerciseGuideSheet({
+  exercise,
+  onClose,
+}: {
+  exercise: NonNullable<ReturnType<typeof findExercise>> | null;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!exercise) return;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [exercise]);
+
+  if (!exercise) return null;
+
+  const coaching = getExerciseCoaching(exercise);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center"
+      style={{ background: "rgba(26, 26, 24, 0.4)" }}
+      onClick={onClose}
+    >
+      <div
+        className="flex w-full max-w-[480px] flex-col rounded-t-2xl bg-surface"
+        style={{ height: "88vh" }}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex justify-center pt-2 pb-1">
+          <div className="h-1 w-10 rounded-full bg-[#D3D1C7]" />
+        </div>
+
+        <div className="flex items-center justify-between px-4 pt-2 pb-3">
+          <div>
+            <h2 className="text-[18px] font-semibold tracking-tight text-text">
+              How to do this exercise
+            </h2>
+            <p className="mt-1 text-[12px] text-text-subtle">
+              Quick setup and form cues for this lift.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-[14px] font-medium text-text-muted"
+          >
+            Done
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 pb-8">
+          <section className="rounded-2xl border border-[#E6E3D8] bg-white px-4 py-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-[15px] font-medium text-text">
+                  {exercise.name}
+                </h3>
+                <p className="mt-1 text-[12px] text-text-subtle">
+                  {formatExerciseEquipment(exercise)} · {exercise.pattern}
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-end gap-1">
+                {exercise.primary.map((muscle) => (
+                  <MuscleTag key={`${exercise.name}-${muscle}`} muscle={muscle} />
+                ))}
+              </div>
+            </div>
+
+            <dl className="mt-3 space-y-3">
+              <GuideRow label="Works" value={coaching.works} />
+              <GuideRow label="Setup" value={coaching.setup} />
+              <GuideList label="Cues" items={coaching.cues} />
+              <GuideList label="Avoid" items={coaching.mistakes} />
+              <GuideRow label="Why it's here" value={coaching.why} />
+            </dl>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GuideRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="label-eyebrow">{label}</dt>
+      <dd className="mt-1 text-[13px] leading-relaxed text-text">{value}</dd>
+    </div>
+  );
+}
+
+function GuideList({ label, items }: { label: string; items: string[] }) {
+  return (
+    <div>
+      <dt className="label-eyebrow">{label}</dt>
+      <dd className="mt-1 space-y-1">
+        {items.map((item) => (
+          <p key={item} className="text-[13px] leading-relaxed text-text">
+            · {item}
+          </p>
+        ))}
+      </dd>
     </div>
   );
 }

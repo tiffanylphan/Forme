@@ -7,6 +7,7 @@ import { MuscleTag } from "@/components/MuscleTag";
 import { SUPERSET_COLORS } from "@/lib/colors";
 import { findExercise } from "@/lib/exercises";
 import { formatDate, formatMuscle } from "@/lib/format";
+import { getExerciseHistory } from "@/lib/progression";
 import { deleteWorkout, stashEditWorkout, useWorkouts } from "@/lib/storage";
 import type { ExerciseLog, MuscleGroup, SetEntry } from "@/lib/types";
 
@@ -38,6 +39,16 @@ const formatSet = (s: SetEntry): string => {
   return reps ?? weight ?? "—";
 };
 
+const PROGRESSION_STYLES: Record<
+  NonNullable<ExerciseLog["progressionStatus"]>,
+  { bg: string; text: string; label: string }
+> = {
+  progressed: { bg: "#E1F5EE", text: "#085041", label: "Progressed" },
+  held: { bg: "#EEEDFE", text: "#3C3489", label: "Held" },
+  missed: { bg: "#FAECE7", text: "#712B13", label: "Missed" },
+  baseline: { bg: "#F1EFE8", text: "#5B584F", label: "Baseline" },
+};
+
 export default function WorkoutDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -61,6 +72,15 @@ export default function WorkoutDetailPage() {
     () => (workout ? buildBlocks(workout.exercises) : []),
     [workout],
   );
+  const historyByExercise = useMemo(() => {
+    if (!workout) return new Map<string, ReturnType<typeof getExerciseHistory>>();
+    return new Map(
+      workout.exercises.map((exercise) => [
+        exercise.exerciseName,
+        getExerciseHistory(exercise.exerciseName, workouts, workout.id, 3),
+      ]),
+    );
+  }, [workout, workouts]);
 
   const groupOrder = useMemo(
     () =>
@@ -157,12 +177,21 @@ export default function WorkoutDetailPage() {
               gIdx >= 0
                 ? SUPERSET_COLORS[gIdx % SUPERSET_COLORS.length]
                 : SUPERSET_COLORS[0];
-            return (
-              <SupersetView key={block.key} block={block} color={color} />
-            );
-          }
           return (
-            <StandaloneView key={block.key} ex={block.exercises[0]} />
+            <SupersetView
+              key={block.key}
+              block={block}
+              color={color}
+              historyByExercise={historyByExercise}
+            />
+          );
+        }
+        return (
+            <StandaloneView
+              key={block.key}
+              ex={block.exercises[0]}
+              history={historyByExercise.get(block.exercises[0].exerciseName) ?? []}
+            />
           );
         })}
       </div>
@@ -192,14 +221,65 @@ export default function WorkoutDetailPage() {
 
 // ---------- Standalone block ----------
 
-function StandaloneView({ ex }: { ex: ExerciseLog }) {
+function ExerciseHistory({
+  history,
+}: {
+  history: ReturnType<typeof getExerciseHistory>;
+}) {
+  if (history.length === 0) return null;
+  return (
+    <div className="border-t border-divider px-4 py-2">
+      <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-text-subtle">
+        Recent history
+      </p>
+      <div className="space-y-1">
+        {history.map((entry) => (
+          <div key={`${entry.date}-${entry.summary}`} className="flex items-center justify-between gap-3 text-[12px]">
+            <span className="text-text-subtle">{formatDate(entry.date)}</span>
+            <span className="min-w-0 flex-1 truncate text-text">{entry.summary}</span>
+            <span
+              className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+              style={{
+                background: PROGRESSION_STYLES[entry.status].bg,
+                color: PROGRESSION_STYLES[entry.status].text,
+              }}
+            >
+              {PROGRESSION_STYLES[entry.status].label}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StandaloneView({
+  ex,
+  history,
+}: {
+  ex: ExerciseLog;
+  history: ReturnType<typeof getExerciseHistory>;
+}) {
   const meta = findExercise(ex.exerciseName);
   return (
     <div className="overflow-hidden rounded-2xl border border-[#E6E3D8] bg-surface">
       <div className="px-4 pt-3 pb-2">
-        <h3 className="text-[15px] font-medium text-text">
-          {ex.exerciseName}
-        </h3>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-[15px] font-medium text-text">
+            {ex.exerciseName}
+          </h3>
+          {ex.progressionStatus && (
+            <span
+              className="rounded-full px-2.5 py-0.5 text-[10px] font-medium"
+              style={{
+                background: PROGRESSION_STYLES[ex.progressionStatus].bg,
+                color: PROGRESSION_STYLES[ex.progressionStatus].text,
+              }}
+            >
+              {PROGRESSION_STYLES[ex.progressionStatus].label}
+            </span>
+          )}
+        </div>
         {meta && (
           <div className="mt-1 flex flex-wrap gap-1">
             {meta.primary.map((m) => (
@@ -228,6 +308,7 @@ function StandaloneView({ ex }: { ex: ExerciseLog }) {
           </div>
         ))}
       </div>
+      <ExerciseHistory history={history} />
     </div>
   );
 }
@@ -237,9 +318,11 @@ function StandaloneView({ ex }: { ex: ExerciseLog }) {
 function SupersetView({
   block,
   color,
+  historyByExercise,
 }: {
   block: Block;
   color: ColorPair;
+  historyByExercise: Map<string, ReturnType<typeof getExerciseHistory>>;
 }) {
   const lanes = block.exercises;
   const rounds = Math.max(...lanes.map((e) => e.sets.length));
@@ -273,9 +356,22 @@ function SupersetView({
                 {String.fromCharCode(65 + i)}
               </span>
               <div className="min-w-0">
-                <p className="text-[14px] font-medium text-text">
-                  {ex.exerciseName}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="text-[14px] font-medium text-text">
+                    {ex.exerciseName}
+                  </p>
+                  {ex.progressionStatus && (
+                    <span
+                      className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                      style={{
+                        background: PROGRESSION_STYLES[ex.progressionStatus].bg,
+                        color: PROGRESSION_STYLES[ex.progressionStatus].text,
+                      }}
+                    >
+                      {PROGRESSION_STYLES[ex.progressionStatus].label}
+                    </span>
+                  )}
+                </div>
                 {meta && (
                   <div className="mt-0.5 flex flex-wrap gap-1">
                     {meta.primary.map((m) => (
@@ -292,6 +388,15 @@ function SupersetView({
             </div>
           );
         })}
+      </div>
+
+      <div className="border-t border-divider">
+        {lanes.map((ex) => (
+          <ExerciseHistory
+            key={`history-${ex.id}`}
+            history={historyByExercise.get(ex.exerciseName) ?? []}
+          />
+        ))}
       </div>
 
       {/* Rounds */}

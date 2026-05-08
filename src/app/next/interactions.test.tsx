@@ -30,6 +30,15 @@ vi.mock("@/lib/generator", () => ({
     suggestedWeight: 95,
     unit: "lb",
     isFamiliar: true,
+    progression: {
+      lastSummary: "95 lb x 10/8/8/6",
+      goal: "Match or beat 10/8/8/6 reps with solid form.",
+      nextStep: "Last time cleared the target. Add 2.5-5 lb if technique stays crisp.",
+      recentHistory: [
+        { date: "2026-05-04", summary: "95 lb x 10/8/8/6", status: "progressed" },
+        { date: "2026-05-01", summary: "95 lb x 10/8/7/6", status: "held" },
+      ],
+    },
   }),
   generateNextWorkout: () => ({
     split: {
@@ -38,6 +47,11 @@ vi.mock("@/lib/generator", () => ({
       summary: "Back and shoulder emphasis.",
       sessionIndex: 1,
       totalSessions: 4,
+      targetPrimarySets: {
+        back: 8,
+        shoulders: 5,
+        rear_delts: 4,
+      },
     },
     rationale: [
       "This is Upper A: Back and shoulder emphasis.",
@@ -60,6 +74,16 @@ vi.mock("@/lib/generator", () => ({
             suggestedWeight: 70,
             unit: "lb",
             isFamiliar: true,
+            progression: {
+              lastSummary: "70 lb x 10/8/7/6",
+              goal: "Work toward 10/8/8/6 reps before increasing load.",
+              nextStep: "Stay at 70 lb and add 1-2 total reps across the work sets.",
+              recentHistory: [
+                { date: "2026-05-05", summary: "70 lb x 10/8/7/6", status: "held" },
+                { date: "2026-05-03", summary: "70 lb x 10/8/8/6", status: "progressed" },
+                { date: "2026-04-30", summary: "70 lb x 9/8/7/6", status: "missed" },
+              ],
+            },
           },
         ],
       },
@@ -96,7 +120,7 @@ describe("NextPage interactions", () => {
     expect(screen.queryByText("Swap exercise")).not.toBeInTheDocument();
   });
 
-  it("shows the closest swap options first", async () => {
+  it("shows several closest role-matched swap options", async () => {
     const user = userEvent.setup();
     useTrainingProfileMock.mockReturnValue({
       ready: true,
@@ -116,15 +140,24 @@ describe("NextPage interactions", () => {
     const swapStart = optionButtons.findIndex((button) =>
       within(button).queryByText("DB bent-over row"),
     );
-    const verticalPullIndex = optionButtons.findIndex((button) =>
-      within(button).queryByText("Lat pulldown"),
+    const singleArmRowIndex = optionButtons.findIndex((button) =>
+      within(button).queryByText("DB single-arm row"),
+    );
+    const barbellRowIndex = optionButtons.findIndex((button) =>
+      within(button).queryByText("Barbell bent-over row"),
+    );
+    const tBarRowIndex = optionButtons.findIndex((button) =>
+      within(button).queryByText("T-bar row"),
     );
 
     expect(swapStart).toBeGreaterThanOrEqual(0);
-    expect(verticalPullIndex).toBeGreaterThanOrEqual(0);
-    expect(swapStart).toBeLessThan(verticalPullIndex);
+    expect(singleArmRowIndex).toBeGreaterThanOrEqual(0);
+    expect(barbellRowIndex).toBeGreaterThanOrEqual(0);
+    expect(tBarRowIndex).toBeGreaterThanOrEqual(0);
+    expect(screen.queryByText("Lat pulldown")).not.toBeInTheDocument();
+    expect(screen.queryByText("Straight-arm pulldown")).not.toBeInTheDocument();
     expect(
-      screen.getByText((content) => content.includes("closest matches shown first")),
+      screen.getByText((content) => content.includes("most directly comparable matches shown first")),
     ).toBeInTheDocument();
   });
 
@@ -184,5 +217,25 @@ describe("NextPage interactions", () => {
       screen.getByText((content) => content.includes("Hit only once: pull, push.")),
     ).toBeInTheDocument();
     expect(screen.getByText("Show less")).toBeInTheDocument();
+  });
+
+  it("renders progression coaching for each exercise", () => {
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "beginner",
+      },
+    });
+    useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
+
+    render(<NextPage />);
+    expect(screen.getByText(/Last:/)).toBeInTheDocument();
+    expect(screen.getByText("held · 70 lb x 10/8/7/6")).toBeInTheDocument();
+    expect(screen.getByText("progressed · 70 lb x 10/8/8/6")).toBeInTheDocument();
+    expect(screen.getByText(/Goal: Work toward 10\/8\/8\/6 reps/)).toBeInTheDocument();
+    expect(screen.getByText(/Next: Stay at 70 lb/)).toBeInTheDocument();
   });
 });
