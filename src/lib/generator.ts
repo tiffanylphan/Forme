@@ -1185,20 +1185,32 @@ export function generateNextWorkout(
     ? "12 / 12 / 10 / 10 — smooth tempo"
     : "10 / 8 / 8 / 6 — build weight";
   const secondaryTargets = isHomeProfile
-    ? (secondaryRounds === 2 ? [15, 12] : [15, 12, 12])
-    : (secondaryRounds === 2 ? [10, 8] : [10, 8, 8]);
+    ? secondaryRounds === 4
+      ? [15, 12, 12, 10]
+      : [15, 12, 12]
+    : secondaryRounds === 4
+      ? [10, 8, 8, 6]
+      : [10, 8, 8];
   const secondaryRepScheme = isHomeProfile
     ? "12–15 reps — lighter load, controlled pace"
     : "8–10 reps — controlled working sets";
   const firstAccessoryTargets = isHomeProfile
-    ? (accessoryRounds === 2 ? [18, 15] : [18, 15, 15])
-    : (accessoryRounds === 2 ? [12, 10] : [12, 10, 10]);
+    ? accessoryRounds === 4
+      ? [18, 15, 15, 12]
+      : [18, 15, 15]
+    : accessoryRounds === 4
+      ? [12, 10, 10, 8]
+      : [12, 10, 10];
   const firstAccessoryRepScheme = isHomeProfile
     ? "15–18 reps · short rest"
     : "10–12 reps · superset";
   const secondAccessoryTargets = isHomeProfile
-    ? (accessoryRounds === 2 ? [20, 18] : [20, 18, 18])
-    : (accessoryRounds === 2 ? [15, 12] : [15, 12, 12]);
+    ? accessoryRounds === 4
+      ? [20, 18, 18, 15]
+      : [20, 18, 18]
+    : accessoryRounds === 4
+      ? [15, 12, 12, 10]
+      : [15, 12, 12];
   const secondAccessoryRepScheme = isHomeProfile
     ? "18–20 reps · home conditioning pace"
     : "12–15 reps · short rest";
@@ -1450,7 +1462,7 @@ export function generateNextWorkout(
       accessoryMovements,
       accessoryRounds,
       "12–15 reps — finishing volume",
-      accessoryRounds === 2 ? [15, 12] : [15, 12, 12],
+      accessoryRounds === 4 ? [15, 12, 12, 10] : [15, 12, 12],
       (ex) =>
         environmentAllows(ex, activeProfile.equipment) &&
         goalAllows(ex, activeProfile.goal) &&
