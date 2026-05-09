@@ -1,6 +1,7 @@
 import type { ExerciseLog, SetEntry, Workout } from "./types";
 
 export type ProgressionStatus = NonNullable<ExerciseLog["progressionStatus"]>;
+export type StallState = "none" | "watch" | "stalled";
 export type ExerciseHistoryEntry = {
   date: string;
   summary: string;
@@ -142,3 +143,36 @@ export const getRecentProgressionStatuses = (
   getExerciseHistory(exerciseName, workouts, currentWorkoutId, limit).map(
     (entry) => entry.status,
   );
+
+export const getStallState = (
+  exerciseName: string,
+  workouts: Workout[],
+  currentWorkoutId?: string,
+): StallState => {
+  const statuses = getRecentProgressionStatuses(
+    exerciseName,
+    workouts,
+    currentWorkoutId,
+    3,
+  );
+
+  if (statuses.length === 0) return "none";
+
+  const latest = statuses[0];
+  const isFlatOrMissed = (status: ProgressionStatus): boolean =>
+    status === "held" || status === "missed";
+
+  if (
+    statuses.length >= 2 &&
+    isFlatOrMissed(statuses[0]) &&
+    isFlatOrMissed(statuses[1])
+  ) {
+    return "stalled";
+  }
+
+  if (latest === "held" || latest === "missed") {
+    return "watch";
+  }
+
+  return "none";
+};

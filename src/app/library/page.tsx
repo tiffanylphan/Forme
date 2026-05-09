@@ -33,7 +33,9 @@ export default function LibraryPage() {
   const muscleStats = useMemo(() => {
     const counts: Record<MuscleGroup, number> = {} as Record<MuscleGroup, number>;
     MUSCLE_GROUPS.forEach((m) => {
-      counts[m] = EXERCISES.filter((ex) => ex.primary.includes(m)).length;
+      counts[m] = EXERCISES.filter(
+        (ex) => ex.primary.includes(m) || ex.secondary.includes(m),
+      ).length;
     });
     return counts;
   }, []);

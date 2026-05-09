@@ -14,14 +14,17 @@ import {
   weekContaining,
 } from "@/lib/coverage";
 import { formatMuscle, todayISO } from "@/lib/format";
+import { getWeeklyTargetSets } from "@/lib/generator";
 import {
   MOVEMENT_BLURBS,
   MOVEMENT_COLORS,
   MOVEMENT_LABELS,
 } from "@/lib/movement";
+import { useTrainingProfile } from "@/lib/profile";
 import { useWorkouts } from "@/lib/storage";
 import { MOVEMENT_PATTERNS, MUSCLE_GROUPS } from "@/lib/types";
 import type { CoverageScore } from "@/lib/coverage";
+import type { MuscleGroup } from "@/lib/types";
 
 const SCORE_DOT: Record<CoverageScore, string> = {
   0: "#C4441F",
@@ -37,6 +40,7 @@ const SCORE_LABEL: Record<CoverageScore, string> = {
 
 export default function WeekPage() {
   const { workouts, ready } = useWorkouts();
+  const { profile } = useTrainingProfile();
   const today = todayISO();
 
   const coverage = useMemo(
@@ -47,6 +51,23 @@ export default function WeekPage() {
   const focus = useMemo(() => topFocus(coverage, 3), [coverage]);
   const movGaps = useMemo(() => movementGaps(coverage), [coverage]);
   const sessionsCount = coverage.workouts.length;
+  const weeklyTargets = useMemo(
+    () => (profile ? getWeeklyTargetSets(profile, coverage.workouts) : {}),
+    [profile, coverage.workouts],
+  );
+  const targetRows = useMemo(
+    () =>
+      Object.entries(weeklyTargets)
+        .filter((entry): entry is [MuscleGroup, number] => typeof entry[1] === "number" && entry[1] > 0)
+        .sort((a, b) => b[1] - a[1])
+        .map(([muscle, target]) => {
+          const done = coverage.muscleStats[muscle]?.asPrimarySets ?? 0;
+          const pct = Math.min(100, Math.round((done / target) * 100));
+          const remaining = Math.max(0, target - done);
+          return { muscle, target, done, pct, remaining };
+        }),
+    [coverage.muscleStats, weeklyTargets],
+  );
 
   return (
     <div className="mx-auto max-w-[480px] px-4 pb-32 pt-6">
@@ -172,6 +193,41 @@ export default function WeekPage() {
                     </span>
                   );
                 })}
+              </div>
+            </section>
+          )}
+
+          {targetRows.length > 0 && (
+            <section className="mb-6 rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-4">
+              <p className="label-eyebrow mb-2">Weekly muscle targets</p>
+              <p className="mb-3 text-[12px] text-text-subtle">
+                Keep stacking sets. Filling these bars is how this week turns into visible progress.
+              </p>
+              <div className="space-y-3">
+                {targetRows.map((row) => (
+                  <div key={row.muscle}>
+                    <div className="mb-1.5 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <MuscleTag muscle={row.muscle} size="md" />
+                        <span className="text-[12px] text-text-subtle">
+                          {row.remaining === 0
+                            ? "On target"
+                            : `${row.remaining} set${row.remaining !== 1 ? "s" : ""} left`}
+                        </span>
+                      </div>
+                      <span className="font-mono text-[13px] text-text">
+                        {row.done}/{row.target}
+                      </span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-[#ECE8DE]">
+                      <div
+                        className="h-full rounded-full bg-text"
+                        style={{ width: `${row.pct}%` }}
+                        aria-label={`${formatMuscle(row.muscle)} ${row.done} of ${row.target} sets`}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
             </section>
           )}

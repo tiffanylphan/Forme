@@ -221,11 +221,15 @@ export default function NextPage() {
   const { profile, ready: profileReady } = useTrainingProfile();
   const today = todayISO();
   const [seed, setSeed] = useState<number>(0);
+  const [preferredExercises, setPreferredExercises] = useState<string[]>([]);
   const router = useRouter();
 
   const baseDraft = useMemo(
-    () => generateNextWorkout(workouts, today, seed, profile),
-    [workouts, today, seed, profile],
+    () =>
+      generateNextWorkout(workouts, today, seed, profile, {
+        preferredExercises,
+      }),
+    [workouts, today, seed, profile, preferredExercises],
   );
 
   // Manual per-exercise swaps: { seed, map } — the seed acts as a generation
@@ -289,6 +293,12 @@ export default function NextPage() {
     // swapState.seed will differ from the new seed, so swaps auto-reset.
   };
 
+  const bringBackLift = (exerciseName: string) => {
+    setPreferredExercises((current) =>
+      current.includes(exerciseName) ? current : [...current, exerciseName],
+    );
+  };
+
   const accept = () => {
     stashDraft({ source: "manual", draft });
     router.push("/log");
@@ -316,67 +326,23 @@ export default function NextPage() {
       )}
 
       {ready && (
-        <>
-          <section className="mb-5 rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-4">
-            <div className="mb-1 flex items-center justify-between">
-              <p className="label-eyebrow">This week&apos;s slot</p>
-              <span className="text-[12px] text-text-subtle">
-                {draft.split.sessionIndex} / {draft.split.totalSessions}
-              </span>
-            </div>
-            <h2 className="text-[18px] font-semibold text-text">
-              {draft.split.title}
-            </h2>
-            <p className="mt-1 text-[13px] leading-relaxed text-text-subtle">
-              {draft.split.summary}
-            </p>
-          </section>
-
-          {profileReady && profile && (
-            <section className="mb-5 rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-4">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="label-eyebrow">Training profile</p>
-                <Link href="/onboarding" className="text-[12px] font-medium text-text-muted">
-                  Edit
-                </Link>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                <ProfileChip>{formatGoal(profile.goal)}</ProfileChip>
-                <ProfileChip>{profile.daysPerWeek} days/week</ProfileChip>
-                <ProfileChip>{formatEnvironment(profile.equipment)}</ProfileChip>
-                <ProfileChip>{formatExperience(profile.experience)}</ProfileChip>
-              </div>
-            </section>
-          )}
-
-          {profileReady && !profile && (
-            <section className="mb-5 rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="label-eyebrow mb-1">Setup</p>
-                  <p className="text-[14px] leading-relaxed text-text">
-                    Add your training profile so the planner can use your goal,
-                    frequency, equipment, and experience.
-                  </p>
-                </div>
-                <Link
-                  href="/onboarding"
-                  className="shrink-0 rounded-full border border-[#D3D1C7] px-3 py-1.5 text-[12px] font-medium text-text"
-                >
-                  Set up
-                </Link>
-              </div>
-            </section>
-          )}
-
-          <RationaleCard rationale={draft.rationale} />
-          <WeeklyTargetCard
-            targetPrimarySets={draft.split.targetPrimarySets}
+        <div className="space-y-5">
+          <PlanningCard
+            draft={draft}
             coverage={coverage}
+            profile={profile}
+            profileReady={profileReady}
           />
 
+          <RationaleCard
+            rationale={draft.rationale}
+            rotatedOffLifts={draft.rotatedOffLifts}
+            onBringBack={bringBackLift}
+          />
+          <BookendCard block={draft.mobility} eyebrow="Before you lift" />
+
           {/* Sections */}
-          <div className="space-y-3">
+          <div className="space-y-5">
             {draft.sections.map((sec, si) => (
               <SectionCard
                 key={si}
@@ -403,7 +369,11 @@ export default function NextPage() {
               </p>
             </div>
           )}
-        </>
+
+          {draft.sections.length > 0 && (
+            <BookendCard block={draft.cooldown} eyebrow="After you finish" />
+          )}
+        </div>
       )}
 
       {/* Bottom actions */}
@@ -449,7 +419,83 @@ function ProfileChip({ children }: { children: React.ReactNode }) {
   );
 }
 
-function RationaleCard({ rationale }: { rationale: string[] }) {
+function PlanningCard({
+  draft,
+  coverage,
+  profile,
+  profileReady,
+}: {
+  draft: WorkoutDraft;
+  coverage: ReturnType<typeof computeCoverage>;
+  profile: ReturnType<typeof useTrainingProfile>["profile"];
+  profileReady: boolean;
+}) {
+  return (
+    <section className="rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="label-eyebrow">This week&apos;s slot</p>
+          <h2 className="mt-1 text-[18px] font-semibold text-text">
+            {draft.split.title}
+          </h2>
+          <p className="mt-1 text-[13px] leading-relaxed text-text-subtle">
+            {draft.split.summary}
+          </p>
+        </div>
+        <span className="shrink-0 text-[12px] text-text-subtle">
+          {draft.split.sessionIndex} / {draft.split.totalSessions}
+        </span>
+      </div>
+
+      {profileReady && profile ? (
+        <div className="mt-3 border-t border-divider pt-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="label-eyebrow">Training profile</p>
+            <Link href="/onboarding" className="text-[12px] font-medium text-text-muted">
+              Edit
+            </Link>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <ProfileChip>{formatGoal(profile.goal)}</ProfileChip>
+            <ProfileChip>{profile.daysPerWeek} days/week</ProfileChip>
+            <ProfileChip>{formatEnvironment(profile.equipment)}</ProfileChip>
+            <ProfileChip>{formatExperience(profile.experience)}</ProfileChip>
+          </div>
+        </div>
+      ) : profileReady ? (
+        <div className="mt-3 flex items-start justify-between gap-3 border-t border-divider pt-3">
+          <p className="text-[13px] leading-relaxed text-text">
+            Add your training profile so the planner can use your goal, frequency, equipment, and experience.
+          </p>
+          <Link
+            href="/onboarding"
+            className="shrink-0 rounded-full border border-[#D3D1C7] px-3 py-1.5 text-[12px] font-medium text-text"
+          >
+            Set up
+          </Link>
+        </div>
+      ) : null}
+
+      <div className="mt-3 border-t border-divider pt-3">
+        <WeeklyTargetCard
+          targetPrimarySets={draft.split.targetPrimarySets}
+          coverage={coverage}
+          embedded
+        />
+      </div>
+    </section>
+  );
+}
+
+function RationaleCard({
+  rationale,
+  rotatedOffLifts,
+  onBringBack,
+}: {
+  rationale: string[];
+  rotatedOffLifts: string[];
+  onBringBack: (exerciseName: string) => void;
+}) {
   const ordered = useMemo(() => prioritizeRationale(rationale), [rationale]);
   const shouldCollapse =
     ordered.length > DEFAULT_RATIONALE_COUNT ||
@@ -460,7 +506,7 @@ function RationaleCard({ rationale }: { rationale: string[] }) {
     : ordered;
 
   return (
-    <section className="mb-5 rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-4">
+    <section className="rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-4">
       <div className="mb-2 flex items-center justify-between gap-3">
         <p className="label-eyebrow">Why this routine</p>
         {shouldCollapse && (
@@ -480,6 +526,20 @@ function RationaleCard({ rationale }: { rationale: string[] }) {
           </li>
         ))}
       </ul>
+      {rotatedOffLifts.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {rotatedOffLifts.map((exerciseName) => (
+            <button
+              key={exerciseName}
+              type="button"
+              onClick={() => onBringBack(exerciseName)}
+              className="rounded-full border border-[#D3D1C7] bg-white px-3 py-1 text-[12px] font-medium text-text"
+            >
+              Bring back {exerciseName}
+            </button>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -487,9 +547,11 @@ function RationaleCard({ rationale }: { rationale: string[] }) {
 function WeeklyTargetCard({
   targetPrimarySets,
   coverage,
+  embedded = false,
 }: {
   targetPrimarySets: Partial<Record<MuscleGroup, number>>;
   coverage: ReturnType<typeof computeCoverage>;
+  embedded?: boolean;
 }) {
   const rows = useMemo(
     () =>
@@ -512,32 +574,42 @@ function WeeklyTargetCard({
         }),
     [coverage, targetPrimarySets],
   );
+  const [expanded, setExpanded] = useState(false);
 
   if (rows.length === 0) return null;
 
+  const visibleRows = expanded ? rows : rows.slice(0, 3);
+
   return (
-    <section className="mb-5 rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-4">
+    <section className={embedded ? "" : "rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-3"}>
       <div className="mb-2 flex items-center justify-between gap-3">
         <div>
           <p className="label-eyebrow">Weekly target sets</p>
-          <p className="mt-1 text-[12px] text-text-subtle">
-            Primary sets for this slot&apos;s main muscles.
-          </p>
+          <p className="mt-0.5 text-[11px] text-text-subtle">Primary sets for this slot.</p>
         </div>
+        {rows.length > 3 && (
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            className="text-[11px] font-medium text-text-muted"
+          >
+            {expanded ? "Show less" : `Show ${rows.length - 3} more`}
+          </button>
+        )}
       </div>
-      <div className="space-y-3">
-        {rows.map((row) => (
+      <div className="space-y-2.5">
+        {visibleRows.map((row) => (
           <div key={row.muscle}>
-            <div className="mb-1.5 flex items-center justify-between gap-3">
+            <div className="mb-1 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <MuscleTag muscle={row.muscle} size="md" />
-                <span className="text-[12px] text-text-subtle capitalize">
+                <MuscleTag muscle={row.muscle} />
+                <span className="text-[11px] text-text-subtle capitalize">
                   {row.remaining === 0
                     ? "On target"
                     : `${row.remaining} set${row.remaining !== 1 ? "s" : ""} left`}
                 </span>
               </div>
-              <span className="font-mono text-[13px] text-text">
+              <span className="font-mono text-[12px] text-text">
                 {row.done}/{row.target}
               </span>
             </div>
@@ -551,6 +623,46 @@ function WeeklyTargetCard({
           </div>
         ))}
       </div>
+    </section>
+  );
+}
+
+function BookendCard({
+  block,
+  eyebrow,
+}: {
+  block: { title: string; items: string[] };
+  eyebrow: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (block.items.length === 0) return null;
+
+  const visibleItems = expanded ? block.items : block.items.slice(0, 2);
+
+  return (
+    <section className="rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="label-eyebrow">{eyebrow}</p>
+          <h3 className="mt-0.5 text-[15px] font-semibold text-text">{block.title}</h3>
+        </div>
+        {block.items.length > 2 && (
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            className="text-[11px] font-medium text-text-muted"
+          >
+            {expanded ? "Show less" : `Show ${block.items.length - 2} more`}
+          </button>
+        )}
+      </div>
+      <ul className="mt-2 space-y-1">
+        {visibleItems.map((item) => (
+          <li key={item} className="text-[13px] leading-snug text-text">
+            · {item}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

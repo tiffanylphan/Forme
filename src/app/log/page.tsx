@@ -85,6 +85,11 @@ type InitialState = {
 
 const LOG_DRAFT_KEY = "workout.log-draft.v1";
 
+const normalizeWorkoutSource = (source: WorkoutSource): WorkoutSource => {
+  void source;
+  return "manual";
+};
+
 type LogDraftSnapshot = {
   workoutId: string;
   date: string;
@@ -144,7 +149,7 @@ const resolveInitialState = (): InitialState => {
     return {
       workoutId: editWorkout.id,
       date: editWorkout.date,
-      source: editWorkout.source,
+      source: normalizeWorkoutSource(editWorkout.source),
       exercises: editWorkout.exercises,
       planSlot: editWorkout.planSlot,
       notes: editWorkout.notes ?? "",
@@ -158,7 +163,7 @@ const resolveInitialState = (): InitialState => {
   if (pending) {
     return {
       ...blank(),
-      source: pending.source,
+      source: normalizeWorkoutSource(pending.source),
       exercises: hydrateDraft(pending.draft),
       planSlot: {
         slotId: pending.draft.split.slotId,
@@ -172,7 +177,7 @@ const resolveInitialState = (): InitialState => {
     return {
       workoutId: savedDraft.workoutId,
       date: savedDraft.date,
-      source: savedDraft.source,
+      source: normalizeWorkoutSource(savedDraft.source),
       exercises: savedDraft.exercises,
       planSlot: savedDraft.planSlot,
       notes: savedDraft.notes,
@@ -242,11 +247,11 @@ export default function LogPage() {
   const [init] = useState(resolveInitialState);
   const [workoutId] = useState(init.workoutId);
   const [date, setDate] = useState(init.date);
-  const [source, setSource] = useState<WorkoutSource>(init.source);
   const [exercises, setExercises] = useState<ExerciseLog[]>(init.exercises);
   const [planSlot] = useState(init.planSlot);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [guideExerciseName, setGuideExerciseName] = useState<string | null>(null);
+  const [swapExerciseId, setSwapExerciseId] = useState<string | null>(null);
   const [notes, setNotes] = useState(init.notes);
   const isEditing = init.isEditing;
   const [defaultUnit, setDefaultUnit] = useState<WeightUnit>(() => {
@@ -260,14 +265,14 @@ export default function LogPage() {
     saveLogDraft({
       workoutId,
       date,
-      source,
+      source: "manual",
       exercises,
       planSlot,
       notes,
       isEditing,
       defaultUnit,
     });
-  }, [hydrated, workoutId, date, source, exercises, planSlot, notes, isEditing, defaultUnit]);
+  }, [hydrated, workoutId, date, exercises, planSlot, notes, isEditing, defaultUnit]);
 
   const blocks = useMemo(() => buildBlocks(exercises), [exercises]);
 
@@ -308,6 +313,20 @@ export default function LogPage() {
   const addExercise = (name: string) => {
     setSaveError(null);
     setExercises((prev) => [...prev, newExerciseLog(name)]);
+  };
+
+  const swapExercise = (exerciseId: string, exerciseName: string) => {
+    setSaveError(null);
+    setExercises((prev) =>
+      prev.map((exercise) =>
+        exercise.id !== exerciseId
+          ? exercise
+          : {
+              ...exercise,
+              exerciseName,
+            },
+      ),
+    );
   };
 
   const removeExercise = (id: string) => {
@@ -439,7 +458,7 @@ export default function LogPage() {
     const workout: Workout = {
       id: workoutId,
       date,
-      source,
+      source: "manual",
       exercises: exercises.map((exercise) => ({
         ...exercise,
         progressionStatus: evaluateProgressionStatus(
@@ -525,30 +544,6 @@ export default function LogPage() {
             }}
             className="rounded-[10px] border border-[#D3D1C7] bg-white px-3 py-1.5 text-[13px] text-text outline-none"
           />
-          <div className="flex rounded-full border border-[#D3D1C7] bg-white p-0.5">
-            <button
-              onClick={() => {
-                setSaveError(null);
-                setSource("manual");
-              }}
-              className={`rounded-full px-3 py-1 text-[12px] font-medium ${
-                source === "manual" ? "bg-text text-white" : "text-text-muted"
-              }`}
-            >
-              Structured
-            </button>
-            <button
-              onClick={() => {
-                setSaveError(null);
-                setSource("class");
-              }}
-              className={`rounded-full px-3 py-1 text-[12px] font-medium ${
-                source === "class" ? "bg-text text-white" : "text-text-muted"
-              }`}
-            >
-              Class
-            </button>
-          </div>
         </div>
 
         {muscleSummary.length > 0 && (
@@ -581,7 +576,7 @@ export default function LogPage() {
 
             return (
               <div key={block.key}>
-                {source === "manual" && blockIdx > 0 && (
+                {blockIdx > 0 && (
                   <div className="flex justify-center py-1">
                     <button
                       onClick={() => linkAcross(blockIdx - 1)}
@@ -596,9 +591,11 @@ export default function LogPage() {
                   <SupersetBlockView
                     block={block}
                     color={groupColor}
+                    isEditing={isEditing}
                     onMoveExercise={moveExercise}
                     onRemoveExercise={removeExercise}
                     onOpenGuide={(exerciseName) => setGuideExerciseName(exerciseName)}
+                    onSwapExercise={(exerciseId) => setSwapExerciseId(exerciseId)}
                     onBreakGroup={() =>
                       block.groupId && breakGroup(block.groupId)
                     }
@@ -615,10 +612,12 @@ export default function LogPage() {
                   <StandaloneBlockView
                     block={block}
                     totalExercises={exercises.length}
+                    isEditing={isEditing}
                     onMoveExercise={moveExercise}
                     onRemoveExercise={removeExercise}
                     onAddSet={addSet}
                     onOpenGuide={(exerciseName) => setGuideExerciseName(exerciseName)}
+                    onSwapExercise={(exerciseId) => setSwapExerciseId(exerciseId)}
                     onUpdateSet={updateSet}
                     onRemoveSet={removeSet}
                     onUnitChange={setDefaultUnit}
@@ -656,9 +655,19 @@ export default function LogPage() {
       </div>
 
       <ExercisePicker
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        onPick={addExercise}
+        open={pickerOpen || swapExerciseId !== null}
+        onClose={() => {
+          setPickerOpen(false);
+          setSwapExerciseId(null);
+        }}
+        onPick={(exerciseName) => {
+          if (swapExerciseId) {
+            swapExercise(swapExerciseId, exerciseName);
+            setSwapExerciseId(null);
+            return;
+          }
+          addExercise(exerciseName);
+        }}
         alreadyAddedCounts={addedCounts}
       />
 
@@ -675,20 +684,24 @@ export default function LogPage() {
 function StandaloneBlockView({
   block,
   totalExercises,
+  isEditing,
   onMoveExercise,
   onRemoveExercise,
   onAddSet,
   onOpenGuide,
+  onSwapExercise,
   onUpdateSet,
   onRemoveSet,
   onUnitChange,
 }: {
   block: Block;
   totalExercises: number;
+  isEditing: boolean;
   onMoveExercise: (id: string, dir: -1 | 1) => void;
   onRemoveExercise: (id: string) => void;
   onAddSet: (id: string) => void;
   onOpenGuide: (exerciseName: string) => void;
+  onSwapExercise: (exerciseId: string) => void;
   onUpdateSet: (exId: string, setId: string, patch: Partial<SetEntry>) => void;
   onRemoveSet: (exId: string, setId: string) => void;
   onUnitChange: (u: WeightUnit) => void;
@@ -717,6 +730,14 @@ function StandaloneBlockView({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {isEditing && (
+            <button
+              onClick={() => onSwapExercise(ex.id)}
+              className="rounded-full border border-[#E6E3D8] px-2.5 py-0.5 text-[10px] font-medium text-text-muted"
+            >
+              Swap
+            </button>
+          )}
           <button
             onClick={() => onOpenGuide(ex.exerciseName)}
             className="rounded-full border border-[#E6E3D8] px-2.5 py-0.5 text-[10px] font-medium text-text-muted"
@@ -828,9 +849,11 @@ function StandaloneBlockView({
 function SupersetBlockView({
   block,
   color,
+  isEditing,
   onMoveExercise,
   onRemoveExercise,
   onOpenGuide,
+  onSwapExercise,
   onBreakGroup,
   onAddRound,
   onRemoveRound,
@@ -839,9 +862,11 @@ function SupersetBlockView({
 }: {
   block: Block;
   color: ColorPair;
+  isEditing: boolean;
   onMoveExercise: (id: string, dir: -1 | 1) => void;
   onRemoveExercise: (id: string) => void;
   onOpenGuide: (exerciseName: string) => void;
+  onSwapExercise: (exerciseId: string) => void;
   onBreakGroup: () => void;
   onAddRound: () => void;
   onRemoveRound: (i: number) => void;
@@ -898,6 +923,14 @@ function SupersetBlockView({
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-1">
+                {isEditing && (
+                  <button
+                    onClick={() => onSwapExercise(ex.id)}
+                    className="rounded-full border border-[#E6E3D8] px-2.5 py-0.5 text-[10px] font-medium text-text-muted"
+                  >
+                    Swap
+                  </button>
+                )}
                 <button
                   onClick={() => onOpenGuide(ex.exerciseName)}
                   className="rounded-full border border-[#E6E3D8] px-2.5 py-0.5 text-[10px] font-medium text-text-muted"

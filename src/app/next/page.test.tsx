@@ -40,6 +40,8 @@ describe("NextPage", () => {
     expect(screen.getByText("Training profile")).toBeInTheDocument();
     expect(screen.getByText("Physique")).toBeInTheDocument();
     expect(screen.getByText("Why this routine")).toBeInTheDocument();
+    expect(screen.getByText("Before you lift")).toBeInTheDocument();
+    expect(screen.getByText("After you finish")).toBeInTheDocument();
     expect(screen.getByText("Weekly target sets")).toBeInTheDocument();
   });
 

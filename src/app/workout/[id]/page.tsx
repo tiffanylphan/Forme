@@ -153,7 +153,6 @@ export default function WorkoutDetailPage() {
           {formatDate(workout.date)}
         </h1>
         <p className="mt-1 text-[13px] text-text-subtle">
-          {workout.source === "class" ? "Class" : "Structured"} ·{" "}
           {workout.exercises.length} exercise
           {workout.exercises.length !== 1 ? "s" : ""} · {totalSets} sets
         </p>

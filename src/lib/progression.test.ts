@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateProgressionStatus } from "./progression";
+import { evaluateProgressionStatus, getStallState } from "./progression";
 import type { Workout } from "./types";
 
 const workout = (
@@ -86,5 +86,42 @@ describe("evaluateProgressionStatus", () => {
       ],
     );
     expect(status).toBe("missed");
+  });
+
+  it("marks two flat or missed results in a row as stalled", () => {
+    const workouts: Workout[] = [
+      {
+        ...workout("w1", "2026-05-05", "Cable row", [
+          { reps: 12, weight: 70 },
+          { reps: 10, weight: 70 },
+        ]),
+        exercises: [
+          {
+            ...workout("w1", "2026-05-05", "Cable row", [
+              { reps: 12, weight: 70 },
+              { reps: 10, weight: 70 },
+            ]).exercises[0],
+            progressionStatus: "held",
+          },
+        ],
+      },
+      {
+        ...workout("w2", "2026-05-07", "Cable row", [
+          { reps: 10, weight: 70 },
+          { reps: 8, weight: 70 },
+        ]),
+        exercises: [
+          {
+            ...workout("w2", "2026-05-07", "Cable row", [
+              { reps: 10, weight: 70 },
+              { reps: 8, weight: 70 },
+            ]).exercises[0],
+            progressionStatus: "missed",
+          },
+        ],
+      },
+    ];
+
+    expect(getStallState("Cable row", workouts)).toBe("stalled");
   });
 });

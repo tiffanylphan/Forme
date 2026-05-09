@@ -40,6 +40,11 @@ const musclesForWorkout = (w: Workout): MuscleGroup[] => {
 const setCount = (w: Workout): number =>
   w.exercises.reduce((acc, e) => acc + e.sets.length, 0);
 
+const csvEscape = (value: string | number | null | undefined): string => {
+  const raw = value == null ? "" : String(value);
+  return `"${raw.replace(/"/g, '""')}"`;
+};
+
 export default function Home() {
   const { workouts, ready } = useWorkouts();
   const { profile, ready: profileReady } = useTrainingProfile();
@@ -53,6 +58,56 @@ export default function Home() {
     () => [...workouts].sort((a, b) => (a.date < b.date ? 1 : -1)),
     [workouts],
   );
+
+  const exportHistory = () => {
+    const rows = [
+      [
+        "workout_id",
+        "date",
+        "source",
+        "plan_slot",
+        "exercise",
+        "set_number",
+        "reps",
+        "weight",
+        "unit",
+        "duration_sec",
+        "distance_m",
+        "progression_status",
+        "workout_notes",
+      ],
+      ...sortedWorkouts.flatMap((workout) =>
+        workout.exercises.flatMap((exercise) =>
+          exercise.sets.map((set, index) => [
+            workout.id,
+            workout.date,
+            workout.source,
+            workout.planSlot?.title ?? "",
+            exercise.exerciseName,
+            index + 1,
+            set.reps ?? "",
+            set.weight ?? "",
+            set.unit,
+            set.durationSec ?? "",
+            set.distanceM ?? "",
+            exercise.progressionStatus ?? "",
+            workout.notes ?? "",
+          ]),
+        ),
+      ),
+    ];
+
+    const csv = rows
+      .map((row) => row.map((cell) => csvEscape(cell)).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `forme-workout-history-${today}.csv`;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  };
 
   const hasWeekData = coverage.workouts.length > 0;
 
@@ -178,11 +233,22 @@ export default function Home() {
       <section>
         <div className="mb-3 flex items-baseline justify-between">
           <p className="label-eyebrow">Recent workouts</p>
-          {ready && workouts.length > 0 && (
-            <span className="text-[12px] text-text-subtle">
-              {workouts.length} total
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {ready && workouts.length > 0 && (
+              <>
+                <span className="text-[12px] text-text-subtle">
+                  {workouts.length} total
+                </span>
+                <button
+                  type="button"
+                  onClick={exportHistory}
+                  className="rounded-full border border-[#D3D1C7] bg-white px-3 py-1 text-[11px] font-medium text-text-muted"
+                >
+                  Export CSV
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {!ready && (
@@ -223,7 +289,6 @@ export default function Home() {
                     </h3>
                     <span className="text-[12px] text-text-subtle">
                       {w.exercises.length} ex · {setCount(w)} sets
-                      {w.source === "class" ? " · class" : ""}
                     </span>
                   </div>
                   {muscles.length > 0 && (

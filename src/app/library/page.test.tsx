@@ -23,4 +23,14 @@ describe("LibraryPage", () => {
     await user.type(screen.getByPlaceholderText("Search exercises..."), "zzzz");
     expect(screen.getByText("No exercises match your filters")).toBeInTheDocument();
   });
+
+  it("shows muscle counts that match the clicked filter results", async () => {
+    const user = userEvent.setup();
+    render(<LibraryPage />);
+
+    await user.click(screen.getByRole("button", { name: /hamstrings/i }));
+
+    expect(screen.getByText("26 results")).toBeInTheDocument();
+    expect(screen.getByText(/26 exercises/i)).toBeInTheDocument();
+  });
 });

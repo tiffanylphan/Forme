@@ -6,7 +6,11 @@ import {
   recentMusclesWithin,
   weekContaining,
 } from "./coverage";
-import { getExerciseHistory, getRecentProgressionStatuses } from "./progression";
+import {
+  getExerciseHistory,
+  getRecentProgressionStatuses,
+  getStallState,
+} from "./progression";
 import type { ExerciseHistoryEntry } from "./progression";
 import type {
   Exercise,
@@ -56,7 +60,20 @@ export type WorkoutDraft = {
     targetPrimarySets: Partial<Record<MuscleGroup, number>>;
   };
   rationale: string[];
+  rotatedOffLifts: string[];
+  mobility: {
+    title: string;
+    items: string[];
+  };
+  cooldown: {
+    title: string;
+    items: string[];
+  };
   sections: DraftSection[];
+};
+
+type GeneratorOverrides = {
+  preferredExercises?: string[];
 };
 
 type SplitSlot = {
@@ -316,12 +333,47 @@ const environmentAllows = (
 ): boolean => {
   if (environment === "full_gym") return true;
   if (environment === "dumbbells") {
-    return ["dumbbell", "bodyweight", "band", "kettlebell"].includes(
-      ex.equipment,
-    );
+    if (
+      [
+        "Nordic hamstring curl",
+        "Pull-up",
+        "Chin-up",
+        "Band-assisted pull-up",
+        "Dip",
+        "Inverted row",
+        "Hanging knee raise",
+        "Hanging leg raise",
+        "Hyperextension",
+      ].includes(ex.name)
+    ) {
+      return false;
+    }
+    if (["dumbbell", "kettlebell", "bodyweight", "band"].includes(ex.equipment)) {
+      return true;
+    }
+    if (ex.equipment === "cable") return true;
+    if (ex.equipment === "machine" && ex.name === "Leg press") return true;
+    return false;
   }
   return ["dumbbell", "bodyweight", "band"].includes(ex.equipment);
 };
+
+const capSuggestedWeight = (
+  weight: number | null,
+  exercise: Exercise,
+  environment: TrainingEnvironment,
+): number | null => {
+  if (weight == null) return null;
+  if (environment !== "home") return weight;
+  if (exercise.equipment !== "dumbbell") return weight;
+  return Math.min(weight, 15);
+};
+
+const isHomeConditioningFriendly = (ex: Exercise): boolean =>
+  ex.pattern === "conditioning" ||
+  ex.pattern === "core" ||
+  ex.equipment === "bodyweight" ||
+  ex.equipment === "band";
 
 const formatMovement = (m: MovementPattern): string =>
   m === "carry_core"
@@ -395,6 +447,64 @@ const familyOf = (ex: Exercise): string => {
   if (name.includes("carry")) return "carry";
   if (ex.pattern === "core") return "core";
   return `${ex.pattern}_${ex.equipment}`;
+};
+
+const WARMUP_BY_MUSCLE: Partial<Record<MuscleGroup, string[]>> = {
+  glutes: ["Banded glute bridge x 15", "Banded lateral walk x 10/side"],
+  hamstrings: ["Bodyweight RDL reach x 8/side", "Hamstring sweep x 8/side"],
+  quads: ["Split squat iso hold x 20s/side", "Bodyweight squat x 10"],
+  back: ["Band row x 15", "Cat-cow x 6"],
+  shoulders: ["Band shoulder external rotation x 12/side", "Arm circles x 20s each way"],
+  rear_delts: ["Band pull-apart x 15", "Face-pull pattern x 10"],
+  chest: ["Scap push-up x 8", "Chest opener reach x 6/side"],
+  biceps: ["Band curl x 15", "Wrist and elbow prep x 20s"],
+  triceps: ["Overhead reach x 20s/side", "Band pressdown x 15"],
+  core: ["Dead bug x 6/side", "Bear plank hold x 20s"],
+  hip_flexors: ["Half-kneeling hip flexor pulse x 8/side", "Marching bridge x 8/side"],
+};
+
+const COOLDOWN_BY_MUSCLE: Partial<Record<MuscleGroup, string[]>> = {
+  glutes: ["Figure-4 stretch x 30s/side", "Pigeon or seated glute stretch x 30s/side"],
+  hamstrings: ["Supine hamstring stretch x 30s/side", "Toe-elevated hinge stretch x 30s"],
+  quads: ["Standing quad stretch x 30s/side", "Couch stretch x 30s/side"],
+  back: ["Child's pose reach x 30s", "Lat stretch on bench x 30s"],
+  shoulders: ["Cross-body shoulder stretch x 30s/side", "Wall pec/shoulder opener x 30s/side"],
+  rear_delts: ["Cross-body rear delt stretch x 30s/side", "Thread-the-needle x 30s/side"],
+  chest: ["Doorway pec stretch x 30s/side", "Open-book rotation x 5/side"],
+  biceps: ["Wall biceps stretch x 20s/side", "Forearm extension stretch x 20s/side"],
+  triceps: ["Overhead triceps stretch x 30s/side", "Child's pose side reach x 20s/side"],
+  core: ["Crocodile breathing x 5 breaths", "Supine twist x 30s/side"],
+  hip_flexors: ["Half-kneeling hip flexor stretch x 30s/side", "90/90 breathing x 4 breaths"],
+};
+
+const buildSessionBookend = (
+  title: string,
+  source: Partial<Record<MuscleGroup, string[]>>,
+  focusMuscles: MuscleGroup[],
+  fallback: string[],
+): { title: string; items: string[] } => {
+  const seen = new Set<string>();
+  const items: string[] = [];
+
+  for (const muscle of focusMuscles) {
+    for (const item of source[muscle] ?? []) {
+      if (seen.has(item)) continue;
+      seen.add(item);
+      items.push(item);
+      if (items.length >= 4) {
+        return { title, items };
+      }
+    }
+  }
+
+  for (const item of fallback) {
+    if (seen.has(item)) continue;
+    seen.add(item);
+    items.push(item);
+    if (items.length >= 4) break;
+  }
+
+  return { title, items };
 };
 
 const getIncompleteSplitSlotIndices = (
@@ -771,6 +881,24 @@ const getSplitTemplate = (
   ];
 };
 
+export function getWeeklyTargetSets(
+  profile: TrainingProfile,
+  workouts: Workout[],
+): Partial<Record<MuscleGroup, number>> {
+  const split = resolveSplitVariants(getSplitTemplate(profile), profile, workouts);
+  const totals: Partial<Record<MuscleGroup, number>> = {};
+
+  split.forEach((slot) => {
+    Object.entries(slot.targetPrimarySets).forEach(([muscle, sets]) => {
+      if (typeof sets !== "number" || sets <= 0) return;
+      const key = muscle as MuscleGroup;
+      totals[key] = (totals[key] ?? 0) + sets;
+    });
+  });
+
+  return totals;
+}
+
 // Public helper — lets the UI build a DraftExercise from a library exercise
 // without re-running the full generator (used by the per-exercise swap feature).
 export function buildDraftExercise(
@@ -778,6 +906,7 @@ export function buildDraftExercise(
   targets: (number | string)[],
   workouts: Workout[],
   knownNames: Set<string>,
+  environment: TrainingEnvironment = "full_gym",
 ): DraftExercise {
   const last = lastWorkingWeight(ex.name, workouts);
   return {
@@ -787,7 +916,7 @@ export function buildDraftExercise(
     pattern: ex.pattern,
     movement: movementOf(ex),
     targets,
-    suggestedWeight: last?.weight ?? null,
+    suggestedWeight: capSuggestedWeight(last?.weight ?? null, ex, environment),
     unit: last?.unit ?? "lb",
     isFamiliar: knownNames.has(ex.name),
     progression: buildProgression(ex, targets, workouts),
@@ -799,6 +928,7 @@ export function generateNextWorkout(
   todayISO: string,
   seed: number = Date.now(),
   profile?: TrainingProfile | null,
+  overrides?: GeneratorOverrides,
 ): WorkoutDraft {
   const activeProfile: TrainingProfile = profile ?? {
     goal: "physique",
@@ -806,6 +936,7 @@ export function generateNextWorkout(
     equipment: "full_gym",
     experience: "beginner",
   };
+  const preferredExerciseNames = new Set(overrides?.preferredExercises ?? []);
   const window = weekContaining(todayISO);
   const coverage = computeCoverage(workouts, window);
   const recent = recentMusclesWithin(workouts, todayISO, 48);
@@ -849,6 +980,22 @@ export function generateNextWorkout(
   const known = new Set<string>();
   workouts.forEach((w) =>
     w.exercises.forEach((e) => known.add(e.exerciseName)),
+  );
+
+  const stalledExerciseNames = new Set(
+    EXERCISES.filter((exercise) => getStallState(exercise.name, workouts) === "stalled").map(
+      (exercise) => exercise.name,
+    ),
+  );
+  const watchedExerciseNames = new Set(
+    EXERCISES.filter((exercise) => getStallState(exercise.name, workouts) === "watch").map(
+      (exercise) => exercise.name,
+    ),
+  );
+  const stalledFamilies = new Set(
+    EXERCISES.filter((exercise) => stalledExerciseNames.has(exercise.name)).map((exercise) =>
+      familyOf(exercise),
+    ),
   );
 
   const used = new Set<string>();
@@ -906,9 +1053,25 @@ export function generateNextWorkout(
       if (ex.equipment === "barbell") s += 0.8;
       if (ex.equipment === "machine" || ex.equipment === "cable") s += 0.5;
     }
+    if (activeProfile.equipment === "dumbbells") {
+      if (ex.equipment === "dumbbell") s += 0.8;
+      if (ex.equipment === "kettlebell") s += 0.4;
+    }
+    if (activeProfile.equipment === "home") {
+      if (isHomeConditioningFriendly(ex)) s += 1.1;
+      if (ex.equipment === "dumbbell") s += 0.3;
+      if (ex.pattern === "hinge" && ex.equipment === "dumbbell") s -= 0.4;
+    }
     if (activeProfile.experience === "beginner") {
       if (isTechnicalBarbell(ex)) s -= 1.2;
       if (!known.has(ex.name)) s -= 0.8;
+    }
+
+    if (preferredExerciseNames.has(ex.name)) s += 9;
+    else if (stalledExerciseNames.has(ex.name)) s -= 7;
+    else if (watchedExerciseNames.has(ex.name)) s -= 2.5;
+    if (stalledFamilies.has(familyOf(ex)) && !stalledExerciseNames.has(ex.name)) {
+      s += 1.6;
     }
 
     if (known.has(ex.name)) s += 1;
@@ -947,6 +1110,30 @@ export function generateNextWorkout(
     return best && bestScore > -10 ? best : null;
   };
 
+  const pickBestFinisher = (filter: (ex: Exercise) => boolean): Exercise | null => {
+    let best: Exercise | null = null;
+    let bestScore = -Infinity;
+    for (const ex of EXERCISES) {
+      if (used.has(ex.name)) continue;
+      if (!filter(ex)) continue;
+      let s = 0;
+      if (movementOf(ex) === "carry_core") s += 4;
+      if (ex.pattern === "conditioning") s += 5;
+      if (activeProfile.daysPerWeek === 3 && ex.pattern === "conditioning") s += 4;
+      if (activeProfile.equipment === "home" && isHomeConditioningFriendly(ex)) s += 2;
+      ex.primary.forEach((m) => {
+        if (recent.has(m)) s -= 1;
+      });
+      if (known.has(ex.name)) s += 0.4;
+      s += rng() * 0.5;
+      if (s > bestScore) {
+        best = ex;
+        bestScore = s;
+      }
+    }
+    return best;
+  };
+
   const claim = (ex: Exercise) => {
     used.add(ex.name);
     const m = movementOf(ex);
@@ -965,7 +1152,7 @@ export function generateNextWorkout(
       pattern: ex.pattern,
       movement: movementOf(ex),
       targets,
-      suggestedWeight: last?.weight ?? null,
+      suggestedWeight: capSuggestedWeight(last?.weight ?? null, ex, activeProfile.equipment),
       unit: last?.unit ?? "lb",
       isFamiliar: known.has(ex.name),
       progression: buildProgression(ex, targets, workouts),
@@ -974,9 +1161,10 @@ export function generateNextWorkout(
 
   const sections: DraftSection[] = [];
   const movementsHit: MovementPattern[] = [];
-  const secondaryRounds = activeProfile.daysPerWeek === 5 ? 2 : 3;
-  const accessoryRounds = activeProfile.daysPerWeek === 5 ? 2 : 3;
-  const finisherRounds = activeProfile.daysPerWeek === 3 ? 2 : 1;
+  const isHomeProfile = activeProfile.equipment === "home";
+  const secondaryRounds = activeProfile.daysPerWeek === 5 ? 3 : 4;
+  const accessoryRounds = activeProfile.daysPerWeek === 5 ? 3 : 4;
+  const finisherRounds = activeProfile.daysPerWeek === 3 ? 3 : isHomeProfile ? 2 : 1;
   const compoundMovements = COMPOUND_MOVEMENTS.filter((movement) =>
     slot.allowedMovements.includes(movement),
   );
@@ -992,6 +1180,28 @@ export function generateNextWorkout(
     slot.preferredMovements.includes("push");
   const armBiasSlot =
     slot.focusMuscles.includes("biceps") || slot.focusMuscles.includes("triceps");
+  const compoundTargets = isHomeProfile ? [12, 12, 10, 10] : [10, 8, 8, 6];
+  const compoundRepScheme = isHomeProfile
+    ? "12 / 12 / 10 / 10 — smooth tempo"
+    : "10 / 8 / 8 / 6 — build weight";
+  const secondaryTargets = isHomeProfile
+    ? (secondaryRounds === 2 ? [15, 12] : [15, 12, 12])
+    : (secondaryRounds === 2 ? [10, 8] : [10, 8, 8]);
+  const secondaryRepScheme = isHomeProfile
+    ? "12–15 reps — lighter load, controlled pace"
+    : "8–10 reps — controlled working sets";
+  const firstAccessoryTargets = isHomeProfile
+    ? (accessoryRounds === 2 ? [18, 15] : [18, 15, 15])
+    : (accessoryRounds === 2 ? [12, 10] : [12, 10, 10]);
+  const firstAccessoryRepScheme = isHomeProfile
+    ? "15–18 reps · short rest"
+    : "10–12 reps · superset";
+  const secondAccessoryTargets = isHomeProfile
+    ? (accessoryRounds === 2 ? [20, 18] : [20, 18, 18])
+    : (accessoryRounds === 2 ? [15, 12] : [15, 12, 12]);
+  const secondAccessoryRepScheme = isHomeProfile
+    ? "18–20 reps · home conditioning pace"
+    : "12–15 reps · short rest";
 
   // Pre-generate per-movement noise so sort comparators are pure functions.
   // JavaScript sort calls comparators a variable number of times, so calling
@@ -1092,8 +1302,8 @@ export function generateNextWorkout(
     sections.push({
       kind: "compound",
       rounds: 4,
-      repScheme: "10 / 8 / 8 / 6 — build weight",
-      exercises: [makeDraftEx(compoundPick.exercise, [10, 8, 8, 6])],
+      repScheme: compoundRepScheme,
+      exercises: [makeDraftEx(compoundPick.exercise, compoundTargets)],
     });
   }
 
@@ -1134,12 +1344,9 @@ export function generateNextWorkout(
     sections.push({
       kind: "accessory",
       rounds: secondaryRounds,
-      repScheme: "8–10 reps — controlled working sets",
+      repScheme: secondaryRepScheme,
       exercises: [
-        makeDraftEx(
-          secondaryPick.exercise,
-          secondaryRounds === 2 ? [10, 8] : [10, 8, 8],
-        ),
+        makeDraftEx(secondaryPick.exercise, secondaryTargets),
       ],
     });
   }
@@ -1148,8 +1355,8 @@ export function generateNextWorkout(
   addSuperset(
     accessoryMovements,
     accessoryRounds,
-    "10–12 reps · superset",
-    accessoryRounds === 2 ? [12, 10] : [12, 10, 10],
+    firstAccessoryRepScheme,
+    firstAccessoryTargets,
     (ex) =>
       environmentAllows(ex, activeProfile.equipment) &&
       goalAllows(ex, activeProfile.goal) &&
@@ -1166,8 +1373,8 @@ export function generateNextWorkout(
   addSuperset(
     accessoryMovements,
     accessoryRounds,
-    "12–15 reps · short rest",
-    accessoryRounds === 2 ? [15, 12] : [15, 12, 12],
+    secondAccessoryRepScheme,
+    secondAccessoryTargets,
     (ex) =>
       environmentAllows(ex, activeProfile.equipment) &&
       goalAllows(ex, activeProfile.goal) &&
@@ -1181,21 +1388,17 @@ export function generateNextWorkout(
               (armBiasSlot && isDirectArmFocus(ex)))))),
   );
 
-  // 5. Finisher — for 3-day physique plans, allow short conditioning on lower
-  // days. Otherwise keep it carry/core.
-  const lowerDay =
-    slot.preferredMovements.includes("hinge") ||
-    slot.preferredMovements.includes("squat") ||
-    slot.preferredMovements.includes("single_leg");
+  // 5. Finisher — 3-day plans bias harder toward conditioning so the session
+  // still has a noticeable end-of-workout push.
   const allowConditioningFinisher =
-    activeProfile.goal === "physique" &&
-    activeProfile.daysPerWeek === 3 &&
-    lowerDay;
-  const fin = pickBest((ex) => {
+    activeProfile.daysPerWeek === 3 ||
+    isHomeProfile;
+  const fin = pickBestFinisher((ex) => {
     if (!environmentAllows(ex, activeProfile.equipment)) return false;
-    if (movementOf(ex) === "carry_core") return true;
-    if (!allowConditioningFinisher) return false;
-    return ex.pattern === "conditioning";
+    if (allowConditioningFinisher) {
+      return movementOf(ex) === "carry_core" || ex.pattern === "conditioning";
+    }
+    return movementOf(ex) === "carry_core";
   });
   if (fin) {
     claim(fin);
@@ -1208,16 +1411,25 @@ export function generateNextWorkout(
       repScheme: isCarry
         ? "40–60 sec walk"
         : isConditioning
-          ? "45 sec hard / 45 sec easy"
-          : "12–15 reps",
+          ? (activeProfile.daysPerWeek === 3
+              ? "45 sec hard / 30 sec easy"
+              : isHomeProfile
+                ? "40 sec on / 20 sec off"
+                : "45 sec hard / 45 sec easy")
+          : (isHomeProfile ? "15–20 reps" : "12–15 reps"),
       exercises: [
         makeDraftEx(
           fin,
           isCarry || isConditioning
-            ? Array.from({ length: finisherRounds }, () => "45s")
+            ? Array.from(
+                { length: finisherRounds },
+                () => (activeProfile.daysPerWeek === 3 ? "45s" : "40s"),
+              )
             : finisherRounds === 2
-              ? [15, 12]
-              : [15],
+              ? (isHomeProfile ? [20, 15] : [15, 12])
+              : finisherRounds === 3
+                ? [15, 15, 12]
+                : [15],
         ),
       ],
     });
@@ -1263,6 +1475,25 @@ export function generateNextWorkout(
 
   // ---- Rationale ----
   const rationale: string[] = [];
+  const selectedExerciseNames = new Set(
+    sections.flatMap((section) => section.exercises.map((exercise) => exercise.name)),
+  );
+  const rotatedOffLiftNames = [...stalledExerciseNames]
+    .map((name) => EXERCISES.find((exercise) => exercise.name === name))
+    .filter((exercise): exercise is Exercise => Boolean(exercise))
+    .filter(
+      (exercise) =>
+        !selectedExerciseNames.has(exercise.name) &&
+        slot.allowedMovements.includes(movementOf(exercise) ?? "carry_core") &&
+        hasAnyMuscle(exercise, slot.focusMuscles),
+    )
+    .map((exercise) => exercise.name);
+
+  if (rotatedOffLiftNames.length > 0) {
+    rationale.push(
+      `Rotated off stalled lift${rotatedOffLiftNames.length > 1 ? "s" : ""}: ${rotatedOffLiftNames.join(", ")}.`,
+    );
+  }
   const zeroDay = MOVEMENT_PATTERNS.filter(
     (mp) => (coverage.movementStats[mp]?.daysHit.length ?? 0) === 0,
   );
@@ -1334,6 +1565,19 @@ export function generateNextWorkout(
     rationale.push("All movement patterns are well covered — balanced session.");
   }
 
+  const mobility = buildSessionBookend(
+    "5-minute warm-up",
+    WARMUP_BY_MUSCLE,
+    slot.focusMuscles,
+    ["Brisk walk or bike x 2 min", "Deep squat pry or hip opener x 30s"],
+  );
+  const cooldown = buildSessionBookend(
+    "Cooldown and stretch",
+    COOLDOWN_BY_MUSCLE,
+    slot.focusMuscles,
+    ["Easy breathing x 1 min", "Light walk x 2 min"],
+  );
+
   return {
     split: {
       slotId: slot.id,
@@ -1345,6 +1589,9 @@ export function generateNextWorkout(
     },
     sections,
     rationale,
+    rotatedOffLifts: rotatedOffLiftNames,
+    mobility,
+    cooldown,
   };
 }
 
@@ -1353,7 +1600,7 @@ export function generateNextWorkout(
 const PENDING_KEY = "workout.pending-draft.v1";
 
 export type PendingDraft = {
-  source: "manual" | "class";
+  source: "manual";
   draft: WorkoutDraft;
 };
 

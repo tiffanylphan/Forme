@@ -3,13 +3,31 @@ import { describe, expect, it, vi } from "vitest";
 import WeekPage from "./page";
 
 const useWorkoutsMock = vi.fn();
+const useTrainingProfileMock = vi.fn();
 
 vi.mock("@/lib/storage", () => ({
   useWorkouts: () => useWorkoutsMock(),
 }));
 
+vi.mock("@/lib/profile", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/profile")>("@/lib/profile");
+  return {
+    ...actual,
+    useTrainingProfile: () => useTrainingProfileMock(),
+  };
+});
+
 describe("WeekPage", () => {
   it("renders coverage information for logged workouts", () => {
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "beginner",
+      },
+    });
     useWorkoutsMock.mockReturnValue({
       ready: true,
       workouts: [
@@ -37,10 +55,20 @@ describe("WeekPage", () => {
     render(<WeekPage />);
     expect(screen.getByText("Movement coverage")).toBeInTheDocument();
     expect(screen.getByText("Patterns to fill")).toBeInTheDocument();
+    expect(screen.getByText("Weekly muscle targets")).toBeInTheDocument();
     expect(screen.getByText("Top muscle focus")).toBeInTheDocument();
   });
 
   it("renders empty state when no workouts are logged", () => {
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "beginner",
+      },
+    });
     useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
 
     render(<WeekPage />);

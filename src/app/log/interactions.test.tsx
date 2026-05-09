@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import LogPage from "./page";
@@ -14,6 +14,7 @@ vi.mock("@/lib/generator", () => ({
 
 vi.mock("@/lib/storage", () => ({
   getWorkout: (id: string) => getWorkoutMock(id),
+  loadWorkouts: () => [],
   popEditWorkout: () => popEditWorkoutMock(),
   upsertWorkout: (workout: unknown) => upsertWorkoutMock(workout),
 }));
@@ -61,5 +62,35 @@ describe("LogPage interactions", () => {
         "Save failed. Your workout is still kept in this browser so you can try again.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("allows swapping an exercise while editing", async () => {
+    const user = userEvent.setup();
+    popEditWorkoutMock.mockReturnValue({
+      id: "workout-1",
+      date: "2026-05-06",
+      source: "manual" as const,
+      createdAt: 10,
+      updatedAt: 11,
+      exercises: [
+        {
+          id: "ex1",
+          exerciseName: "Cable row",
+          supersetGroup: null,
+          sets: [{ id: "set1", reps: 12, weight: 70, unit: "lb" as const }],
+        },
+      ],
+    });
+    getWorkoutMock.mockReturnValue(null);
+
+    render(<LogPage />);
+    await screen.findByText("Edit workout");
+
+    await user.click(screen.getByText("Swap"));
+    await user.type(screen.getByPlaceholderText("Search exercises…"), "lat pulldown");
+    await user.click(screen.getByText("Lat pulldown"));
+
+    expect(screen.getByText("Lat pulldown")).toBeInTheDocument();
+    expect(screen.queryByText("Cable row")).not.toBeInTheDocument();
   });
 });

@@ -6,6 +6,96 @@ import NextPage from "./page";
 const useWorkoutsMock = vi.fn();
 const useTrainingProfileMock = vi.fn();
 const stashDraftMock = vi.fn();
+const generateNextWorkoutMock = vi.fn(
+  (_workouts?: unknown, _today?: unknown, _seed?: unknown, _profile?: unknown, overrides?: { preferredExercises?: string[] }) => {
+    const broughtBack = overrides?.preferredExercises?.includes("Barbell hip thrust");
+    return {
+      split: {
+        slotId: "upper_a",
+        title: "Upper A",
+        summary: "Back and shoulder emphasis.",
+        sessionIndex: 1,
+        totalSessions: 4,
+        targetPrimarySets: {
+          back: 8,
+          shoulders: 5,
+          rear_delts: 4,
+        },
+      },
+      mobility: {
+        title: "5-minute warm-up",
+        items: ["Band row x 15", "Arm circles x 20s each way"],
+      },
+      cooldown: {
+        title: "Cooldown and stretch",
+        items: ["Lat stretch on bench x 30s", "Cross-body shoulder stretch x 30s/side"],
+      },
+      rationale: broughtBack
+        ? [
+            "This is Upper A: Back and shoulder emphasis.",
+            "Still building this slot's focus volume: back, shoulders.",
+          ]
+        : [
+            "This is Upper A: Back and shoulder emphasis.",
+            "Rotated off stalled lift: Barbell hip thrust.",
+            "Still building this slot's focus volume: back, shoulders.",
+            "Hit only once: pull, push.",
+          ],
+      rotatedOffLifts: broughtBack ? [] : ["Barbell hip thrust"],
+      sections: [
+        {
+          kind: "compound",
+          rounds: 4,
+          repScheme: "10 / 8 / 8 / 6 — build weight",
+          exercises: [
+            broughtBack
+              ? {
+                  name: "Barbell hip thrust",
+                  primary: ["glutes"],
+                  secondary: ["hamstrings", "core"],
+                  pattern: "hinge",
+                  movement: "hinge",
+                  targets: [10, 8, 8, 6],
+                  suggestedWeight: 135,
+                  unit: "lb",
+                  isFamiliar: true,
+                  progression: {
+                    lastSummary: "135 lb x 10/8/8/6",
+                    goal: "Rebuild 10/8/8/6 reps with clean form.",
+                    nextStep: "Bring it back slightly lighter and rebuild the reps cleanly.",
+                    recentHistory: [
+                      { date: "2026-05-05", summary: "135 lb x 10/8/8/6", status: "missed" },
+                      { date: "2026-05-03", summary: "135 lb x 10/8/8/6", status: "held" },
+                    ],
+                  },
+                }
+              : {
+                  name: "Cable row",
+                  primary: ["back"],
+                  secondary: ["biceps", "rear_delts"],
+                  pattern: "pull",
+                  movement: "pull",
+                  targets: [10, 8, 8, 6],
+                  suggestedWeight: 70,
+                  unit: "lb",
+                  isFamiliar: true,
+                  progression: {
+                    lastSummary: "70 lb x 10/8/7/6",
+                    goal: "Work toward 10/8/8/6 reps before increasing load.",
+                    nextStep: "Stay at 70 lb and add 1-2 total reps across the work sets.",
+                    recentHistory: [
+                      { date: "2026-05-05", summary: "70 lb x 10/8/7/6", status: "held" },
+                      { date: "2026-05-03", summary: "70 lb x 10/8/8/6", status: "progressed" },
+                      { date: "2026-04-30", summary: "70 lb x 9/8/7/6", status: "missed" },
+                    ],
+                  },
+                },
+          ],
+        },
+      ],
+    };
+  },
+);
 
 vi.mock("@/lib/storage", () => ({
   useWorkouts: () => useWorkoutsMock(),
@@ -40,59 +130,33 @@ vi.mock("@/lib/generator", () => ({
       ],
     },
   }),
-  generateNextWorkout: () => ({
-    split: {
-      slotId: "upper_a",
-      title: "Upper A",
-      summary: "Back and shoulder emphasis.",
-      sessionIndex: 1,
-      totalSessions: 4,
-      targetPrimarySets: {
-        back: 8,
-        shoulders: 5,
-        rear_delts: 4,
-      },
-    },
-    rationale: [
-      "This is Upper A: Back and shoulder emphasis.",
-      "Still building this slot's focus volume: back, shoulders.",
-      "Hit only once: pull, push.",
-    ],
-    sections: [
-      {
-        kind: "compound",
-        rounds: 4,
-        repScheme: "10 / 8 / 8 / 6 — build weight",
-        exercises: [
-          {
-            name: "Cable row",
-            primary: ["back"],
-            secondary: ["biceps", "rear_delts"],
-            pattern: "pull",
-            movement: "pull",
-            targets: [10, 8, 8, 6],
-            suggestedWeight: 70,
-            unit: "lb",
-            isFamiliar: true,
-            progression: {
-              lastSummary: "70 lb x 10/8/7/6",
-              goal: "Work toward 10/8/8/6 reps before increasing load.",
-              nextStep: "Stay at 70 lb and add 1-2 total reps across the work sets.",
-              recentHistory: [
-                { date: "2026-05-05", summary: "70 lb x 10/8/7/6", status: "held" },
-                { date: "2026-05-03", summary: "70 lb x 10/8/8/6", status: "progressed" },
-                { date: "2026-04-30", summary: "70 lb x 9/8/7/6", status: "missed" },
-              ],
-            },
-          },
-        ],
-      },
-    ],
-  }),
+  generateNextWorkout: (...args: Parameters<typeof generateNextWorkoutMock>) =>
+    generateNextWorkoutMock(...args),
   stashDraft: (draft: unknown) => stashDraftMock(draft),
 }));
 
 describe("NextPage interactions", () => {
+  it("can bring back a stalled lift into the routine", async () => {
+    const user = userEvent.setup();
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "beginner",
+      },
+    });
+    useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
+
+    render(<NextPage />);
+
+    await user.click(screen.getByRole("button", { name: "Bring back Barbell hip thrust" }));
+
+    expect(screen.getByText("Barbell hip thrust")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Bring back Barbell hip thrust" })).not.toBeInTheDocument();
+  });
+
   it("swaps an exercise within the allowed movement family", async () => {
     const user = userEvent.setup();
     useTrainingProfileMock.mockReturnValue({
@@ -211,7 +275,7 @@ describe("NextPage interactions", () => {
       screen.queryByText((content) => content.includes("Hit only once: pull, push.")),
     ).not.toBeInTheDocument();
 
-    await user.click(screen.getByText("Show 1 more"));
+    await user.click(screen.getByText("Show 2 more"));
 
     expect(
       screen.getByText((content) => content.includes("Hit only once: pull, push.")),
