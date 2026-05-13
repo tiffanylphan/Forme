@@ -30,7 +30,23 @@ describe("LibraryPage", () => {
 
     await user.click(screen.getByRole("button", { name: /hamstrings/i }));
 
-    expect(screen.getByText("26 results")).toBeInTheDocument();
-    expect(screen.getByText(/26 exercises/i)).toBeInTheDocument();
+    expect(screen.getByText("28 results")).toBeInTheDocument();
+    expect(screen.getByText(/28 exercises/i)).toBeInTheDocument();
+  });
+
+  it("matches search terms even when punctuation differs", async () => {
+    const user = userEvent.setup();
+    render(<LibraryPage />);
+
+    await user.type(screen.getByPlaceholderText("Search exercises..."), "single leg hip thrust");
+    expect(screen.getByText("Bench single-leg hip thrust")).toBeInTheDocument();
+  });
+
+  it("shows newly added exercises in search", async () => {
+    const user = userEvent.setup();
+    render(<LibraryPage />);
+
+    await user.type(screen.getByPlaceholderText("Search exercises..."), "sumo squat");
+    expect(screen.getByText("DB sumo squat")).toBeInTheDocument();
   });
 });
