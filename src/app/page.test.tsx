@@ -57,6 +57,10 @@ describe("Home page", () => {
     expect(screen.getByText("Physique")).toBeInTheDocument();
     expect(screen.getByText("Recent workouts")).toBeInTheDocument();
     expect(screen.getByText(/Cable row/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Import Data" })).toHaveAttribute(
+      "href",
+      "/import",
+    );
   });
 
   it("shows empty state when no workouts exist", () => {
@@ -65,5 +69,10 @@ describe("Home page", () => {
 
     render(<Home />);
     expect(screen.getByText("No workouts logged yet.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Import Data" })).toHaveAttribute(
+      "href",
+      "/import",
+    );
+    expect(screen.queryByRole("button", { name: "Export CSV" })).not.toBeInTheDocument();
   });
 });

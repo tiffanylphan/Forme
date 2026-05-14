@@ -236,17 +236,17 @@ export default function Home() {
         <div className="mb-3 flex items-baseline justify-between">
           <p className="label-eyebrow">Recent workouts</p>
           <div className="flex items-center gap-2">
+            <Link
+              href="/import"
+              className="rounded-full border border-[#D3D1C7] bg-white px-3 py-1 text-[11px] font-medium text-text-muted"
+            >
+              Import Data
+            </Link>
             {ready && workouts.length > 0 && (
               <>
                 <span className="text-[12px] text-text-subtle">
                   {workouts.length} total
                 </span>
-                <Link
-                  href="/import"
-                  className="rounded-full border border-[#D3D1C7] bg-white px-3 py-1 text-[11px] font-medium text-text-muted"
-                >
-                  Import Data
-                </Link>
                 <button
                   type="button"
                   onClick={exportHistory}
