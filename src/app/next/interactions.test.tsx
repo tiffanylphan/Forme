@@ -92,6 +92,47 @@ const generateNextWorkoutMock = vi.fn(
                 },
           ],
         },
+        {
+          kind: "superset",
+          rounds: 4,
+          repScheme: "strength pairing · main lift + support move",
+          exercises: [
+            {
+              name: "Barbell deadlift",
+              primary: ["hamstrings", "glutes", "back"],
+              secondary: ["core", "quads"],
+              pattern: "hinge",
+              movement: "hinge",
+              targets: [10, 8, 8, 6],
+              suggestedWeight: 125,
+              unit: "lb",
+              isFamiliar: true,
+              progression: {
+                lastSummary: "125 lb x 8/8/8/6",
+                goal: "Match or beat 10/8/8/6 reps with solid form.",
+                nextStep: "Stay sharp and add load only if bar speed stays clean.",
+                recentHistory: [],
+              },
+            },
+            {
+              name: "Band-assisted pull-up",
+              primary: ["back", "biceps"],
+              secondary: ["shoulders", "core"],
+              pattern: "pull",
+              movement: "pull",
+              targets: [8, 8, 6, 6],
+              suggestedWeight: null,
+              unit: "lb",
+              isFamiliar: true,
+              progression: {
+                lastSummary: "8/8/6/6 reps",
+                goal: "Keep all reps clean before reducing assistance.",
+                nextStep: "Stay controlled and own each rep.",
+                recentHistory: [],
+              },
+            },
+          ],
+        },
       ],
     };
   },
@@ -145,6 +186,7 @@ describe("NextPage interactions", () => {
         daysPerWeek: 4,
         equipment: "full_gym",
         experience: "beginner",
+        intensity: "standard",
       },
     });
     useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
@@ -166,6 +208,7 @@ describe("NextPage interactions", () => {
         daysPerWeek: 4,
         equipment: "full_gym",
         experience: "beginner",
+        intensity: "standard",
       },
     });
     useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
@@ -173,7 +216,7 @@ describe("NextPage interactions", () => {
     render(<NextPage />);
     expect(screen.getByText("Cable row")).toBeInTheDocument();
 
-    await user.click(screen.getByText("Swap"));
+    await user.click(screen.getAllByText("Swap")[0]);
     expect(screen.getByText("Swap exercise")).toBeInTheDocument();
     expect(screen.getByText("Pull only")).toBeInTheDocument();
 
@@ -193,12 +236,13 @@ describe("NextPage interactions", () => {
         daysPerWeek: 4,
         equipment: "full_gym",
         experience: "beginner",
+        intensity: "standard",
       },
     });
     useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
 
     render(<NextPage />);
-    await user.click(screen.getByText("Swap"));
+    await user.click(screen.getAllByText("Swap")[0]);
 
     const optionButtons = screen.getAllByRole("button");
     const swapStart = optionButtons.findIndex((button) =>
@@ -234,6 +278,7 @@ describe("NextPage interactions", () => {
         daysPerWeek: 4,
         equipment: "full_gym",
         experience: "beginner",
+        intensity: "standard",
       },
     });
     useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
@@ -255,6 +300,7 @@ describe("NextPage interactions", () => {
         daysPerWeek: 4,
         equipment: "full_gym",
         experience: "beginner",
+        intensity: "standard",
       },
     });
     useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
@@ -291,15 +337,33 @@ describe("NextPage interactions", () => {
         daysPerWeek: 4,
         equipment: "full_gym",
         experience: "beginner",
+        intensity: "standard",
       },
     });
     useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
 
     render(<NextPage />);
-    expect(screen.getByText(/Last:/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Last:/).length).toBeGreaterThan(0);
     expect(screen.getByText("held · 70 lb x 10/8/7/6")).toBeInTheDocument();
     expect(screen.getByText("progressed · 70 lb x 10/8/8/6")).toBeInTheDocument();
     expect(screen.getByText(/Goal: Work toward 10\/8\/8\/6 reps/)).toBeInTheDocument();
     expect(screen.getByText(/Next: Stay at 70 lb/)).toBeInTheDocument();
+  });
+
+  it("uses specific section labels for paired strength work", () => {
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "beginner",
+        intensity: "standard",
+      },
+    });
+    useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
+
+    render(<NextPage />);
+    expect(screen.getByText("Strength pair")).toBeInTheDocument();
   });
 });

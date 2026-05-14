@@ -8,6 +8,9 @@ import { formatMuscle } from "@/lib/format";
 import { EQUIPMENT, MUSCLE_GROUPS, PATTERNS } from "@/lib/types";
 import type { Equipment, MuscleGroup, Pattern } from "@/lib/types";
 
+const normalizeSearch = (value: string): string =>
+  value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
 export default function LibraryPage() {
   const [filterMuscle, setFilterMuscle] = useState<MuscleGroup | null>(null);
   const [filterPattern, setFilterPattern] = useState<Pattern | null>(null);
@@ -16,8 +19,14 @@ export default function LibraryPage() {
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
+    const normalizedSearch = normalizeSearch(search);
     return EXERCISES.filter((ex) => {
-      if (search && !ex.name.toLowerCase().includes(search.toLowerCase())) return false;
+      if (
+        normalizedSearch &&
+        !normalizeSearch(ex.name).includes(normalizedSearch)
+      ) {
+        return false;
+      }
       if (filterPattern && ex.pattern !== filterPattern) return false;
       if (filterEquipment && ex.equipment !== filterEquipment) return false;
       if (

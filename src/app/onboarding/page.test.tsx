@@ -26,6 +26,7 @@ describe("OnboardingPage", () => {
       daysPerWeek: 4,
       equipment: "full_gym",
       experience: "beginner",
+      intensity: "standard",
     });
     useTrainingProfileMock.mockReturnValue({
       ready: true,
@@ -34,6 +35,7 @@ describe("OnboardingPage", () => {
         daysPerWeek: 4,
         equipment: "full_gym",
         experience: "beginner",
+        intensity: "standard",
       },
     });
 
@@ -43,6 +45,7 @@ describe("OnboardingPage", () => {
     await user.click(screen.getByText("3 days / week"));
     await user.click(screen.getByText("Home"));
     await user.click(screen.getByText("Intermediate"));
+    await user.click(screen.getByText("Hard"));
     await user.click(screen.getByText("Save profile"));
 
     expect(saveTrainingProfileMock).toHaveBeenCalledWith({
@@ -50,6 +53,7 @@ describe("OnboardingPage", () => {
       daysPerWeek: 3,
       equipment: "home",
       experience: "intermediate",
+      intensity: "hard",
     });
     expect(routerPushMock).toHaveBeenCalledWith("/next");
   });

@@ -7,6 +7,9 @@ import type { Equipment, MuscleGroup, Pattern } from "@/lib/types";
 import { MuscleTag } from "./MuscleTag";
 import { PatternBadge } from "./PatternBadge";
 
+const normalizeSearch = (value: string): string =>
+  value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -35,8 +38,14 @@ export function ExercisePicker({
   }, [open]);
 
   const filtered = useMemo(() => {
+    const normalizedSearch = normalizeSearch(search);
     return EXERCISES.filter((ex) => {
-      if (search && !ex.name.toLowerCase().includes(search.toLowerCase())) return false;
+      if (
+        normalizedSearch &&
+        !normalizeSearch(ex.name).includes(normalizedSearch)
+      ) {
+        return false;
+      }
       if (pattern && ex.pattern !== pattern) return false;
       if (equip && ex.equipment !== equip) return false;
       if (muscle && !ex.primary.includes(muscle) && !ex.secondary.includes(muscle)) return false;

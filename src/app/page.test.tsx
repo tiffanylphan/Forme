@@ -26,6 +26,7 @@ describe("Home page", () => {
         daysPerWeek: 4,
         equipment: "full_gym",
         experience: "beginner",
+        intensity: "standard",
       },
     });
     useWorkoutsMock.mockReturnValue({

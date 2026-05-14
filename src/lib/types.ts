@@ -72,12 +72,14 @@ export type GoalMode = "physique" | "balanced" | "strength";
 export type ExperienceLevel = "beginner" | "intermediate";
 export type TrainingEnvironment = "full_gym" | "dumbbells" | "home";
 export type TrainingDaysPerWeek = 3 | 4 | 5;
+export type SessionIntensity = "standard" | "hard";
 
 export type TrainingProfile = {
   goal: GoalMode;
   daysPerWeek: TrainingDaysPerWeek;
   equipment: TrainingEnvironment;
   experience: ExperienceLevel;
+  intensity: SessionIntensity;
 };
 
 export type SetEntry = {

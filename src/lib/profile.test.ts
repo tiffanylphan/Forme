@@ -6,6 +6,7 @@ import {
   formatEnvironment,
   formatExperience,
   formatGoal,
+  formatIntensity,
   loadTrainingProfile,
   saveTrainingProfile,
 } from "./profile";
@@ -17,6 +18,7 @@ describe("profile storage", () => {
       daysPerWeek: 3,
       equipment: "home",
       experience: "intermediate",
+      intensity: "hard",
     });
 
     expect(loadTrainingProfile()).toEqual({
@@ -24,6 +26,7 @@ describe("profile storage", () => {
       daysPerWeek: 3,
       equipment: "home",
       experience: "intermediate",
+      intensity: "hard",
     });
   });
 
@@ -36,5 +39,6 @@ describe("profile storage", () => {
     expect(formatGoal(DEFAULT_PROFILE.goal)).toBe("Physique");
     expect(formatEnvironment("full_gym")).toBe("Full gym");
     expect(formatExperience("beginner")).toBe("Beginner");
+    expect(formatIntensity("hard")).toBe("Hard");
   });
 });

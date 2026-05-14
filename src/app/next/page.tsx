@@ -17,6 +17,7 @@ import {
   formatEnvironment,
   formatExperience,
   formatGoal,
+  formatIntensity,
   useTrainingProfile,
 } from "@/lib/profile";
 import { useWorkouts } from "@/lib/storage";
@@ -28,6 +29,16 @@ const SECTION_TITLE: Record<DraftSection["kind"], string> = {
   accessory: "Accessory",
   superset: "Superset",
   finisher: "Finisher",
+};
+
+const sectionTitleFor = (section: DraftSection): string => {
+  if (section.kind === "superset" && section.repScheme.includes("strength pairing")) {
+    return "Strength pair";
+  }
+  if (section.kind === "superset" && section.exercises.length > 2) {
+    return "Circuit";
+  }
+  return SECTION_TITLE[section.kind];
 };
 
 const formatTarget = (t: number | string): string =>
@@ -460,6 +471,7 @@ function PlanningCard({
             <ProfileChip>{profile.daysPerWeek} days/week</ProfileChip>
             <ProfileChip>{formatEnvironment(profile.equipment)}</ProfileChip>
             <ProfileChip>{formatExperience(profile.experience)}</ProfileChip>
+            <ProfileChip>{formatIntensity(profile.intensity)}</ProfileChip>
           </div>
         </div>
       ) : profileReady ? (
@@ -631,12 +643,13 @@ function BookendCard({
   block,
   eyebrow,
 }: {
-  block: { title: string; items: string[] };
+  block: { title: string; items: string[]; complementary?: string[] };
   eyebrow: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   if (block.items.length === 0) return null;
 
+  const complementary = block.complementary ?? [];
   const visibleItems = expanded ? block.items : block.items.slice(0, 2);
 
   return (
@@ -663,6 +676,20 @@ function BookendCard({
           </li>
         ))}
       </ul>
+      {complementary.length > 0 && (
+        <div className="mt-2 border-t border-divider pt-2">
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-subtle">
+            Complementary mobility
+          </p>
+          <ul className="mt-1 space-y-1">
+            {complementary.map((item) => (
+              <li key={item} className="text-[12px] leading-snug text-text-muted">
+                · {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }
@@ -685,7 +712,7 @@ function SectionCard({
   return (
     <div className="overflow-hidden rounded-2xl border border-[#E6E3D8] bg-surface">
       <div className="flex items-center justify-between border-b border-divider px-4 py-2.5">
-        <span className="label-eyebrow">{SECTION_TITLE[section.kind]}</span>
+        <span className="label-eyebrow">{sectionTitleFor(section)}</span>
         <span className="text-[11px] text-text-subtle">
           {section.rounds} rounds · {section.repScheme}
         </span>

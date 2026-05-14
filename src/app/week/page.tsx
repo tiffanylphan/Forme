@@ -2,14 +2,13 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
+import { MuscleMap } from "@/components/MuscleMap";
 import { MuscleTag } from "@/components/MuscleTag";
-import { MUSCLE_COLORS } from "@/lib/colors";
 import {
   computeCoverage,
   formatWindow,
   movementGaps,
   movementScore,
-  muscleScore,
   topFocus,
   weekContaining,
 } from "@/lib/coverage";
@@ -66,6 +65,26 @@ export default function WeekPage() {
           const remaining = Math.max(0, target - done);
           return { muscle, target, done, pct, remaining };
         }),
+    [coverage.muscleStats, weeklyTargets],
+  );
+  const muscleMapRows = useMemo(
+    () =>
+      MUSCLE_GROUPS.map((muscle) => {
+        const primarySets = coverage.muscleStats[muscle]?.asPrimarySets ?? 0;
+        const secondarySets = coverage.muscleStats[muscle]?.asSecondarySets ?? 0;
+        const targetSets = weeklyTargets[muscle] ?? 0;
+        const effectiveSets = primarySets + secondarySets * 0.35;
+        const intensity = targetSets > 0
+          ? Math.min(1, effectiveSets / targetSets)
+          : Math.min(1, effectiveSets / 6);
+        return {
+          muscle,
+          primarySets,
+          secondarySets,
+          targetSets,
+          intensity,
+        };
+      }),
     [coverage.muscleStats, weeklyTargets],
   );
 
@@ -176,6 +195,105 @@ export default function WeekPage() {
             </div>
           </section>
 
+          {/* Training balance */}
+          {(() => {
+            const push  = coverage.movementStats["push"]?.sets ?? 0;
+            const pull  = coverage.movementStats["pull"]?.sets ?? 0;
+            const squat = (coverage.movementStats["squat"]?.sets ?? 0)
+                        + (coverage.movementStats["single_leg"]?.sets ?? 0);
+            const hinge = coverage.movementStats["hinge"]?.sets ?? 0;
+            const upper = push + pull;
+            const lower = squat + hinge;
+
+            if (upper + lower === 0) return null;
+
+            type Pair = {
+              left: string; leftSets: number; leftBar: string; leftText: string;
+              right: string; rightSets: number; rightBar: string; rightText: string;
+              threshold: number;
+              flag: string;
+            };
+
+            const pairs: Pair[] = [
+              {
+                left: "Push", leftSets: push, leftBar: "#f5cfc4", leftText: "#712B13",
+                right: "Pull", rightSets: pull, rightBar: "#c0d8f0", rightText: "#0C447C",
+                threshold: 1.4,
+                flag: pull === 0
+                  ? "No pulling yet this week."
+                  : `${(push / pull).toFixed(1)}:1 — add ~${Math.round(push - pull)} pull sets to reach 1:1.`,
+              },
+              {
+                left: "Knee", leftSets: squat, leftBar: "#c5e8dc", leftText: "#085041",
+                right: "Hip", rightSets: hinge, rightBar: "#d8d6f8", rightText: "#3C3489",
+                threshold: 1.6,
+                flag: hinge === 0
+                  ? "No hinge work yet — deadlifts or RDLs balance the knees."
+                  : `${(squat / hinge).toFixed(1)}:1 knee-to-hip. Add more hinge work.`,
+              },
+              {
+                left: "Upper", leftSets: upper, leftBar: "#faeeda", leftText: "#633806",
+                right: "Lower", rightSets: lower, rightBar: "#eeedfe", rightText: "#3C3489",
+                threshold: 1.6,
+                flag: lower === 0
+                  ? "No lower body work yet this week."
+                  : upper > lower * 1.6
+                    ? `${(upper / lower).toFixed(1)}:1 upper-to-lower. More leg and hip work needed.`
+                    : lower > upper * 1.6
+                      ? `${(lower / upper).toFixed(1)}:1 lower-to-upper. More pressing and pulling needed.`
+                      : "",
+              },
+            ];
+
+            const flags = pairs.filter(p => {
+              const a = p.leftSets, b = p.rightSets;
+              if (a + b === 0) return false;
+              if (b === 0) return a > 0;
+              return a > b * p.threshold || b > a * p.threshold;
+            });
+
+            const allBalanced = flags.length === 0;
+
+            return (
+              <section className="mb-6 rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="label-eyebrow">Training balance</p>
+                  <span className={`text-[11px] font-medium ${allBalanced ? "text-[#1F7A52]" : "text-[#A36F22]"}`}>
+                    {allBalanced ? "on track" : `${flags.length} imbalance${flags.length > 1 ? "s" : ""}`}
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {pairs.map((p) => {
+                    const total = p.leftSets + p.rightSets;
+                    if (total === 0) return null;
+                    const leftPct = Math.round((p.leftSets / total) * 100);
+                    return (
+                      <div key={p.left}>
+                        <div className="mb-1 flex justify-between text-[11px] font-medium">
+                          <span style={{ color: p.leftText }}>{p.left} — {p.leftSets}</span>
+                          <span style={{ color: p.rightText }}>{p.right} — {p.rightSets}</span>
+                        </div>
+                        <div className="flex h-2 overflow-hidden rounded-full">
+                          <div style={{ width: `${leftPct}%`, background: p.leftBar }} />
+                          <div style={{ width: `${100 - leftPct}%`, background: p.rightBar }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {flags.length > 0 && (
+                  <ul className="mt-3 space-y-1 border-t border-[#F0EDE5] pt-3">
+                    {flags.map(p => (
+                      <li key={p.left} className="text-[12px] text-text-subtle">
+                        · {p.flag}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            );
+          })()}
+
           {/* Movement gaps */}
           {movGaps.length > 0 && (
             <section className="mb-6">
@@ -254,44 +372,7 @@ export default function WeekPage() {
             </section>
           )}
 
-          {/* Smaller muscle grid — supplementary */}
-          <section className="mb-6">
-            <p className="label-eyebrow mb-2">Muscles touched</p>
-            <div className="grid grid-cols-3 gap-1.5">
-              {MUSCLE_GROUPS.map((m) => {
-                const stats = coverage.muscleStats[m];
-                const score = muscleScore(stats);
-                const c = MUSCLE_COLORS[m];
-                return (
-                  <div
-                    key={m}
-                    style={{ background: c.bg }}
-                    className="rounded-lg px-2 py-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span
-                        style={{ color: c.text }}
-                        className="text-[11px] font-medium capitalize"
-                      >
-                        {formatMuscle(m)}
-                      </span>
-                      <span
-                        aria-hidden
-                        style={{ background: SCORE_DOT[score] }}
-                        className="h-1.5 w-1.5 rounded-full"
-                      />
-                    </div>
-                    <span
-                      style={{ color: c.text }}
-                      className="mt-0.5 block font-mono text-[11px] opacity-80"
-                    >
-                      {stats?.asPrimarySets ?? 0}s · {stats?.daysHit.length ?? 0}d
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+          <MuscleMap rows={muscleMapRows} />
         </>
       )}
 
@@ -304,6 +385,19 @@ export default function WeekPage() {
           >
             Plan next workout →
           </Link>
+          <button
+            onClick={() => {
+              const data = localStorage.getItem("workout.workouts.v1") ?? "[]";
+              if (navigator.share) {
+                navigator.share({ title: "Workout data", text: data });
+              } else {
+                navigator.clipboard.writeText(data);
+              }
+            }}
+            className="mt-2 block w-full rounded-full border border-[#D3D1C7] py-3 text-center text-[14px] font-medium text-text"
+          >
+            Export data
+          </button>
         </div>
       )}
     </div>

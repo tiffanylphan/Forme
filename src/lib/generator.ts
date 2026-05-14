@@ -64,10 +64,12 @@ export type WorkoutDraft = {
   mobility: {
     title: string;
     items: string[];
+    complementary: string[];
   };
   cooldown: {
     title: string;
     items: string[];
+    complementary: string[];
   };
   sections: DraftSection[];
 };
@@ -482,17 +484,22 @@ const buildSessionBookend = (
   source: Partial<Record<MuscleGroup, string[]>>,
   focusMuscles: MuscleGroup[],
   fallback: string[],
-): { title: string; items: string[] } => {
+): { title: string; items: string[]; complementary: string[] } => {
   const seen = new Set<string>();
   const items: string[] = [];
+  const complementary: string[] = [];
 
   for (const muscle of focusMuscles) {
     for (const item of source[muscle] ?? []) {
       if (seen.has(item)) continue;
       seen.add(item);
-      items.push(item);
-      if (items.length >= 4) {
-        return { title, items };
+      if (items.length < 4) {
+        items.push(item);
+      } else if (complementary.length < 2) {
+        complementary.push(item);
+      }
+      if (items.length >= 4 && complementary.length >= 2) {
+        return { title, items, complementary };
       }
     }
   }
@@ -500,11 +507,15 @@ const buildSessionBookend = (
   for (const item of fallback) {
     if (seen.has(item)) continue;
     seen.add(item);
-    items.push(item);
-    if (items.length >= 4) break;
+    if (items.length < 4) {
+      items.push(item);
+    } else if (complementary.length < 2) {
+      complementary.push(item);
+    }
+    if (items.length >= 4 && complementary.length >= 2) break;
   }
 
-  return { title, items };
+  return { title, items, complementary };
 };
 
 const getIncompleteSplitSlotIndices = (
@@ -532,6 +543,8 @@ const scoreSplitSlot = (
   slot: SplitSlot,
   index: number,
   need: Record<MovementPattern, number>,
+  muscleSaturation: Partial<Record<MuscleGroup, number>> = {},
+  lastSessionMovements: Set<MovementPattern> = new Set(),
 ): number => {
   const preferredScores = slot.preferredMovements
     .map((movement) => (need[movement] ?? 0) * (MOVEMENT_PRIORITY[movement] ?? 1))
@@ -550,6 +563,28 @@ const scoreSplitSlot = (
   // drift unless another slot closes a more urgent weekly gap.
   score -= index * 0.25;
 
+  // Penalize slots whose primary muscles have already met their weekly volume
+  // target — training a saturated muscle group adds fatigue without adaptation.
+  const targetedMuscles = Object.keys(slot.targetPrimarySets) as MuscleGroup[];
+  const saturations = targetedMuscles
+    .filter((m) => (slot.targetPrimarySets[m] ?? 0) > 0 && muscleSaturation[m] !== undefined)
+    .map((m) => muscleSaturation[m] as number);
+  if (saturations.length > 0) {
+    const avg = saturations.reduce((a, b) => a + b, 0) / saturations.length;
+    if (avg >= 0.9) score -= 10;
+    else if (avg >= 0.7) score -= 4;
+  }
+
+  // Penalize repeating the same movement patterns as the last session.
+  // A trainer would never program squat+hinge+single_leg back-to-back regardless
+  // of whether weekly volume targets are met.
+  if (lastSessionMovements.size > 0 && slot.preferredMovements.length > 0) {
+    const overlap = slot.preferredMovements.filter(m => lastSessionMovements.has(m)).length;
+    const overlapFraction = overlap / slot.preferredMovements.length;
+    if (overlapFraction >= 1.0) score -= 9;
+    else if (overlapFraction >= 0.67) score -= 5;
+  }
+
   return score;
 };
 
@@ -557,6 +592,8 @@ const getNextSplitSlotIndex = (
   split: SplitSlot[],
   workouts: Workout[],
   need: Record<MovementPattern, number>,
+  muscleSaturation: Partial<Record<MuscleGroup, number>> = {},
+  lastSessionMovements: Set<MovementPattern> = new Set(),
 ): number => {
   const incompleteIndices = getIncompleteSplitSlotIndices(split, workouts);
 
@@ -565,7 +602,7 @@ const getNextSplitSlotIndex = (
     let bestScore = -Infinity;
 
     for (const index of incompleteIndices) {
-      const score = scoreSplitSlot(split[index], index, need);
+      const score = scoreSplitSlot(split[index], index, need, muscleSaturation, lastSessionMovements);
       if (score > bestScore) {
         bestIndex = index;
         bestScore = score;
@@ -584,6 +621,8 @@ const maybeOverrideForCriticalGap = (
   split: SplitSlot[],
   baseIndex: number,
   need: Record<MovementPattern, number>,
+  muscleSaturation: Partial<Record<MuscleGroup, number>> = {},
+  lastSessionMovements: Set<MovementPattern> = new Set(),
 ): number => {
   const baseSlot = split[baseIndex];
   const criticalMovements = MOVEMENT_PATTERNS
@@ -598,11 +637,11 @@ const maybeOverrideForCriticalGap = (
     if (baseSlot.allowedMovements.includes(movement)) return baseIndex;
 
     let bestIndex = baseIndex;
-    let bestScore = scoreSplitSlot(baseSlot, baseIndex, need);
+    let bestScore = scoreSplitSlot(baseSlot, baseIndex, need, muscleSaturation, lastSessionMovements);
 
     split.forEach((slot, index) => {
       if (!slot.allowedMovements.includes(movement)) return;
-      let score = scoreSplitSlot(slot, index, need);
+      let score = scoreSplitSlot(slot, index, need, muscleSaturation, lastSessionMovements);
       if (slot.preferredMovements.includes(movement)) score += 6;
       if (score > bestScore) {
         bestIndex = index;
@@ -935,6 +974,7 @@ export function generateNextWorkout(
     daysPerWeek: 4,
     equipment: "full_gym",
     experience: "beginner",
+    intensity: "standard",
   };
   const preferredExerciseNames = new Set(overrides?.preferredExercises ?? []);
   const window = weekContaining(todayISO);
@@ -957,10 +997,43 @@ export function generateNextWorkout(
     need[mp] = days === 0 ? 3 : days === 1 ? 1 : 0;
   });
 
+  // Muscle saturation: fraction of each muscle's weekly set target already done.
+  // Used to deprioritize split slots whose primary muscles are already at volume.
+  const weeklyMuscleTargets: Partial<Record<MuscleGroup, number>> = {};
+  split.forEach((s) => {
+    (Object.entries(s.targetPrimarySets) as [MuscleGroup, number][]).forEach(([m, sets]) => {
+      if (sets > 0) weeklyMuscleTargets[m] = (weeklyMuscleTargets[m] ?? 0) + sets;
+    });
+  });
+  const muscleSaturation: Partial<Record<MuscleGroup, number>> = {};
+  MUSCLE_GROUPS.forEach((m) => {
+    const target = weeklyMuscleTargets[m];
+    if (target && target > 0) {
+      const done = coverage.muscleStats[m]?.asPrimarySets ?? 0;
+      muscleSaturation[m] = Math.min(1, done / target);
+    }
+  });
+
+  // Movement patterns from the most recent session — used to avoid recommending
+  // the same movement category back-to-back regardless of weekly volume targets.
+  const lastSessionMovements = new Set<MovementPattern>();
+  const lastWorkout = [...workouts].sort(compareWorkoutsDesc)[0];
+  if (lastWorkout) {
+    lastWorkout.exercises.forEach((logEx) => {
+      const ex = EXERCISES.find((e) => e.name === logEx.exerciseName);
+      if (ex) {
+        const movement = movementOf(ex);
+        if (movement) lastSessionMovements.add(movement);
+      }
+    });
+  }
+
   const sessionIndex = maybeOverrideForCriticalGap(
     split,
-    getNextSplitSlotIndex(split, coverage.workouts, need),
+    getNextSplitSlotIndex(split, coverage.workouts, need, muscleSaturation, lastSessionMovements),
     need,
+    muscleSaturation,
+    lastSessionMovements,
   );
   const slot = split[sessionIndex];
   const currentWeekExerciseNames = new Set(
@@ -999,6 +1072,7 @@ export function generateNextWorkout(
   );
 
   const used = new Set<string>();
+  let barbellCount = 0;
   const claimedMovements: Record<MovementPattern, number> = {} as Record<
     MovementPattern,
     number
@@ -1066,6 +1140,8 @@ export function generateNextWorkout(
       if (isTechnicalBarbell(ex)) s -= 1.2;
       if (!known.has(ex.name)) s -= 0.8;
     }
+
+    if (ex.equipment === "barbell" && barbellCount >= 2) s -= 12;
 
     if (preferredExerciseNames.has(ex.name)) s += 9;
     else if (stalledExerciseNames.has(ex.name)) s -= 7;
@@ -1136,6 +1212,7 @@ export function generateNextWorkout(
 
   const claim = (ex: Exercise) => {
     used.add(ex.name);
+    if (ex.equipment === "barbell") barbellCount += 1;
     const m = movementOf(ex);
     if (m) claimedMovements[m] = claimedMovements[m] + 1;
   };
@@ -1162,9 +1239,25 @@ export function generateNextWorkout(
   const sections: DraftSection[] = [];
   const movementsHit: MovementPattern[] = [];
   const isHomeProfile = activeProfile.equipment === "home";
-  const secondaryRounds = activeProfile.daysPerWeek === 5 ? 3 : 4;
-  const accessoryRounds = activeProfile.daysPerWeek === 5 ? 3 : 4;
-  const finisherRounds = activeProfile.daysPerWeek === 3 ? 3 : isHomeProfile ? 2 : 1;
+  const hardMode = activeProfile.intensity === "hard";
+  const secondaryRounds: number = activeProfile.daysPerWeek === 5 ? 3 : hardMode ? 4 : 4;
+  const accessoryRounds: number = activeProfile.daysPerWeek === 5 ? (hardMode ? 4 : 3) : hardMode ? 4 : 4;
+  const finisherRounds =
+    activeProfile.daysPerWeek === 3
+      ? hardMode
+        ? 4
+        : 3
+      : isHomeProfile
+        ? hardMode
+          ? 3
+          : 2
+        : hardMode
+          ? 2
+          : 1;
+  const useTrisetAccessory =
+    hardMode &&
+    !isHomeProfile &&
+    (activeProfile.daysPerWeek === 3 || activeProfile.goal === "balanced");
   const compoundMovements = COMPOUND_MOVEMENTS.filter((movement) =>
     slot.allowedMovements.includes(movement),
   );
@@ -1185,36 +1278,47 @@ export function generateNextWorkout(
     ? "12 / 12 / 10 / 10 — smooth tempo"
     : "10 / 8 / 8 / 6 — build weight";
   const secondaryTargets = isHomeProfile
-    ? secondaryRounds === 4
-      ? [15, 12, 12, 10]
-      : [15, 12, 12]
-    : secondaryRounds === 4
-      ? [10, 8, 8, 6]
-      : [10, 8, 8];
+    ? secondaryRounds === 5
+      ? [15, 12, 12, 10, 10]
+      : secondaryRounds === 4
+        ? [15, 12, 12, 10]
+        : [15, 12, 12]
+    : secondaryRounds === 5
+      ? [10, 8, 8, 6, 6]
+      : secondaryRounds === 4
+        ? [10, 8, 8, 6]
+        : [10, 8, 8];
   const secondaryRepScheme = isHomeProfile
     ? "12–15 reps — lighter load, controlled pace"
     : "8–10 reps — controlled working sets";
   const firstAccessoryTargets = isHomeProfile
-    ? accessoryRounds === 4
-      ? [18, 15, 15, 12]
-      : [18, 15, 15]
-    : accessoryRounds === 4
-      ? [12, 10, 10, 8]
-      : [12, 10, 10];
+    ? accessoryRounds === 5
+      ? [18, 15, 15, 12, 12]
+      : accessoryRounds === 4
+        ? [18, 15, 15, 12]
+        : [18, 15, 15]
+    : accessoryRounds === 5
+      ? [12, 10, 10, 8, 8]
+      : accessoryRounds === 4
+        ? [12, 10, 10, 8]
+        : [12, 10, 10];
   const firstAccessoryRepScheme = isHomeProfile
     ? "15–18 reps · short rest"
     : "10–12 reps · superset";
   const secondAccessoryTargets = isHomeProfile
-    ? accessoryRounds === 4
-      ? [20, 18, 18, 15]
-      : [20, 18, 18]
-    : accessoryRounds === 4
-      ? [15, 12, 12, 10]
-      : [15, 12, 12];
+    ? accessoryRounds === 5
+      ? [20, 18, 18, 15, 15]
+      : accessoryRounds === 4
+        ? [20, 18, 18, 15]
+        : [20, 18, 18]
+    : accessoryRounds === 5
+      ? [15, 12, 12, 10, 10]
+      : accessoryRounds === 4
+        ? [15, 12, 12, 10]
+        : [15, 12, 12];
   const secondAccessoryRepScheme = isHomeProfile
     ? "18–20 reps · home conditioning pace"
     : "12–15 reps · short rest";
-
   // Pre-generate per-movement noise so sort comparators are pure functions.
   // JavaScript sort calls comparators a variable number of times, so calling
   // rng() inside a comparator produces non-deterministic results for the same seed.
@@ -1280,6 +1384,52 @@ export function generateNextWorkout(
     return true;
   };
 
+  const addCircuit = (
+    allowed: MovementPattern[],
+    rounds: number,
+    repScheme: string,
+    targets: (number | string)[],
+    filter?: (ex: Exercise) => boolean,
+  ): boolean => {
+    const picks: { movement: MovementPattern; exercise: Exercise }[] = [];
+    const availableMovements = sortedByNeed(allowed);
+
+    for (const movement of availableMovements) {
+      const pick = pickForMovement(
+        [movement],
+        (ex) =>
+          !picks.some((existing) => existing.exercise.name === ex.name) &&
+          (filter ? filter(ex) : true),
+      );
+      if (pick) picks.push(pick);
+      if (picks.length === 3) break;
+    }
+
+    if (picks.length < 3) {
+      const fallbackPick = pickForMovement(
+        allowed,
+        (ex) =>
+          !picks.some((existing) => existing.exercise.name === ex.name) &&
+          (filter ? filter(ex) : true),
+      );
+      if (fallbackPick) picks.push(fallbackPick);
+    }
+
+    if (picks.length < 3) return false;
+
+    picks.forEach((pick) => {
+      claim(pick.exercise);
+      pushMovement(pick.movement);
+    });
+    sections.push({
+      kind: "superset",
+      rounds,
+      repScheme,
+      exercises: picks.map((pick) => makeDraftEx(pick.exercise, targets)),
+    });
+    return true;
+  };
+
   const addAccessoryBlock = (
     allowed: MovementPattern[],
     rounds: number,
@@ -1308,17 +1458,6 @@ export function generateNextWorkout(
       isHeavyEquipment(ex) &&
       goalAllows(ex, activeProfile.goal),
   );
-  if (compoundPick) {
-    claim(compoundPick.exercise);
-    pushMovement(compoundPick.movement);
-    sections.push({
-      kind: "compound",
-      rounds: 4,
-      repScheme: compoundRepScheme,
-      exercises: [makeDraftEx(compoundPick.exercise, compoundTargets)],
-    });
-  }
-
   // 2. Secondary lift — add another focused block before accessories.
   let secondaryPick = pickForMovement(
     accessoryMovements.filter(
@@ -1347,20 +1486,48 @@ export function generateNextWorkout(
       ),
       (ex) =>
         environmentAllows(ex, activeProfile.equipment) &&
-        goalAllows(ex, activeProfile.goal),
+        goalAllows(ex, activeProfile.goal) &&
+        !(compoundPick?.exercise.equipment === "barbell" && ex.equipment === "barbell"),
     );
   }
-  if (secondaryPick) {
+
+  if (compoundPick && secondaryPick && hardMode) {
+    claim(compoundPick.exercise);
+    pushMovement(compoundPick.movement);
     claim(secondaryPick.exercise);
     pushMovement(secondaryPick.movement);
     sections.push({
-      kind: "accessory",
-      rounds: secondaryRounds,
-      repScheme: secondaryRepScheme,
+      kind: "superset",
+      rounds: 4,
+      repScheme: "strength pairing · main lift + support move",
       exercises: [
-        makeDraftEx(secondaryPick.exercise, secondaryTargets),
+        makeDraftEx(compoundPick.exercise, compoundTargets),
+        makeDraftEx(secondaryPick.exercise, secondaryTargets.slice(0, 4)),
       ],
     });
+  } else {
+    if (compoundPick) {
+      claim(compoundPick.exercise);
+      pushMovement(compoundPick.movement);
+      sections.push({
+        kind: "compound",
+        rounds: 4,
+        repScheme: compoundRepScheme,
+        exercises: [makeDraftEx(compoundPick.exercise, compoundTargets)],
+      });
+    }
+    if (secondaryPick) {
+      claim(secondaryPick.exercise);
+      pushMovement(secondaryPick.movement);
+      sections.push({
+        kind: "accessory",
+        rounds: secondaryRounds,
+        repScheme: secondaryRepScheme,
+        exercises: [
+          makeDraftEx(secondaryPick.exercise, secondaryTargets),
+        ],
+      });
+    }
   }
 
   // 3. First accessory superset — prioritize uncovered movements.
@@ -1382,23 +1549,35 @@ export function generateNextWorkout(
   );
 
   // 4. Second accessory superset — add enough volume for a fuller session.
-  addSuperset(
-    accessoryMovements,
-    accessoryRounds,
-    secondAccessoryRepScheme,
-    secondAccessoryTargets,
-    (ex) =>
-      environmentAllows(ex, activeProfile.equipment) &&
-      goalAllows(ex, activeProfile.goal) &&
-      (activeProfile.goal !== "physique" ||
-        ((lowerBiasSlot &&
-          (isGluteBiasedLower(ex) ||
-            isDirectGluteFocus(ex) ||
-            isBackOrShoulderFocused(ex))) ||
-          (upperBiasSlot &&
-            (isBackOrShoulderFocused(ex) ||
-              (armBiasSlot && isDirectArmFocus(ex)))))),
-  );
+  const secondAccessoryFilter = (ex: Exercise) =>
+    environmentAllows(ex, activeProfile.equipment) &&
+    goalAllows(ex, activeProfile.goal) &&
+    (activeProfile.goal !== "physique" ||
+      ((lowerBiasSlot &&
+        (isGluteBiasedLower(ex) ||
+          isDirectGluteFocus(ex) ||
+          isBackOrShoulderFocused(ex))) ||
+        (upperBiasSlot &&
+          (isBackOrShoulderFocused(ex) ||
+            (armBiasSlot && isDirectArmFocus(ex))))));
+
+  if (useTrisetAccessory) {
+    addCircuit(
+      accessoryMovements,
+      accessoryRounds,
+      `${secondAccessoryRepScheme} · tri-set`,
+      secondAccessoryTargets,
+      secondAccessoryFilter,
+    );
+  } else {
+    addSuperset(
+      accessoryMovements,
+      accessoryRounds,
+      secondAccessoryRepScheme,
+      secondAccessoryTargets,
+      secondAccessoryFilter,
+    );
+  }
 
   // 5. Finisher — 3-day plans bias harder toward conditioning so the session
   // still has a noticeable end-of-workout push.
@@ -1462,7 +1641,11 @@ export function generateNextWorkout(
       accessoryMovements,
       accessoryRounds,
       "12–15 reps — finishing volume",
-      accessoryRounds === 4 ? [15, 12, 12, 10] : [15, 12, 12],
+      accessoryRounds === 5
+        ? [15, 12, 12, 10, 10]
+        : accessoryRounds === 4
+          ? [15, 12, 12, 10]
+          : [15, 12, 12],
       (ex) =>
         environmentAllows(ex, activeProfile.equipment) &&
         goalAllows(ex, activeProfile.goal) &&
@@ -1518,11 +1701,6 @@ export function generateNextWorkout(
       `Covers: ${movementsHit.map(formatMovement).join(", ")}.`,
     );
   }
-  if (sections.length > 0) {
-    rationale.push(
-      "Built as a fuller 45-minute session: main lift, secondary lift, two accessory blocks, then a short finisher.",
-    );
-  }
   rationale.push(
     `This is ${slot.title}: ${slot.summary}`,
   );
@@ -1572,6 +1750,11 @@ export function generateNextWorkout(
         `Avoiding muscles trained in the last 48h: ${list.join(", ")}.`,
       );
     }
+  }
+  if (hardMode) {
+    rationale.push(
+      "Hard mode is on: more rounds, denser accessory work, and a stronger finisher.",
+    );
   }
   if (rationale.length === 0) {
     rationale.push("All movement patterns are well covered — balanced session.");

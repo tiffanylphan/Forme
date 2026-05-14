@@ -26,6 +26,7 @@ describe("WeekPage", () => {
         daysPerWeek: 4,
         equipment: "full_gym",
         experience: "beginner",
+        intensity: "standard",
       },
     });
     useWorkoutsMock.mockReturnValue({
@@ -33,7 +34,7 @@ describe("WeekPage", () => {
       workouts: [
         {
           id: "w1",
-          date: "2026-05-06",
+          date: "2026-05-11",
           source: "manual",
           createdAt: 1,
           updatedAt: 1,
@@ -56,6 +57,10 @@ describe("WeekPage", () => {
     expect(screen.getByText("Movement coverage")).toBeInTheDocument();
     expect(screen.getByText("Patterns to fill")).toBeInTheDocument();
     expect(screen.getByText("Weekly muscle targets")).toBeInTheDocument();
+    expect(screen.getByText("Muscle heat")).toBeInTheDocument();
+    expect(screen.getByText("Front")).toBeInTheDocument();
+    expect(screen.getByText("Back")).toBeInTheDocument();
+    expect(screen.getByText("Most worked")).toBeInTheDocument();
     expect(screen.getByText("Top muscle focus")).toBeInTheDocument();
   });
 
@@ -67,6 +72,7 @@ describe("WeekPage", () => {
         daysPerWeek: 4,
         equipment: "full_gym",
         experience: "beginner",
+        intensity: "standard",
       },
     });
     useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });

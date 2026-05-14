@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import type {
   ExperienceLevel,
   GoalMode,
+  SessionIntensity,
   TrainingDaysPerWeek,
   TrainingEnvironment,
   TrainingProfile,
@@ -23,12 +24,14 @@ export const ENVIRONMENT_OPTIONS: TrainingEnvironment[] = [
   "home",
 ];
 export const DAY_OPTIONS: TrainingDaysPerWeek[] = [3, 4, 5];
+export const INTENSITY_OPTIONS: SessionIntensity[] = ["standard", "hard"];
 
 export const DEFAULT_PROFILE: TrainingProfile = {
   goal: "physique",
   daysPerWeek: 4,
   equipment: "full_gym",
   experience: "beginner",
+  intensity: "standard",
 };
 
 const EMPTY_SNAPSHOT = { profile: null, ready: false } as const;
@@ -49,6 +52,10 @@ const isEnvironment = (value: unknown): value is TrainingEnvironment =>
 const isDays = (value: unknown): value is TrainingDaysPerWeek =>
   value === 3 || value === 4 || value === 5;
 
+const isIntensity = (value: unknown): value is SessionIntensity =>
+  typeof value === "string" &&
+  INTENSITY_OPTIONS.includes(value as SessionIntensity);
+
 const normalizeProfile = (raw: unknown): TrainingProfile | null => {
   if (!raw || typeof raw !== "object") return null;
   const candidate = raw as Partial<TrainingProfile>;
@@ -65,6 +72,9 @@ const normalizeProfile = (raw: unknown): TrainingProfile | null => {
     experience: candidate.experience,
     equipment: candidate.equipment,
     daysPerWeek: candidate.daysPerWeek,
+    intensity: isIntensity(candidate.intensity)
+      ? candidate.intensity
+      : DEFAULT_PROFILE.intensity,
   };
 };
 
@@ -143,3 +153,6 @@ export const formatEnvironment = (environment: TrainingEnvironment): string =>
     : environment === "dumbbells"
       ? "Dumbbells"
       : "Home";
+
+export const formatIntensity = (intensity: SessionIntensity): string =>
+  intensity === "hard" ? "Hard" : "Standard";

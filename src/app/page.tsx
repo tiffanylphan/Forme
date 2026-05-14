@@ -15,6 +15,7 @@ import {
   formatEnvironment,
   formatExperience,
   formatGoal,
+  formatIntensity,
   useTrainingProfile,
 } from "@/lib/profile";
 import { useWorkouts } from "@/lib/storage";
@@ -154,6 +155,7 @@ export default function Home() {
             <ProfileChip>{profile.daysPerWeek} days/week</ProfileChip>
             <ProfileChip>{formatEnvironment(profile.equipment)}</ProfileChip>
             <ProfileChip>{formatExperience(profile.experience)}</ProfileChip>
+            <ProfileChip>{formatIntensity(profile.intensity)}</ProfileChip>
           </div>
         </Link>
       )}
@@ -239,6 +241,12 @@ export default function Home() {
                 <span className="text-[12px] text-text-subtle">
                   {workouts.length} total
                 </span>
+                <Link
+                  href="/import"
+                  className="rounded-full border border-[#D3D1C7] bg-white px-3 py-1 text-[11px] font-medium text-text-muted"
+                >
+                  Import Data
+                </Link>
                 <button
                   type="button"
                   onClick={exportHistory}

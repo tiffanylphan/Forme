@@ -8,10 +8,12 @@ import {
   DEFAULT_PROFILE,
   ENVIRONMENT_OPTIONS,
   EXPERIENCE_OPTIONS,
+  INTENSITY_OPTIONS,
   GOAL_OPTIONS,
   formatEnvironment,
   formatExperience,
   formatGoal,
+  formatIntensity,
   loadTrainingProfile,
   saveTrainingProfile,
   useTrainingProfile,
@@ -103,6 +105,18 @@ export default function OnboardingPage() {
                 setDraft((prev) => ({ ...prev, experience }))
               }
             />
+
+            <Question
+              label="Session intensity"
+              options={INTENSITY_OPTIONS.map((value) => ({
+                value,
+                text: formatIntensity(value),
+              }))}
+              selected={draft.intensity}
+              onSelect={(intensity) =>
+                setDraft((prev) => ({ ...prev, intensity }))
+              }
+            />
           </section>
 
           <section className="mt-5 rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-4">
@@ -112,6 +126,7 @@ export default function OnboardingPage() {
               <Chip>{draft.daysPerWeek} days/week</Chip>
               <Chip>{formatEnvironment(draft.equipment)}</Chip>
               <Chip>{formatExperience(draft.experience)}</Chip>
+              <Chip>{formatIntensity(draft.intensity)}</Chip>
             </div>
           </section>
 

@@ -26,6 +26,7 @@ describe("NextPage", () => {
         daysPerWeek: 4,
         equipment: "full_gym",
         experience: "beginner",
+        intensity: "standard",
       },
     });
     useWorkoutsMock.mockReturnValue({
@@ -43,6 +44,7 @@ describe("NextPage", () => {
     expect(screen.getByText("Before you lift")).toBeInTheDocument();
     expect(screen.getByText("After you finish")).toBeInTheDocument();
     expect(screen.getByText("Weekly target sets")).toBeInTheDocument();
+    expect(screen.getAllByText("Complementary mobility").length).toBeGreaterThan(0);
   });
 
   it("prompts for setup when no training profile exists", () => {

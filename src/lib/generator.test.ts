@@ -8,6 +8,7 @@ const profile: TrainingProfile = {
   daysPerWeek: 4,
   equipment: "full_gym",
   experience: "beginner",
+  intensity: "standard",
 };
 
 const threeDayProfile: TrainingProfile = {
@@ -15,6 +16,7 @@ const threeDayProfile: TrainingProfile = {
   daysPerWeek: 3,
   equipment: "full_gym",
   experience: "beginner",
+  intensity: "standard",
 };
 
 const workout = (
@@ -106,8 +108,10 @@ describe("generateNextWorkout", () => {
 
     expect(draft.mobility.title).toBe("5-minute warm-up");
     expect(draft.mobility.items.length).toBeGreaterThan(0);
+    expect(Array.isArray(draft.mobility.complementary)).toBe(true);
     expect(draft.cooldown.title).toBe("Cooldown and stretch");
     expect(draft.cooldown.items.length).toBeGreaterThan(0);
+    expect(Array.isArray(draft.cooldown.complementary)).toBe(true);
   });
 
   it("respects equipment restrictions from the training profile", () => {
@@ -170,6 +174,30 @@ describe("generateNextWorkout", () => {
       draft.sections.some((section) => section.repScheme.includes("lighter load")),
     ).toBe(true);
     expect(dumbbellExercise?.suggestedWeight == null || dumbbellExercise.suggestedWeight <= 15).toBe(true);
+  });
+
+  it("makes hard mode tougher with a paired opener while capping barbell use", () => {
+    const draft = generateNextWorkout([], "2026-05-06", 456, {
+      ...profile,
+      intensity: "hard",
+    });
+
+    const finisherSection = draft.sections.find((section) => section.kind === "finisher");
+    const barbellExercises = draft.sections
+      .flatMap((section) => section.exercises)
+      .map((exercise) => findExercise(exercise.name))
+      .filter((exercise) => exercise?.equipment === "barbell");
+    expect(draft.rationale.some((line) => line.includes("Hard mode is on"))).toBe(true);
+    expect(draft.sections[0]?.kind).toBe("superset");
+    expect(draft.sections[0]?.exercises).toHaveLength(2);
+    expect(
+      draft.sections[0]?.exercises.filter((exercise) =>
+        findExercise(exercise.name)?.equipment === "barbell",
+      ).length,
+    ).toBeLessThanOrEqual(1);
+    expect(barbellExercises.length).toBeLessThanOrEqual(2);
+    expect(draft.sections.some((section) => section.rounds >= 4)).toBe(true);
+    expect(finisherSection?.rounds).toBeGreaterThanOrEqual(2);
   });
 
   it("advances to the next slot when the current week already has the prior sessions logged", () => {
