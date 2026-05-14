@@ -50,6 +50,7 @@ describe("generateNextWorkout", () => {
     const draft = generateNextWorkout([], "2026-05-06", 123, profile);
     expect(draft.split.title).toBe("Lower A");
     expect(draft.rationale.some((line) => line.includes("Lower A"))).toBe(true);
+    expect(draft.split.summary).toBe("Lower emphasis with posterior chain and upper-back support.");
   });
 
   it("starts a 3-day physique week on Lower A", () => {
@@ -198,6 +199,7 @@ describe("generateNextWorkout", () => {
     expect(barbellExercises.length).toBeLessThanOrEqual(2);
     expect(draft.sections.some((section) => section.rounds >= 4)).toBe(true);
     expect(finisherSection?.rounds).toBeGreaterThanOrEqual(2);
+    expect(finisherSection?.exercises.length).toBeGreaterThanOrEqual(2);
   });
 
   it("advances to the next slot when the current week already has the prior sessions logged", () => {
@@ -243,6 +245,24 @@ describe("generateNextWorkout", () => {
     );
     expect(draft.split.title).toBe("Upper A");
     expect(totalExercises).toBeGreaterThanOrEqual(5);
+  });
+
+  it("treats 4-day physique upper days as upper-emphasis with controlled lower crossover", () => {
+    const workouts = [workout("w1", "2026-05-05", [
+      { name: "Barbell hip thrust", sets: 4 },
+      { name: "DB Bulgarian split squat", sets: 3 },
+    ])];
+    const draft = generateNextWorkout(workouts, "2026-05-06", 777, profile);
+    const allExercises = draft.sections.flatMap((section) => section.exercises);
+
+    expect(draft.split.title).toBe("Upper A");
+    expect(draft.split.summary).toBe("Upper emphasis with back, shoulders, and glute support.");
+    expect(
+      allExercises.some((exercise) =>
+        exercise.primary.includes("glutes") ||
+        exercise.secondary.includes("glutes"),
+      ),
+    ).toBe(true);
   });
 
   it("fills the first incomplete split slot after a prior slot workout was deleted", () => {
@@ -328,8 +348,114 @@ describe("generateNextWorkout", () => {
     const finisherSection = draft.sections.find((section) => section.kind === "finisher");
 
     expect(finisherSection).toBeDefined();
-    expect(finisherSection?.exercises[0].pattern === "conditioning").toBe(true);
+    expect(finisherSection?.exercises.length).toBeGreaterThanOrEqual(1);
+    expect(
+      finisherSection?.exercises.every((exercise) =>
+        [
+          "Half burpee w/ dumbbell",
+          "Burpee",
+          "Squat thrust",
+          "High knees",
+          "Mountain climber",
+          "Bear crawl",
+          "Bear plank shoulder tap",
+          "Plank to push-up",
+          "Push-up to renegade row",
+          "DB renegade row",
+          "DB snatch",
+          "Skater hop",
+          "Squat jump",
+          "Forward lunge",
+          "Lateral lunge",
+          "Reverse lunge",
+          "Banded wall sit abduction pulses",
+          "Archer push-up",
+          "Push-up",
+          "Incline push-up",
+          "Hollow body hold",
+          "Superman hold",
+          "Plank",
+          "Plank jack",
+          "Shoulder tap",
+          "Bodyweight squat",
+          "Wall ball shot",
+          "Medicine ball slam",
+          "Tall-kneeling rotational medicine ball slam",
+          "Farmer carry",
+          "Suitcase carry",
+        ].includes(exercise.name),
+      ),
+    ).toBe(true);
     expect(finisherSection?.rounds).toBe(3);
+  });
+
+  it("avoids specialized machine finishers when accessible options exist", () => {
+    const draft = generateNextWorkout([], "2026-05-06", 1234, profile);
+    const finisherExercises = draft.sections.find((section) => section.kind === "finisher")?.exercises ?? [];
+
+    expect(finisherExercises.length).toBeGreaterThanOrEqual(1);
+    expect(
+      finisherExercises.some((exercise) =>
+        [
+          "Half burpee w/ dumbbell",
+          "Burpee",
+          "Squat thrust",
+          "High knees",
+          "Mountain climber",
+          "Bear crawl",
+          "Bear plank shoulder tap",
+          "Plank to push-up",
+          "Push-up to renegade row",
+          "DB renegade row",
+          "DB snatch",
+          "Skater hop",
+          "Squat jump",
+          "Forward lunge",
+          "Lateral lunge",
+          "Reverse lunge",
+          "Banded wall sit abduction pulses",
+          "Archer push-up",
+          "Push-up",
+          "Incline push-up",
+          "Hollow body hold",
+          "Superman hold",
+          "Plank",
+          "Plank jack",
+          "Shoulder tap",
+          "Bodyweight squat",
+          "Wall ball shot",
+          "Medicine ball slam",
+          "Tall-kneeling rotational medicine ball slam",
+          "Farmer carry",
+          "Suitcase carry",
+        ].includes(exercise.name),
+      ),
+    ).toBe(true);
+    expect(
+      finisherExercises.every((exercise) =>
+        ![
+          "Assault bike",
+          "Battle ropes",
+          "Sled push",
+          "Ski erg",
+          "Rowing machine",
+          "Jump rope",
+        ].includes(exercise.name),
+      ),
+    ).toBe(true);
+  });
+
+  it("produces more than two hard-mode finisher templates across different seeds", () => {
+    const labels = new Set(
+      Array.from({ length: 12 }, (_, index) =>
+        generateNextWorkout([], "2026-05-06", 5000 + index, {
+          ...profile,
+          intensity: "hard",
+        }).sections.find((section) => section.kind === "finisher")?.repScheme,
+      ).filter((value): value is string => Boolean(value)),
+    );
+
+    expect(labels.size).toBeGreaterThan(2);
   });
 
   it("overrides lower-b-in-order when pull is still untouched this week", () => {
@@ -362,6 +488,95 @@ describe("generateNextWorkout", () => {
 
     expect(draft.split.title).toBe("Lower A");
     expect(glutePrimaryExercises.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("avoids stacking multiple knee-dominant unilateral lower families in one lower-b session", () => {
+    const workouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "Barbell Romanian deadlift", sets: 3 },
+      ], {
+        slotId: "lower_glute_ham",
+        title: "Lower A",
+      }),
+      workout("w2", "2026-05-06", [
+        { name: "Cable row", sets: 4 },
+        { name: "DB overhead press", sets: 3 },
+      ], {
+        slotId: "upper_back_shoulder",
+        title: "Upper A",
+      }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-07", 123, profile);
+    const lowerUnilateralFamilies = draft.sections
+      .flatMap((section) => section.exercises)
+      .map((exercise) => exercise.name.toLowerCase())
+      .filter(
+        (name) =>
+          name.includes("split squat") ||
+          name.includes("bulgarian") ||
+          name.includes("lunge") ||
+          name.includes("step-up"),
+      );
+
+    expect(draft.split.title).toBe("Lower B");
+    expect(lowerUnilateralFamilies.length).toBeLessThanOrEqual(1);
+  });
+
+  it("uses a real lower anchor instead of an isolation lift to open lower-b sessions", () => {
+    const workouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "Barbell Romanian deadlift", sets: 3 },
+      ], {
+        slotId: "lower_glute_ham",
+        title: "Lower A",
+      }),
+      workout("w2", "2026-05-06", [
+        { name: "Cable row", sets: 4 },
+        { name: "DB overhead press", sets: 3 },
+      ], {
+        slotId: "upper_back_shoulder",
+        title: "Upper A",
+      }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-07", 123, profile);
+    const opener = draft.sections[0]?.exercises[0]?.name;
+
+    expect(draft.split.title).toBe("Lower B");
+    expect(opener).toBeDefined();
+    expect(["Leg extension", "Leg curl", "Banded clamshell"]).not.toContain(opener);
+  });
+
+  it("keeps activation drills out of standard lower-b main-session slots when better options exist", () => {
+    const workouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "Barbell Romanian deadlift", sets: 3 },
+      ], {
+        slotId: "lower_glute_ham",
+        title: "Lower A",
+      }),
+      workout("w2", "2026-05-06", [
+        { name: "Cable row", sets: 4 },
+        { name: "DB overhead press", sets: 3 },
+      ], {
+        slotId: "upper_back_shoulder",
+        title: "Upper A",
+      }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-07", 123, profile);
+    const exerciseNames = draft.sections.flatMap((section) =>
+      section.exercises.map((exercise) => exercise.name),
+    );
+
+    expect(draft.split.title).toBe("Lower B");
+    expect(exerciseNames).not.toContain("Banded clamshell");
+    expect(exerciseNames).not.toContain("Banded fire hydrant");
+    expect(exerciseNames).not.toContain("Banded walkout");
   });
 
   it("inserts direct arm work on upper-b physique days", () => {

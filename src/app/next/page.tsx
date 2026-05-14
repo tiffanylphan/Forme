@@ -711,17 +711,21 @@ function SectionCard({
 }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-[#E6E3D8] bg-surface">
-      <div className="flex items-center justify-between border-b border-divider px-4 py-2.5">
+      <div className="flex items-start justify-between gap-3 border-b border-divider px-4 py-2.5">
         <span className="label-eyebrow">{sectionTitleFor(section)}</span>
-        <span className="text-[11px] text-text-subtle">
-          {section.rounds} rounds · {section.repScheme}
-        </span>
+        <div className="min-w-0 text-right">
+          <div className="text-[11px] text-text-subtle">{section.rounds} rounds</div>
+          <div className="text-[10px] leading-snug text-text-subtle">
+            {section.repScheme}
+          </div>
+        </div>
       </div>
-      <div className="divide-y divide-divider">
+      <div className={section.kind === "finisher" ? "space-y-2 px-3 py-3" : "divide-y divide-divider"}>
         {section.exercises.map((ex, ei) => (
           <ExerciseRow
             key={`${sectionIdx}-${ei}-${ex.name}`}
             ex={ex}
+            compact={section.kind === "finisher"}
             onSwap={() => onSwapRequest(ei, ex.movement, ex.targets)}
           />
         ))}
@@ -734,14 +738,53 @@ function SectionCard({
 
 function ExerciseRow({
   ex,
+  compact = false,
   onSwap,
 }: {
   ex: DraftExercise;
+  compact?: boolean;
   onSwap: () => void;
 }) {
   const movColor = ex.movement ? MOVEMENT_COLORS[ex.movement] : null;
   const recentTrend = ex.progression.recentHistory.slice(0, 3);
   const trendLabel = recentTrend.map((entry) => entry.status).join(" → ");
+  if (compact) {
+    return (
+      <div className="rounded-xl border border-[#E6E3D8] bg-white px-3 py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <h3 className="text-[14px] font-medium leading-snug text-text">
+              {ex.name}
+            </h3>
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              {ex.movement && movColor && (
+                <span
+                  style={{ background: movColor.bg, color: movColor.text }}
+                  className="rounded-full px-2.5 py-0.5 text-[10px] font-medium"
+                >
+                  {MOVEMENT_LABELS[ex.movement]}
+                </span>
+              )}
+              {ex.primary.map((m) => (
+                <MuscleTag key={m} muscle={m} />
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {ex.targets.map((t, i) => (
+            <span
+              key={i}
+              className="rounded-md bg-[#FAFAF7] px-2 py-1 font-mono text-[12px] text-text-muted"
+            >
+              R{i + 1}: {formatTarget(t)}
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="px-4 py-3">
       <div className="flex items-start justify-between gap-2">

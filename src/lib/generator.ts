@@ -88,25 +88,122 @@ type SplitSlot = {
   targetPrimarySets: Partial<Record<MuscleGroup, number>>;
 };
 
+type FinisherTemplate = {
+  id: string;
+  label: string;
+  exercises: string[];
+  rounds: number;
+  repScheme: string;
+  tags: ("upper" | "lower" | "core" | "conditioning")[];
+  requiresHardMode?: boolean;
+};
+
 const PHYSIQUE_UPPER_A_SLOT: SplitSlot = {
   id: "upper_back_shoulder",
   title: "Upper A",
-  summary: "Back and shoulder emphasis.",
-  focusMuscles: ["back", "shoulders", "rear_delts", "core"],
+  summary: "Upper emphasis with back, shoulders, and glute support.",
+  focusMuscles: ["back", "shoulders", "rear_delts", "glutes", "core"],
   preferredMovements: ["pull", "push"],
-  allowedMovements: ["pull", "push", "carry_core"],
-  targetPrimarySets: { back: 8, shoulders: 5, rear_delts: 4, core: 3 },
+  allowedMovements: ["pull", "push", "hinge", "carry_core"],
+  targetPrimarySets: { back: 7, shoulders: 5, rear_delts: 4, glutes: 2, core: 3 },
 };
 
 const PHYSIQUE_UPPER_B_SLOT: SplitSlot = {
   id: "upper_back_shoulder_arms",
   title: "Upper B",
-  summary: "Back, shoulder, and arm emphasis.",
-  focusMuscles: ["back", "shoulders", "rear_delts", "biceps", "triceps"],
+  summary: "Upper emphasis with shoulders, arms, and lower-body support.",
+  focusMuscles: ["back", "shoulders", "rear_delts", "biceps", "triceps", "glutes", "core"],
   preferredMovements: ["pull", "push"],
-  allowedMovements: ["pull", "push", "carry_core"],
-  targetPrimarySets: { back: 7, shoulders: 5, rear_delts: 4, biceps: 3, triceps: 2, core: 2 },
+  allowedMovements: ["pull", "push", "single_leg", "carry_core"],
+  targetPrimarySets: { back: 6, shoulders: 5, rear_delts: 4, biceps: 3, triceps: 2, glutes: 2, core: 2 },
 };
+
+const FINISHER_TEMPLATES: FinisherTemplate[] = [
+  {
+    id: "mechanical_pushup_drop",
+    label: "mechanical advantage drop set",
+    exercises: ["Archer push-up", "Push-up", "Incline push-up"],
+    rounds: 3,
+    repScheme: "15 sec each, no rest · drop set",
+    tags: ["upper", "conditioning"],
+    requiresHardMode: true,
+  },
+  {
+    id: "lunge_trip",
+    label: "bi-directional lunge complex",
+    exercises: ["Forward lunge", "Lateral lunge", "Reverse lunge"],
+    rounds: 3,
+    repScheme: "3 trips per leg · stay on one side before switching",
+    tags: ["lower", "conditioning"],
+  },
+  {
+    id: "burpee_ladder",
+    label: "burpee ladder",
+    exercises: ["Burpee", "Bodyweight squat"],
+    rounds: 2,
+    repScheme: "Burpees 1→5→1, air squats 10 each rung",
+    tags: ["conditioning", "lower"],
+    requiresHardMode: true,
+  },
+  {
+    id: "hollow_superman",
+    label: "hollow-to-superman roll",
+    exercises: ["Hollow body hold", "Superman hold"],
+    rounds: 4,
+    repScheme: "10 sec hold each + controlled roll transition",
+    tags: ["core", "conditioning"],
+  },
+  {
+    id: "plank_traveler",
+    label: "plank traveler",
+    exercises: ["Plank", "Plank to push-up", "Plank jack", "Shoulder tap"],
+    rounds: 3,
+    repScheme: "40 sec non-stop travel through all positions",
+    tags: ["upper", "core", "conditioning"],
+  },
+  {
+    id: "bear_box",
+    label: "bear crawl box",
+    exercises: ["Bear crawl", "Bear plank shoulder tap", "High knees"],
+    rounds: 3,
+    repScheme: "5 steps each direction + taps + sprint in place",
+    tags: ["lower", "core", "conditioning"],
+  },
+  {
+    id: "wall_ball_sprint",
+    label: "wall-ball sprint",
+    exercises: ["Wall ball shot", "High knees", "Wall ball shot"],
+    rounds: 3,
+    repScheme: "20 wall balls + 20 sec sprint in place",
+    tags: ["lower", "upper", "conditioning"],
+  },
+  {
+    id: "slam_and_sprawl",
+    label: "slam-and-sprawl chain",
+    exercises: ["Tall-kneeling rotational medicine ball slam", "Burpee", "Bear crawl"],
+    rounds: 3,
+    repScheme: "30 sec each, no rest · slam-sprawl-crawl",
+    tags: ["upper", "core", "conditioning"],
+    requiresHardMode: true,
+  },
+  {
+    id: "wall_sit_burnout",
+    label: "wall-sit burnout",
+    exercises: ["Banded wall sit abduction pulses", "Lateral lunge", "Banded wall sit abduction pulses"],
+    rounds: 3,
+    repScheme: "30 sec sit + 8/side lunges + 20 sec sit",
+    tags: ["lower", "conditioning"],
+  },
+  {
+    id: "dumbbell_burner",
+    label: "dumbbell burner",
+    exercises: ["Half burpee w/ dumbbell", "Push-up to renegade row", "DB snatch"],
+    rounds: 3,
+    repScheme: "30 sec each, no rest · metabolic chain",
+    tags: ["upper", "lower", "conditioning"],
+    requiresHardMode: true,
+  },
+];
 
 // Deterministic PRNG so a given seed → same output.
 function mulberry32(seed: number): () => number {
@@ -175,6 +272,9 @@ const summarizePerformance = (performance: ReturnType<typeof lastPerformance>): 
   const load = performance.weight != null ? `${performance.weight} ${performance.unit}` : "bodyweight";
   return `${load} x ${repList}`;
 };
+
+const findExerciseByName = (name: string): Exercise | null =>
+  EXERCISES.find((exercise) => exercise.name === name) ?? null;
 
 const buildProgression = (
   ex: Exercise,
@@ -377,6 +477,32 @@ const isHomeConditioningFriendly = (ex: Exercise): boolean =>
   ex.equipment === "bodyweight" ||
   ex.equipment === "band";
 
+const isAccessibleConditioningFinisher = (ex: Exercise): boolean =>
+  ex.pattern === "conditioning" &&
+  ["bodyweight", "dumbbell", "band"].includes(ex.equipment);
+
+const isAccessibleMetabolicFinisher = (ex: Exercise): boolean =>
+  [
+    "Half burpee w/ dumbbell",
+    "Burpee",
+    "Squat thrust",
+    "High knees",
+    "Mountain climber",
+    "Bear crawl",
+    "Bear plank shoulder tap",
+    "Plank to push-up",
+    "Push-up to renegade row",
+    "DB renegade row",
+    "DB snatch",
+    "Skater hop",
+    "Squat jump",
+  ].includes(ex.name);
+
+const isPreferredAccessibleFinisher = (ex: Exercise): boolean =>
+  movementOf(ex) === "carry_core" ||
+  isAccessibleConditioningFinisher(ex) ||
+  isAccessibleMetabolicFinisher(ex);
+
 const formatMovement = (m: MovementPattern): string =>
   m === "carry_core"
     ? "carry/core"
@@ -418,6 +544,39 @@ const isDirectGluteFocus = (ex: Exercise): boolean =>
   hasPrimary(ex, "glutes") &&
   (movementOf(ex) === "hinge" || movementOf(ex) === "single_leg");
 
+const isLowerIsolation = (ex: Exercise): boolean =>
+  [
+    "Leg extension",
+    "Leg curl",
+    "Banded clamshell",
+    "Banded fire hydrant",
+    "Banded walkout",
+    "Glute bridge",
+    "Bench single-leg hip thrust",
+    "Wall sit",
+    "Sissy squat",
+  ].includes(ex.name);
+
+const isActivationLowerAccessory = (ex: Exercise): boolean =>
+  [
+    "Banded clamshell",
+    "Banded fire hydrant",
+    "Banded walkout",
+    "Glute bridge",
+  ].includes(ex.name);
+
+const isStrongLowerAnchor = (ex: Exercise): boolean => {
+  const movement = movementOf(ex);
+  if (!movement) return false;
+  if (isLowerIsolation(ex)) return false;
+
+  if (movement === "squat" || movement === "hinge") return true;
+  if (movement !== "single_leg") return false;
+
+  const family = familyOf(ex);
+  return family === "split_squat" || family === "lunge" || family === "step_up";
+};
+
 const isPhysiqueFriendly = (ex: Exercise): boolean => {
   const movement = movementOf(ex);
   if (!movement) return false;
@@ -449,6 +608,15 @@ const familyOf = (ex: Exercise): string => {
   if (name.includes("carry")) return "carry";
   if (ex.pattern === "core") return "core";
   return `${ex.pattern}_${ex.equipment}`;
+};
+
+const lowerUnilateralKneeFamilyOf = (ex: Exercise): string | null => {
+  if (movementOf(ex) !== "single_leg") return null;
+  const family = familyOf(ex);
+  if (family === "split_squat" || family === "lunge" || family === "step_up") {
+    return family;
+  }
+  return null;
 };
 
 const WARMUP_BY_MUSCLE: Partial<Record<MuscleGroup, string[]>> = {
@@ -724,21 +892,21 @@ const getSplitTemplate = (
         {
           id: "lower_glute_ham",
           title: "Lower A",
-          summary: "Glute and hamstring emphasis.",
-          focusMuscles: ["glutes", "hamstrings", "core"],
+          summary: "Lower emphasis with posterior chain and upper-back support.",
+          focusMuscles: ["glutes", "hamstrings", "back", "core"],
           preferredMovements: ["hinge", "single_leg", "squat"],
-          allowedMovements: ["hinge", "single_leg", "squat", "carry_core"],
-          targetPrimarySets: { glutes: 8, hamstrings: 6, core: 4 },
+          allowedMovements: ["hinge", "single_leg", "squat", "pull", "carry_core"],
+          targetPrimarySets: { glutes: 7, hamstrings: 6, back: 2, core: 4 },
         },
         PHYSIQUE_UPPER_A_SLOT,
         {
           id: "lower_glute_quad",
           title: "Lower B",
-          summary: "Glute and quad emphasis.",
-          focusMuscles: ["glutes", "quads", "hamstrings", "core"],
+          summary: "Lower emphasis with quads, glutes, and shoulder support.",
+          focusMuscles: ["glutes", "quads", "hamstrings", "shoulders", "core"],
           preferredMovements: ["single_leg", "squat", "hinge"],
-          allowedMovements: ["single_leg", "squat", "hinge", "carry_core"],
-          targetPrimarySets: { glutes: 7, quads: 6, hamstrings: 4, core: 4 },
+          allowedMovements: ["single_leg", "squat", "hinge", "push", "carry_core"],
+          targetPrimarySets: { glutes: 6, quads: 6, hamstrings: 4, shoulders: 2, core: 4 },
         },
         PHYSIQUE_UPPER_B_SLOT,
       ];
@@ -1072,6 +1240,7 @@ export function generateNextWorkout(
   );
 
   const used = new Set<string>();
+  const claimedFamilies: Partial<Record<string, number>> = {};
   let barbellCount = 0;
   const claimedMovements: Record<MovementPattern, number> = {} as Record<
     MovementPattern,
@@ -1154,6 +1323,24 @@ export function generateNextWorkout(
     if (slot.preferredMovements.includes(movement)) s += 1.4;
     if (currentWeekExerciseNames.has(ex.name)) s -= activeProfile.goal === "strength" ? 0.6 : 2.4;
     if (currentWeekFamilies.has(familyOf(ex))) s -= activeProfile.goal === "strength" ? 0.4 : 1.2;
+    const family = familyOf(ex);
+    const familyCount = claimedFamilies[family] ?? 0;
+    if (familyCount > 0) {
+      s -= activeProfile.goal === "strength" ? familyCount * 1.5 : familyCount * 4;
+    }
+    const lowerUnilateralFamily = lowerUnilateralKneeFamilyOf(ex);
+    if (lowerBiasSlot && lowerUnilateralFamily) {
+      const usedLowerUnilateralFamilies = ["split_squat", "lunge", "step_up"].reduce(
+        (count, key) => count + (claimedFamilies[key] ?? 0),
+        0,
+      );
+      if (usedLowerUnilateralFamilies >= 1) s -= 7;
+      if (usedLowerUnilateralFamilies >= 2) s -= 12;
+    }
+    if (lowerBiasSlot && movement === "single_leg") {
+      if (claimedMovements.single_leg >= 1) s -= 2.5;
+      if (claimedMovements.single_leg >= 2) s -= 8;
+    }
     ex.primary.forEach((m) => {
       if (slot.focusMuscles.includes(m)) s += 1.1;
       const target = slot.targetPrimarySets[m] ?? 0;
@@ -1194,8 +1381,11 @@ export function generateNextWorkout(
       if (!filter(ex)) continue;
       let s = 0;
       if (movementOf(ex) === "carry_core") s += 4;
-      if (ex.pattern === "conditioning") s += 5;
-      if (activeProfile.daysPerWeek === 3 && ex.pattern === "conditioning") s += 4;
+      if (isAccessibleConditioningFinisher(ex)) s += 5;
+      if (activeProfile.daysPerWeek === 3 && isAccessibleConditioningFinisher(ex)) s += 4;
+      if (isAccessibleMetabolicFinisher(ex)) s += 4.5;
+      if (["bodyweight", "dumbbell", "band"].includes(ex.equipment)) s += 1.5;
+      if (ex.pattern === "conditioning" && !isAccessibleConditioningFinisher(ex)) s -= 6;
       if (activeProfile.equipment === "home" && isHomeConditioningFriendly(ex)) s += 2;
       ex.primary.forEach((m) => {
         if (recent.has(m)) s -= 1;
@@ -1210,11 +1400,59 @@ export function generateNextWorkout(
     return best;
   };
 
+  const finisherTargetSet = (
+    ex: Exercise,
+    rounds: number,
+  ): (number | string)[] => {
+    if (movementOf(ex) === "carry_core" || ex.pattern === "conditioning" || ex.pattern === "plyo") {
+      return Array.from(
+        { length: rounds },
+        () => (activeProfile.daysPerWeek === 3 ? "45s" : hardMode ? "40s" : "35s"),
+      );
+    }
+    if (rounds === 4) return [15, 12, 12, 10];
+    if (rounds === 3) return [15, 12, 12];
+    if (rounds === 2) return [12, 10];
+    return [15];
+  };
+
+  const finisherLabel = (exercises: Exercise[]): string => {
+    const includesCarry = exercises.some((ex) => ex.pattern === "carry");
+    const includesConditioning = exercises.some(
+      (ex) => ex.pattern === "conditioning" || ex.pattern === "plyo",
+    );
+    const includesMetcon = exercises.some((ex) => isAccessibleMetabolicFinisher(ex));
+
+    if (exercises.length >= 3) {
+      if (includesConditioning || includesMetcon) return "40 sec on / 20 sec off · finisher circuit";
+      if (includesCarry) return "40–60 sec walk · carry circuit";
+      return "12–15 reps · finisher circuit";
+    }
+    if (exercises.length === 2) {
+      if (includesConditioning || includesMetcon) return "40 sec on / 20 sec off · finisher pair";
+      if (includesCarry) return "40–60 sec walk · carry pair";
+      return "12–15 reps · finisher pair";
+    }
+    const [ex] = exercises;
+    if (!ex) return "12–15 reps";
+    if (ex.pattern === "carry") return "40–60 sec walk";
+    if (ex.pattern === "conditioning" || ex.pattern === "plyo") {
+      return activeProfile.daysPerWeek === 3
+        ? "45 sec hard / 30 sec easy"
+        : isHomeProfile
+          ? "40 sec on / 20 sec off"
+          : "45 sec hard / 45 sec easy";
+    }
+    return isHomeProfile ? "15–20 reps" : "12–15 reps";
+  };
+
   const claim = (ex: Exercise) => {
     used.add(ex.name);
     if (ex.equipment === "barbell") barbellCount += 1;
     const m = movementOf(ex);
     if (m) claimedMovements[m] = claimedMovements[m] + 1;
+    const family = familyOf(ex);
+    claimedFamilies[family] = (claimedFamilies[family] ?? 0) + 1;
   };
 
   const makeDraftEx = (
@@ -1450,43 +1688,74 @@ export function generateNextWorkout(
     return true;
   };
 
+  const avoidSoftLowerAccessory = (ex: Exercise): boolean =>
+    !(lowerBiasSlot && isActivationLowerAccessory(ex));
+
   // 1. Main lift — the most-needed heavy compound among squat, hinge, push, pull.
-  const compoundPick = pickForMovement(
-    compoundMovements,
-    (ex) =>
-      environmentAllows(ex, activeProfile.equipment) &&
-      isHeavyEquipment(ex) &&
-      goalAllows(ex, activeProfile.goal),
-  );
+  const lowerAnchorMovements: MovementPattern[] = ["squat", "hinge", "single_leg"];
+  const compoundPick = lowerBiasSlot
+    ? pickForMovement(
+        lowerAnchorMovements,
+        (ex) =>
+          environmentAllows(ex, activeProfile.equipment) &&
+          goalAllows(ex, activeProfile.goal) &&
+          isStrongLowerAnchor(ex) &&
+          (isHeavyEquipment(ex) || movementOf(ex) === "single_leg"),
+      )
+    : pickForMovement(
+        compoundMovements,
+        (ex) =>
+          environmentAllows(ex, activeProfile.equipment) &&
+          isHeavyEquipment(ex) &&
+          goalAllows(ex, activeProfile.goal),
+      );
   // 2. Secondary lift — add another focused block before accessories.
-  let secondaryPick = pickForMovement(
-    accessoryMovements.filter(
-      (movement) => movement !== compoundPick?.movement,
-    ),
-    (ex) =>
-      environmentAllows(ex, activeProfile.equipment) &&
-      goalAllows(ex, activeProfile.goal) &&
-      isGluteBiasedLower(ex),
+  const secondaryMovements = accessoryMovements.filter(
+    (movement) => movement !== compoundPick?.movement,
   );
+  let secondaryPick = lowerBiasSlot
+    ? pickForMovement(
+        secondaryMovements,
+        (ex) =>
+          environmentAllows(ex, activeProfile.equipment) &&
+          goalAllows(ex, activeProfile.goal) &&
+          isGluteBiasedLower(ex) &&
+          avoidSoftLowerAccessory(ex),
+      )
+    : pickForMovement(
+        secondaryMovements,
+        (ex) =>
+          environmentAllows(ex, activeProfile.equipment) &&
+          goalAllows(ex, activeProfile.goal) &&
+          (isBackOrShoulderFocused(ex) || (armBiasSlot && isDirectArmFocus(ex))) &&
+          avoidSoftLowerAccessory(ex),
+      );
   if (!secondaryPick) {
-      secondaryPick = pickForMovement(
-      accessoryMovements.filter(
-        (movement) => movement !== compoundPick?.movement,
-      ),
-      (ex) =>
-        environmentAllows(ex, activeProfile.equipment) &&
-        goalAllows(ex, activeProfile.goal) &&
-        isBackOrShoulderFocused(ex),
-    );
+    secondaryPick = lowerBiasSlot
+      ? pickForMovement(
+          secondaryMovements,
+          (ex) =>
+            environmentAllows(ex, activeProfile.equipment) &&
+            goalAllows(ex, activeProfile.goal) &&
+            isBackOrShoulderFocused(ex) &&
+            avoidSoftLowerAccessory(ex),
+        )
+      : pickForMovement(
+          secondaryMovements,
+          (ex) =>
+            environmentAllows(ex, activeProfile.equipment) &&
+            goalAllows(ex, activeProfile.goal) &&
+            isGluteBiasedLower(ex) &&
+            avoidSoftLowerAccessory(ex),
+        );
   }
   if (!secondaryPick) {
     secondaryPick = pickForMovement(
-      accessoryMovements.filter(
-        (movement) => movement !== compoundPick?.movement,
-      ),
+      secondaryMovements,
       (ex) =>
         environmentAllows(ex, activeProfile.equipment) &&
         goalAllows(ex, activeProfile.goal) &&
+        avoidSoftLowerAccessory(ex) &&
         !(compoundPick?.exercise.equipment === "barbell" && ex.equipment === "barbell"),
     );
   }
@@ -1539,6 +1808,7 @@ export function generateNextWorkout(
     (ex) =>
       environmentAllows(ex, activeProfile.equipment) &&
       goalAllows(ex, activeProfile.goal) &&
+      avoidSoftLowerAccessory(ex) &&
       (activeProfile.goal !== "physique" ||
         (!isChestDominantPush(ex) &&
           ((lowerBiasSlot &&
@@ -1552,6 +1822,7 @@ export function generateNextWorkout(
   const secondAccessoryFilter = (ex: Exercise) =>
     environmentAllows(ex, activeProfile.equipment) &&
     goalAllows(ex, activeProfile.goal) &&
+    avoidSoftLowerAccessory(ex) &&
     (activeProfile.goal !== "physique" ||
       ((lowerBiasSlot &&
         (isGluteBiasedLower(ex) ||
@@ -1559,7 +1830,8 @@ export function generateNextWorkout(
           isBackOrShoulderFocused(ex))) ||
         (upperBiasSlot &&
           (isBackOrShoulderFocused(ex) ||
-            (armBiasSlot && isDirectArmFocus(ex))))));
+            (armBiasSlot && isDirectArmFocus(ex)) ||
+            isGluteBiasedLower(ex)))));
 
   if (useTrisetAccessory) {
     addCircuit(
@@ -1584,46 +1856,156 @@ export function generateNextWorkout(
   const allowConditioningFinisher =
     activeProfile.daysPerWeek === 3 ||
     isHomeProfile;
-  const fin = pickBestFinisher((ex) => {
-    if (!environmentAllows(ex, activeProfile.equipment)) return false;
-    if (allowConditioningFinisher) {
-      return movementOf(ex) === "carry_core" || ex.pattern === "conditioning";
+  const templateApplies = (template: FinisherTemplate): boolean => {
+    if (template.requiresHardMode && !hardMode) return false;
+    if (lowerBiasSlot && !template.tags.includes("lower") && !template.tags.includes("conditioning")) {
+      return false;
     }
-    return movementOf(ex) === "carry_core";
-  });
-  if (fin) {
-    claim(fin);
-    if (movementOf(fin) === "carry_core") pushMovement("carry_core");
-    const isCarry = fin.pattern === "carry";
-    const isConditioning = fin.pattern === "conditioning";
+    if (upperBiasSlot && !template.tags.includes("upper") && !template.tags.includes("core") && !template.tags.includes("conditioning")) {
+      return false;
+    }
+    const exercises = template.exercises
+      .map(findExerciseByName)
+      .filter((exercise): exercise is Exercise => Boolean(exercise));
+    if (exercises.length !== template.exercises.length) return false;
+    return exercises.every(
+      (exercise) =>
+        !used.has(exercise.name) &&
+        environmentAllows(exercise, activeProfile.equipment),
+    );
+  };
+  const templateScore = (template: FinisherTemplate): number => {
+    let score = 0;
+    if (template.tags.includes("conditioning")) score += 2;
+    if (template.tags.includes("core")) score += 1.25;
+    if (template.tags.includes("lower") && lowerBiasSlot) score += 2.5;
+    if (template.tags.includes("upper") && upperBiasSlot) score += 2.5;
+    if (template.tags.includes("core") && upperBiasSlot) score += 0.75;
+    if (template.tags.includes("core") && lowerBiasSlot) score += 0.5;
+    if (template.requiresHardMode && hardMode) score += 1.5;
+    if (template.exercises.some((name) => {
+      const exercise = findExerciseByName(name);
+      return exercise?.equipment === "dumbbell" || exercise?.equipment === "bodyweight";
+    })) {
+      score += 0.75;
+    }
+    if (template.tags.includes("upper") && lowerBiasSlot) score -= 0.5;
+    if (template.tags.includes("lower") && upperBiasSlot) score -= 0.5;
+    return score;
+  };
+  const scoredTemplates = [...FINISHER_TEMPLATES]
+    .filter(templateApplies)
+    .map((template) => ({
+      template,
+      score: templateScore(template),
+    }))
+    .sort((a, b) => b.score - a.score);
+  const bestTemplateScore = scoredTemplates[0]?.score ?? -Infinity;
+  const templateShortlist = scoredTemplates.filter(
+    ({ score }) => score >= bestTemplateScore - 1.5,
+  );
+  let chosenTemplate: FinisherTemplate | undefined;
+  if (hardMode && scoredTemplates.length > 0) {
+    const rotationPool = scoredTemplates.slice(0, Math.min(4, scoredTemplates.length));
+    chosenTemplate = rotationPool[Math.abs(seed) % rotationPool.length]?.template;
+  } else if (templateShortlist.length > 0) {
+    const weighted = templateShortlist.map(({ template, score }) => ({
+      template,
+      weight: Math.max(0.25, score - (bestTemplateScore - 1.75)),
+    }));
+    const totalWeight = weighted.reduce((sum, entry) => sum + entry.weight, 0);
+    let draw = rng() * totalWeight;
+    for (const entry of weighted) {
+      draw -= entry.weight;
+      if (draw <= 0) {
+        chosenTemplate = entry.template;
+        break;
+      }
+    }
+    chosenTemplate ??= weighted[weighted.length - 1]?.template;
+  }
+
+  if (chosenTemplate) {
+    const templateExercises = chosenTemplate.exercises
+      .map(findExerciseByName)
+      .filter((exercise): exercise is Exercise => Boolean(exercise));
+    templateExercises.forEach((exercise) => {
+      claim(exercise);
+      if (movementOf(exercise) === "carry_core") pushMovement("carry_core");
+    });
+    sections.push({
+      kind: "finisher",
+      rounds: chosenTemplate.rounds,
+      repScheme: `${chosenTemplate.repScheme} · ${chosenTemplate.label}`,
+      exercises: templateExercises.map((exercise) =>
+        makeDraftEx(exercise, finisherTargetSet(exercise, chosenTemplate.rounds)),
+      ),
+    });
+  } else {
+    const finisherCandidates = EXERCISES.filter((ex) => {
+      if (used.has(ex.name)) return false;
+      if (!environmentAllows(ex, activeProfile.equipment)) return false;
+      if (allowConditioningFinisher) return isPreferredAccessibleFinisher(ex);
+      return movementOf(ex) === "carry_core" || isAccessibleMetabolicFinisher(ex);
+    });
+    const preferredFinisherCount = hardMode ? 3 : activeProfile.daysPerWeek === 3 ? 2 : 1;
+  const finisherPicks: Exercise[] = [];
+  const finisherNames = new Set<string>();
+  const finisherFamilies = new Set<string>();
+  const finisherNoise = new Map<string, number>();
+  finisherCandidates.forEach((ex) => finisherNoise.set(ex.name, rng()));
+  const sortFinisherScore = (ex: Exercise): number => {
+    let s = 0;
+    if (isAccessibleConditioningFinisher(ex)) s += 5;
+    if (isAccessibleMetabolicFinisher(ex)) s += 4.5;
+    if (movementOf(ex) === "carry_core") s += 4;
+    if (["bodyweight", "dumbbell", "band"].includes(ex.equipment)) s += 1.5;
+    if (known.has(ex.name)) s += 0.4;
+    ex.primary.forEach((m) => {
+      if (recent.has(m)) s -= 1;
+    });
+    return s + (finisherNoise.get(ex.name) ?? 0) * 0.5;
+  };
+
+  for (const ex of [...finisherCandidates].sort((a, b) => sortFinisherScore(b) - sortFinisherScore(a))) {
+    if (finisherPicks.length >= preferredFinisherCount) break;
+    if (finisherNames.has(ex.name)) continue;
+    const family = familyOf(ex);
+    if (finisherFamilies.has(family)) continue;
+    if (
+      finisherPicks.length > 0 &&
+      movementOf(ex) !== "carry_core" &&
+      movementOf(ex) !== null &&
+      finisherPicks.some((picked) => movementOf(picked) === movementOf(ex))
+    ) {
+      continue;
+    }
+    finisherPicks.push(ex);
+    finisherNames.add(ex.name);
+    finisherFamilies.add(family);
+  }
+
+  if (finisherPicks.length === 0) {
+    const fin = pickBestFinisher((ex) => {
+      if (!environmentAllows(ex, activeProfile.equipment)) return false;
+      if (allowConditioningFinisher) return isPreferredAccessibleFinisher(ex);
+      return movementOf(ex) === "carry_core" || isAccessibleMetabolicFinisher(ex);
+    });
+    if (fin) finisherPicks.push(fin);
+  }
+
+  if (finisherPicks.length > 0) {
+    finisherPicks.forEach((fin) => {
+      claim(fin);
+      if (movementOf(fin) === "carry_core") pushMovement("carry_core");
+    });
     sections.push({
       kind: "finisher",
       rounds: finisherRounds,
-      repScheme: isCarry
-        ? "40–60 sec walk"
-        : isConditioning
-          ? (activeProfile.daysPerWeek === 3
-              ? "45 sec hard / 30 sec easy"
-              : isHomeProfile
-                ? "40 sec on / 20 sec off"
-                : "45 sec hard / 45 sec easy")
-          : (isHomeProfile ? "15–20 reps" : "12–15 reps"),
-      exercises: [
-        makeDraftEx(
-          fin,
-          isCarry || isConditioning
-            ? Array.from(
-                { length: finisherRounds },
-                () => (activeProfile.daysPerWeek === 3 ? "45s" : "40s"),
-              )
-            : finisherRounds === 2
-              ? (isHomeProfile ? [20, 15] : [15, 12])
-              : finisherRounds === 3
-                ? [15, 15, 12]
-                : [15],
-        ),
-      ],
+      repScheme: finisherLabel(finisherPicks),
+      exercises: finisherPicks.map((fin) => makeDraftEx(fin, finisherTargetSet(fin, finisherRounds))),
     });
+  }
   }
 
   const totalExercises = (): number =>
@@ -1633,6 +2015,15 @@ export function generateNextWorkout(
     sections.some((section) =>
       section.exercises.some((exercise) =>
         exercise.primary.includes("biceps") || exercise.primary.includes("triceps"),
+      ),
+    );
+
+  const hasLowerSupportWork = (): boolean =>
+    sections.some((section) =>
+      section.exercises.some((exercise) =>
+        exercise.primary.includes("glutes") ||
+        exercise.primary.includes("quads") ||
+        exercise.primary.includes("hamstrings"),
       ),
     );
 
@@ -1649,6 +2040,7 @@ export function generateNextWorkout(
       (ex) =>
         environmentAllows(ex, activeProfile.equipment) &&
         goalAllows(ex, activeProfile.goal) &&
+        avoidSoftLowerAccessory(ex) &&
         slot.focusMuscles.some(
           (muscle) => ex.primary.includes(muscle) || ex.secondary.includes(muscle),
         ),
@@ -1665,6 +2057,25 @@ export function generateNextWorkout(
         environmentAllows(ex, activeProfile.equipment) &&
         goalAllows(ex, activeProfile.goal) &&
         isDirectArmFocus(ex),
+    );
+  }
+
+  if (
+    activeProfile.goal === "physique" &&
+    activeProfile.daysPerWeek === 4 &&
+    upperBiasSlot &&
+    !hasLowerSupportWork()
+  ) {
+    addAccessoryBlock(
+      accessoryMovements,
+      2,
+      "10–12 reps — lower support",
+      [12, 10],
+      (ex) =>
+        environmentAllows(ex, activeProfile.equipment) &&
+        goalAllows(ex, activeProfile.goal) &&
+        avoidSoftLowerAccessory(ex) &&
+        isGluteBiasedLower(ex),
     );
   }
 
