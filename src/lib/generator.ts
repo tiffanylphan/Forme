@@ -124,7 +124,7 @@ const FINISHER_TEMPLATES: FinisherTemplate[] = [
     label: "mechanical advantage drop set",
     exercises: ["Archer push-up", "Push-up", "Incline push-up"],
     rounds: 3,
-    repScheme: "15 sec each, no rest · drop set",
+    repScheme: "5 reps each, no rest · drop set",
     tags: ["upper", "conditioning"],
     requiresHardMode: true,
   },
@@ -133,7 +133,7 @@ const FINISHER_TEMPLATES: FinisherTemplate[] = [
     label: "bi-directional lunge complex",
     exercises: ["Forward lunge", "Lateral lunge", "Reverse lunge"],
     rounds: 3,
-    repScheme: "3 trips per leg · stay on one side before switching",
+    repScheme: "6 reps/side each direction · stay on one side before switching",
     tags: ["lower", "conditioning"],
   },
   {
@@ -150,7 +150,7 @@ const FINISHER_TEMPLATES: FinisherTemplate[] = [
     label: "hollow-to-superman roll",
     exercises: ["Hollow body hold", "Superman hold"],
     rounds: 4,
-    repScheme: "10 sec hold each + controlled roll transition",
+    repScheme: "8 reps each + controlled roll transition",
     tags: ["core", "conditioning"],
   },
   {
@@ -158,7 +158,7 @@ const FINISHER_TEMPLATES: FinisherTemplate[] = [
     label: "plank traveler",
     exercises: ["Plank", "Plank to push-up", "Plank jack", "Shoulder tap"],
     rounds: 3,
-    repScheme: "40 sec non-stop travel through all positions",
+    repScheme: "10 reps each, non-stop travel through all positions",
     tags: ["upper", "core", "conditioning"],
   },
   {
@@ -166,7 +166,7 @@ const FINISHER_TEMPLATES: FinisherTemplate[] = [
     label: "bear crawl box",
     exercises: ["Bear crawl", "Bear plank shoulder tap", "High knees"],
     rounds: 3,
-    repScheme: "5 steps each direction + taps + sprint in place",
+    repScheme: "20 crawl steps + 8 taps + 20 high knees",
     tags: ["lower", "core", "conditioning"],
   },
   {
@@ -174,7 +174,7 @@ const FINISHER_TEMPLATES: FinisherTemplate[] = [
     label: "wall-ball sprint",
     exercises: ["Wall ball shot", "High knees", "Wall ball shot"],
     rounds: 3,
-    repScheme: "20 wall balls + 20 sec sprint in place",
+    repScheme: "15 wall ball shots + 20 high knees + 15 wall ball shots",
     tags: ["lower", "upper", "conditioning"],
   },
   {
@@ -182,7 +182,7 @@ const FINISHER_TEMPLATES: FinisherTemplate[] = [
     label: "slam-and-sprawl chain",
     exercises: ["Tall-kneeling rotational medicine ball slam", "Burpee", "Bear crawl"],
     rounds: 3,
-    repScheme: "30 sec each, no rest · slam-sprawl-crawl",
+    repScheme: "10 slams + 8 burpees + 20 crawl steps",
     tags: ["upper", "core", "conditioning"],
     requiresHardMode: true,
   },
@@ -191,7 +191,7 @@ const FINISHER_TEMPLATES: FinisherTemplate[] = [
     label: "wall-sit burnout",
     exercises: ["Banded wall sit abduction pulses", "Lateral lunge", "Banded wall sit abduction pulses"],
     rounds: 3,
-    repScheme: "30 sec sit + 8/side lunges + 20 sec sit",
+    repScheme: "12 pulses + 8/side lunges + 12 pulses",
     tags: ["lower", "conditioning"],
   },
   {
@@ -199,7 +199,7 @@ const FINISHER_TEMPLATES: FinisherTemplate[] = [
     label: "dumbbell burner",
     exercises: ["Half burpee w/ dumbbell", "Push-up to renegade row", "DB snatch"],
     rounds: 3,
-    repScheme: "30 sec each, no rest · metabolic chain",
+    repScheme: "8 reps each, no rest · metabolic chain",
     tags: ["upper", "lower", "conditioning"],
     requiresHardMode: true,
   },
@@ -686,15 +686,263 @@ const buildSessionBookend = (
   return { title, items, complementary };
 };
 
-const getIncompleteSplitSlotIndices = (
+const isLowerSlot = (slot: SplitSlot): boolean =>
+  slot.preferredMovements.some((movement) =>
+    movement === "hinge" || movement === "squat" || movement === "single_leg",
+  );
+
+const isUpperSlot = (slot: SplitSlot): boolean =>
+  slot.preferredMovements.some((movement) => movement === "pull" || movement === "push");
+
+type InferredWorkoutBias = "lower" | "upper" | "mixed";
+
+type WorkoutSlotSummary = {
+  lowerSets: number;
+  upperSets: number;
+  strongLowerSets: number;
+  directArmSets: number;
+  quadSets: number;
+  posteriorSets: number;
+};
+
+const summarizeWorkoutForSlotInference = (workout: Workout): WorkoutSlotSummary => {
+  let lowerSets = 0;
+  let upperSets = 0;
+  let strongLowerSets = 0;
+  let directArmSets = 0;
+  let quadSets = 0;
+  let posteriorSets = 0;
+
+  workout.exercises.forEach((logEx) => {
+    const exercise = EXERCISES.find((candidate) => candidate.name === logEx.exerciseName);
+    if (!exercise) return;
+
+    const sets = logEx.sets.length;
+    const movement = movementOf(exercise);
+    if (movement === "hinge" || movement === "squat" || movement === "single_leg") {
+      lowerSets += sets;
+    }
+    if (movement === "push" || movement === "pull") upperSets += sets;
+    else if (isBackOrShoulderFocused(exercise) || isDirectArmFocus(exercise)) upperSets += sets;
+    if (isStrongLowerAnchor(exercise)) strongLowerSets += sets;
+    if (isDirectArmFocus(exercise)) directArmSets += sets;
+    if (hasAnyMuscle(exercise, ["quads"])) quadSets += sets;
+    if (hasAnyMuscle(exercise, ["glutes", "hamstrings"])) posteriorSets += sets;
+  });
+
+  return {
+    lowerSets,
+    upperSets,
+    strongLowerSets,
+    directArmSets,
+    quadSets,
+    posteriorSets,
+  };
+};
+
+const inferWorkoutBias = (workout: Workout): InferredWorkoutBias => {
+  const { lowerSets, upperSets, strongLowerSets, directArmSets } =
+    summarizeWorkoutForSlotInference(workout);
+  const lowerStress = lowerSets + strongLowerSets * 1.5;
+  const upperStress = upperSets + directArmSets * 0.5;
+
+  if (lowerStress >= upperStress + 2) return "lower";
+  if (upperStress >= lowerStress + 4 && strongLowerSets < 4) return "upper";
+  return "mixed";
+};
+
+type WeeklyBiasBalance = {
+  lower: number;
+  upper: number;
+};
+
+type MuscleDeficitMap = Partial<Record<MuscleGroup, number>>;
+
+const getSlotBias = (slot: SplitSlot): InferredWorkoutBias =>
+  isLowerSlot(slot) ? "lower" : isUpperSlot(slot) ? "upper" : "mixed";
+
+const summarizeWeeklyBiasBalance = (
   split: SplitSlot[],
   workouts: Workout[],
-): number[] => {
-  const completedSlotIds = new Set(
+): WeeklyBiasBalance => {
+  let lower = 0;
+  let upper = 0;
+
+  workouts.forEach((workout) => {
+    const explicitSlot = split.find((slot) => slot.id === workout.planSlot?.slotId);
+    if (explicitSlot) {
+      const bias = getSlotBias(explicitSlot);
+      if (bias === "lower") lower += 1;
+      else if (bias === "upper") upper += 1;
+      return;
+    }
+
+    const summary = summarizeWorkoutForSlotInference(workout);
+    if (summary.strongLowerSets >= 4 && summary.lowerSets >= 6) {
+      lower += 0.75;
+      upper += 0.25;
+      return;
+    }
+    if (summary.lowerSets >= summary.upperSets + 2) {
+      lower += 1;
+      return;
+    }
+    if (summary.upperSets >= summary.lowerSets + 2) {
+      upper += 1;
+      return;
+    }
+    if (summary.strongLowerSets > 0 && summary.lowerSets >= summary.upperSets) {
+      lower += 0.75;
+      upper += 0.25;
+      return;
+    }
+
+    lower += 0.5;
+    upper += 0.5;
+  });
+
+  return { lower, upper };
+};
+
+const scoreWorkoutForSlot = (workout: Workout, slot: SplitSlot): number => {
+  let score = 0;
+  const slotLower = isLowerSlot(slot);
+  const slotUpper = isUpperSlot(slot);
+  const armBiasSlot =
+    slot.focusMuscles.includes("biceps") || slot.focusMuscles.includes("triceps");
+  const summary = summarizeWorkoutForSlotInference(workout);
+  let directArmSets = 0;
+
+  workout.exercises.forEach((logEx) => {
+    const exercise = EXERCISES.find((candidate) => candidate.name === logEx.exerciseName);
+    if (!exercise) return;
+
+    const sets = logEx.sets.length;
+    const movement = movementOf(exercise);
+
+    if (movement && slot.preferredMovements.includes(movement)) score += sets * 2.5;
+    else if (movement && slot.allowedMovements.includes(movement)) {
+      const isLowerMovement =
+        movement === "hinge" || movement === "squat" || movement === "single_leg";
+      const isUpperMovement = movement === "pull" || movement === "push";
+      if ((slotUpper && isLowerMovement) || (slotLower && isUpperMovement)) score += sets * 0.5;
+      else score += sets * 1.5;
+    }
+
+    if (movement === "carry_core" && slot.focusMuscles.includes("core")) score += sets;
+
+    if (slotUpper && isStrongLowerAnchor(exercise)) score -= sets * 3;
+    if (slotLower && isBackOrShoulderFocused(exercise)) score -= sets * 0.5;
+    if (slotLower && isDirectArmFocus(exercise)) score -= sets * 0.75;
+    if (isDirectArmFocus(exercise)) directArmSets += sets;
+
+    exercise.primary.forEach((muscle) => {
+      if (slot.focusMuscles.includes(muscle)) score += sets * 2.25;
+      if ((slot.targetPrimarySets[muscle] ?? 0) > 0) score += sets * 0.5;
+    });
+    exercise.secondary.forEach((muscle) => {
+      if (slot.focusMuscles.includes(muscle)) score += sets * 0.75;
+    });
+
+    if (isLowerSlot(slot) && isStrongLowerAnchor(exercise)) score += sets * 0.75;
+    if (isUpperSlot(slot) && isBackOrShoulderFocused(exercise)) score += sets * 0.75;
+    if (isUpperSlot(slot) && isDirectArmFocus(exercise)) score += sets * 0.5;
+  });
+
+  if (slot.id === "lower_glute_ham") {
+    if (summary.posteriorSets === 0) score -= 8;
+    else score += summary.posteriorSets * 0.5;
+    if (summary.quadSets >= summary.posteriorSets + 4) score -= 4;
+  }
+
+  if (slot.id === "lower_glute_quad") {
+    if (summary.quadSets === 0) score -= 8;
+    else score += summary.quadSets * 0.75;
+    if (summary.posteriorSets >= summary.quadSets + 4) score -= 5;
+  }
+
+  if (slotUpper && summary.strongLowerSets >= 4) {
+    score -= summary.strongLowerSets * 2;
+    if (summary.lowerSets >= summary.upperSets - 1) score -= 10;
+  }
+
+  if (armBiasSlot && directArmSets === 0) score -= 8;
+  if (armBiasSlot && directArmSets > 0) score += directArmSets * 0.75;
+
+  return score;
+};
+
+const inferCompletedSlotIds = (
+  split: SplitSlot[],
+  workouts: Workout[],
+): Set<string> => {
+  const completed = new Set(
     workouts
       .map((workout) => workout.planSlot?.slotId)
       .filter((slotId): slotId is string => Boolean(slotId)),
   );
+  const available = new Set(
+    split.map((slot) => slot.id).filter((slotId) => !completed.has(slotId)),
+  );
+  const hasExplicitSlots = workouts.some((workout) => Boolean(workout.planSlot?.slotId));
+  const sorted = [...workouts].sort((a, b) =>
+    a.date > b.date ? 1 : a.date < b.date ? -1 : a.createdAt - b.createdAt,
+  );
+
+  sorted.forEach((workout) => {
+    const explicitSlotId = workout.planSlot?.slotId;
+    if (explicitSlotId && split.some((slot) => slot.id === explicitSlotId)) {
+      completed.add(explicitSlotId);
+      available.delete(explicitSlotId);
+      return;
+    }
+
+    const workoutBias = inferWorkoutBias(workout);
+    const workoutSummary = summarizeWorkoutForSlotInference(workout);
+    const eligibleSlots = split.filter((slot) => {
+      if (!available.has(slot.id)) return false;
+      if (workoutBias === "mixed" && workoutSummary.strongLowerSets >= 4) {
+        return isLowerSlot(slot);
+      }
+      if (workoutBias === "lower") return isLowerSlot(slot);
+      if (workoutBias === "upper") return isUpperSlot(slot);
+      return true;
+    });
+    const candidates = split
+      .filter((slot) => eligibleSlots.some((candidate) => candidate.id === slot.id))
+      .map((slot) => ({ slot, score: scoreWorkoutForSlot(workout, slot) }))
+      .sort((a, b) => b.score - a.score);
+
+    const best = candidates[0];
+    const secondBest = candidates[1];
+    const completedSlotScores = split
+      .filter((slot) => completed.has(slot.id))
+      .map((slot) => scoreWorkoutForSlot(workout, slot));
+    const bestCompletedScore =
+      completedSlotScores.length > 0 ? Math.max(...completedSlotScores) : -Infinity;
+    const confidenceGap = best && secondBest ? best.score - secondBest.score : best?.score ?? 0;
+    if (!best || best.score < 12) return;
+    if (hasExplicitSlots && bestCompletedScore > -Infinity && best.score < bestCompletedScore + 3) {
+      return;
+    }
+    if (confidenceGap < 3) {
+      if (hasExplicitSlots && bestCompletedScore > -Infinity) return;
+      completed.add(eligibleSlots[0]?.id ?? best.slot.id);
+      available.delete(eligibleSlots[0]?.id ?? best.slot.id);
+      return;
+    }
+    completed.add(best.slot.id);
+    available.delete(best.slot.id);
+  });
+
+  return completed;
+};
+
+const getIncompleteSplitSlotIndices = (
+  split: SplitSlot[],
+  workouts: Workout[],
+): number[] => {
+  const completedSlotIds = inferCompletedSlotIds(split, workouts);
 
   if (completedSlotIds.size > 0) {
     const incompleteIndices = split
@@ -707,12 +955,36 @@ const getIncompleteSplitSlotIndices = (
   return [];
 };
 
+const computeMuscleDeficits = (
+  split: SplitSlot[],
+  coverage: ReturnType<typeof computeCoverage>,
+): MuscleDeficitMap => {
+  const weeklyTargets: Partial<Record<MuscleGroup, number>> = {};
+  split.forEach((slot) => {
+    (Object.entries(slot.targetPrimarySets) as [MuscleGroup, number][]).forEach(([muscle, sets]) => {
+      if (sets > 0) weeklyTargets[muscle] = (weeklyTargets[muscle] ?? 0) + sets;
+    });
+  });
+
+  const deficits: MuscleDeficitMap = {};
+  (Object.entries(weeklyTargets) as [MuscleGroup, number][]).forEach(([muscle, target]) => {
+    const primary = coverage.muscleStats[muscle]?.asPrimarySets ?? 0;
+    const secondary = coverage.muscleStats[muscle]?.asSecondarySets ?? 0;
+    const effectiveDone = primary + secondary * 0.35;
+    deficits[muscle] = Math.max(0, target - effectiveDone);
+  });
+
+  return deficits;
+};
+
 const scoreSplitSlot = (
   slot: SplitSlot,
   index: number,
   need: Record<MovementPattern, number>,
+  muscleDeficits: MuscleDeficitMap = {},
   muscleSaturation: Partial<Record<MuscleGroup, number>> = {},
   lastSessionMovements: Set<MovementPattern> = new Set(),
+  weeklyBiasBalance: WeeklyBiasBalance = { lower: 0, upper: 0 },
 ): number => {
   const preferredScores = slot.preferredMovements
     .map((movement) => (need[movement] ?? 0) * (MOVEMENT_PRIORITY[movement] ?? 1))
@@ -721,11 +993,21 @@ const scoreSplitSlot = (
     .filter((movement) => !slot.preferredMovements.includes(movement))
     .map((movement) => (need[movement] ?? 0) * (MOVEMENT_PRIORITY[movement] ?? 1))
     .sort((a, b) => b - a);
+  const deficitScores = (Object.entries(slot.targetPrimarySets) as [MuscleGroup, number][])
+    .filter(([, target]) => target > 0)
+    .map(([muscle, target]) => {
+      const deficit = muscleDeficits[muscle] ?? 0;
+      const weight = PRIMARY_MUSCLE_PRIORITY[muscle] ?? 1;
+      return Math.min(target, deficit) * weight;
+    })
+    .sort((a, b) => b - a);
 
   let score = 0;
   if (preferredScores[0]) score += preferredScores[0] * 5;
   if (preferredScores[1]) score += preferredScores[1] * 2;
   if (allowedScores[0]) score += allowedScores[0];
+  if (deficitScores[0]) score += deficitScores[0] * 0.75;
+  if (deficitScores[1]) score += deficitScores[1] * 0.35;
 
   // Keep a slight bias toward the earliest missing slot so the split does not
   // drift unless another slot closes a more urgent weekly gap.
@@ -753,6 +1035,18 @@ const scoreSplitSlot = (
     else if (overlapFraction >= 0.67) score -= 5;
   }
 
+  const lowerLead = weeklyBiasBalance.lower - weeklyBiasBalance.upper;
+  if (lowerLead >= 1.25) {
+    if (isUpperSlot(slot)) score += Math.min(8, lowerLead * 3);
+    if (isLowerSlot(slot)) score -= Math.min(8, lowerLead * 2.5);
+  }
+
+  const upperLead = weeklyBiasBalance.upper - weeklyBiasBalance.lower;
+  if (upperLead >= 1.25) {
+    if (isLowerSlot(slot)) score += Math.min(8, upperLead * 3);
+    if (isUpperSlot(slot)) score -= Math.min(8, upperLead * 2.5);
+  }
+
   return score;
 };
 
@@ -760,9 +1054,11 @@ const getNextSplitSlotIndex = (
   split: SplitSlot[],
   workouts: Workout[],
   need: Record<MovementPattern, number>,
+  muscleDeficits: MuscleDeficitMap = {},
   muscleSaturation: Partial<Record<MuscleGroup, number>> = {},
   lastSessionMovements: Set<MovementPattern> = new Set(),
 ): number => {
+  const weeklyBiasBalance = summarizeWeeklyBiasBalance(split, workouts);
   const incompleteIndices = getIncompleteSplitSlotIndices(split, workouts);
 
   if (incompleteIndices.length > 0) {
@@ -770,7 +1066,15 @@ const getNextSplitSlotIndex = (
     let bestScore = -Infinity;
 
     for (const index of incompleteIndices) {
-      const score = scoreSplitSlot(split[index], index, need, muscleSaturation, lastSessionMovements);
+      const score = scoreSplitSlot(
+        split[index],
+        index,
+        need,
+        muscleDeficits,
+        muscleSaturation,
+        lastSessionMovements,
+        weeklyBiasBalance,
+      );
       if (score > bestScore) {
         bestIndex = index;
         bestScore = score;
@@ -789,8 +1093,10 @@ const maybeOverrideForCriticalGap = (
   split: SplitSlot[],
   baseIndex: number,
   need: Record<MovementPattern, number>,
+  muscleDeficits: MuscleDeficitMap = {},
   muscleSaturation: Partial<Record<MuscleGroup, number>> = {},
   lastSessionMovements: Set<MovementPattern> = new Set(),
+  weeklyBiasBalance: WeeklyBiasBalance = { lower: 0, upper: 0 },
 ): number => {
   const baseSlot = split[baseIndex];
   const criticalMovements = MOVEMENT_PATTERNS
@@ -805,11 +1111,27 @@ const maybeOverrideForCriticalGap = (
     if (baseSlot.allowedMovements.includes(movement)) return baseIndex;
 
     let bestIndex = baseIndex;
-    let bestScore = scoreSplitSlot(baseSlot, baseIndex, need, muscleSaturation, lastSessionMovements);
+    let bestScore = scoreSplitSlot(
+      baseSlot,
+      baseIndex,
+      need,
+      muscleDeficits,
+      muscleSaturation,
+      lastSessionMovements,
+      weeklyBiasBalance,
+    );
 
     split.forEach((slot, index) => {
       if (!slot.allowedMovements.includes(movement)) return;
-      let score = scoreSplitSlot(slot, index, need, muscleSaturation, lastSessionMovements);
+      let score = scoreSplitSlot(
+        slot,
+        index,
+        need,
+        muscleDeficits,
+        muscleSaturation,
+        lastSessionMovements,
+        weeklyBiasBalance,
+      );
       if (slot.preferredMovements.includes(movement)) score += 6;
       if (score > bestScore) {
         bestIndex = index;
@@ -1181,6 +1503,7 @@ export function generateNextWorkout(
       muscleSaturation[m] = Math.min(1, done / target);
     }
   });
+  const muscleDeficits = computeMuscleDeficits(split, coverage);
 
   // Movement patterns from the most recent session — used to avoid recommending
   // the same movement category back-to-back regardless of weekly volume targets.
@@ -1198,10 +1521,19 @@ export function generateNextWorkout(
 
   const sessionIndex = maybeOverrideForCriticalGap(
     split,
-    getNextSplitSlotIndex(split, coverage.workouts, need, muscleSaturation, lastSessionMovements),
+    getNextSplitSlotIndex(
+      split,
+      coverage.workouts,
+      need,
+      muscleDeficits,
+      muscleSaturation,
+      lastSessionMovements,
+    ),
     need,
+    muscleDeficits,
     muscleSaturation,
     lastSessionMovements,
+    summarizeWeeklyBiasBalance(split, coverage.workouts),
   );
   const slot = split[sessionIndex];
   const currentWeekExerciseNames = new Set(
@@ -1404,16 +1736,55 @@ export function generateNextWorkout(
     ex: Exercise,
     rounds: number,
   ): (number | string)[] => {
-    if (movementOf(ex) === "carry_core" || ex.pattern === "conditioning" || ex.pattern === "plyo") {
-      return Array.from(
-        { length: rounds },
-        () => (activeProfile.daysPerWeek === 3 ? "45s" : hardMode ? "40s" : "35s"),
-      );
+    if (ex.pattern === "carry") return Array.from({ length: rounds }, () => "20 steps");
+    if (ex.pattern === "conditioning" || ex.pattern === "plyo") {
+      return Array.from({ length: rounds }, () => (hardMode ? 12 : 10));
     }
+    if (movementOf(ex) === "carry_core") return Array.from({ length: rounds }, () => 10);
     if (rounds === 4) return [15, 12, 12, 10];
     if (rounds === 3) return [15, 12, 12];
     if (rounds === 2) return [12, 10];
     return [15];
+  };
+
+  const templateTargetSet = (
+    template: FinisherTemplate,
+    ex: Exercise,
+  ): (number | string)[] => {
+    switch (template.id) {
+      case "mechanical_pushup_drop":
+        return Array.from({ length: template.rounds }, () => 5);
+      case "lunge_trip":
+        return Array.from({ length: template.rounds }, () => 6);
+      case "burpee_ladder":
+        return ex.name === "Burpee" ? [15, 15] : [10, 10];
+      case "hollow_superman":
+        return Array.from({ length: template.rounds }, () => 8);
+      case "plank_traveler":
+        return Array.from({ length: template.rounds }, () => 10);
+      case "bear_box":
+        if (ex.name === "Bear crawl") return Array.from({ length: template.rounds }, () => 20);
+        if (ex.name === "Bear plank shoulder tap") return Array.from({ length: template.rounds }, () => 8);
+        return Array.from({ length: template.rounds }, () => 20);
+      case "wall_ball_sprint":
+        return ex.name === "High knees"
+          ? Array.from({ length: template.rounds }, () => 20)
+          : Array.from({ length: template.rounds }, () => 15);
+      case "slam_and_sprawl":
+        if (ex.name === "Tall-kneeling rotational medicine ball slam") {
+          return Array.from({ length: template.rounds }, () => 10);
+        }
+        if (ex.name === "Burpee") return Array.from({ length: template.rounds }, () => 8);
+        return Array.from({ length: template.rounds }, () => 20);
+      case "wall_sit_burnout":
+        return ex.name === "Lateral lunge"
+          ? Array.from({ length: template.rounds }, () => 8)
+          : Array.from({ length: template.rounds }, () => 12);
+      case "dumbbell_burner":
+        return Array.from({ length: template.rounds }, () => 8);
+      default:
+        return finisherTargetSet(ex, template.rounds);
+    }
   };
 
   const finisherLabel = (exercises: Exercise[]): string => {
@@ -1424,25 +1795,19 @@ export function generateNextWorkout(
     const includesMetcon = exercises.some((ex) => isAccessibleMetabolicFinisher(ex));
 
     if (exercises.length >= 3) {
-      if (includesConditioning || includesMetcon) return "40 sec on / 20 sec off · finisher circuit";
-      if (includesCarry) return "40–60 sec walk · carry circuit";
+      if (includesConditioning || includesMetcon) return "8–12 reps each · finisher circuit";
+      if (includesCarry) return "20–30 steps · carry circuit";
       return "12–15 reps · finisher circuit";
     }
     if (exercises.length === 2) {
-      if (includesConditioning || includesMetcon) return "40 sec on / 20 sec off · finisher pair";
-      if (includesCarry) return "40–60 sec walk · carry pair";
+      if (includesConditioning || includesMetcon) return "8–12 reps each · finisher pair";
+      if (includesCarry) return "20–30 steps · carry pair";
       return "12–15 reps · finisher pair";
     }
     const [ex] = exercises;
     if (!ex) return "12–15 reps";
-    if (ex.pattern === "carry") return "40–60 sec walk";
-    if (ex.pattern === "conditioning" || ex.pattern === "plyo") {
-      return activeProfile.daysPerWeek === 3
-        ? "45 sec hard / 30 sec easy"
-        : isHomeProfile
-          ? "40 sec on / 20 sec off"
-          : "45 sec hard / 45 sec easy";
-    }
+    if (ex.pattern === "carry") return "20–30 steps";
+    if (ex.pattern === "conditioning" || ex.pattern === "plyo") return "8–12 reps";
     return isHomeProfile ? "15–20 reps" : "12–15 reps";
   };
 
@@ -1938,7 +2303,7 @@ export function generateNextWorkout(
       rounds: chosenTemplate.rounds,
       repScheme: `${chosenTemplate.repScheme} · ${chosenTemplate.label}`,
       exercises: templateExercises.map((exercise) =>
-        makeDraftEx(exercise, finisherTargetSet(exercise, chosenTemplate.rounds)),
+        makeDraftEx(exercise, templateTargetSet(chosenTemplate, exercise)),
       ),
     });
   } else {

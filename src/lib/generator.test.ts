@@ -294,6 +294,94 @@ describe("generateNextWorkout", () => {
     expect(draft.split.title).toBe("Lower B");
   });
 
+  it("infers split progression from manual workouts without planSlot metadata", () => {
+    const workouts = [
+      workout("w1", "2026-05-11", [
+        { name: "Barbell deadlift", sets: 4 },
+        { name: "Band-assisted pull-up", sets: 4 },
+        { name: "DB bent-over row", sets: 3 },
+        { name: "Bench single-leg hip thrust", sets: 3 },
+      ]),
+      workout("w2", "2026-05-13", [
+        { name: "DB Arnold press", sets: 3 },
+        { name: "DB sumo squat", sets: 3 },
+        { name: "Barbell Romanian deadlift", sets: 3 },
+        { name: "Barbell bench press", sets: 3 },
+        { name: "DB forward lunge", sets: 3 },
+      ]),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-14", 123, profile);
+    expect(draft.split.title).not.toBe("Lower B");
+    expect(draft.split.title.startsWith("Upper")).toBe(true);
+  });
+
+  it("prefers an upper slot after two lower-heavy mixed workouts in the same week", () => {
+    const workouts = [
+      workout("w1", "2026-05-11", [
+        { name: "Barbell deadlift", sets: 4 },
+        { name: "Bench single-leg hip thrust", sets: 3 },
+        { name: "Band-assisted pull-up", sets: 4 },
+        { name: "DB bent-over row", sets: 3 },
+      ]),
+      workout("w2", "2026-05-13", [
+        { name: "DB sumo squat", sets: 3 },
+        { name: "Barbell Romanian deadlift", sets: 3 },
+        { name: "DB forward lunge", sets: 3 },
+        { name: "DB Arnold press", sets: 3 },
+        { name: "Barbell bench press", sets: 3 },
+      ]),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-14", 321, profile);
+    expect(draft.split.title.startsWith("Upper")).toBe(true);
+  });
+
+  it("treats mixed full-body sessions with strong lower anchors as lower exposure for split progression", () => {
+    const workouts = [
+      workout("w1", "2026-05-11", [
+        { name: "Barbell deadlift", sets: 4 },
+        { name: "Band-assisted pull-up", sets: 4 },
+        { name: "DB bent-over row", sets: 3 },
+        { name: "Bench single-leg hip thrust", sets: 3 },
+        { name: "DB renegade row", sets: 3 },
+        { name: "Push-up", sets: 3 },
+        { name: "Half burpee w/ dumbbell", sets: 3 },
+      ]),
+      workout("w2", "2026-05-13", [
+        { name: "DB Arnold press", sets: 3 },
+        { name: "DB sumo squat", sets: 3 },
+        { name: "Barbell Romanian deadlift", sets: 3 },
+        { name: "Barbell bench press", sets: 3 },
+        { name: "DB forward lunge", sets: 3 },
+      ]),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-14", 123, profile);
+    expect(draft.split.title.startsWith("Upper")).toBe(true);
+  });
+
+  it("lets a clearly manual upper workout advance an open slot in a mixed planned week", () => {
+    const workouts = [
+      workout("w1", "2026-05-12", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "DB Bulgarian split squat", sets: 3 },
+      ], {
+        slotId: "lower_glute_ham",
+        title: "Lower A",
+      }),
+      workout("w2", "2026-05-13", [
+        { name: "Lat pulldown", sets: 4 },
+        { name: "Cable row", sets: 4 },
+        { name: "DB lateral raise", sets: 3 },
+        { name: "DB hammer curl", sets: 3 },
+      ]),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-14", 456, profile);
+    expect(draft.split.title).not.toBe("Upper A");
+  });
+
   it("prefers an open upper slot when pull is still untouched this week", () => {
     const workouts = [
       workout("w1", "2026-05-05", [
