@@ -382,6 +382,48 @@ describe("generateNextWorkout", () => {
     expect(draft.split.title).not.toBe("Upper A");
   });
 
+  it("does not duplicate an exercise inside a generated workout", () => {
+    const workouts = [
+      workout("w1", "2026-05-11", [
+        { name: "Barbell deadlift", sets: 4 },
+        { name: "Band-assisted pull-up", sets: 4 },
+        { name: "DB bent-over row", sets: 3 },
+        { name: "Bench single-leg hip thrust", sets: 3 },
+        { name: "DB renegade row", sets: 3 },
+        { name: "Push-up", sets: 3 },
+        { name: "Half burpee w/ dumbbell", sets: 3 },
+      ]),
+      workout("w2", "2026-05-13", [
+        { name: "DB Arnold press", sets: 3 },
+        { name: "DB sumo squat", sets: 3 },
+        { name: "Barbell Romanian deadlift", sets: 3 },
+        { name: "Barbell bench press", sets: 3 },
+        { name: "DB forward lunge", sets: 3 },
+      ]),
+      workout("w3", "2026-05-15", [
+        { name: "DB reverse fly", sets: 4 },
+        { name: "DB prone press", sets: 4 },
+        { name: "DB single-arm row", sets: 4 },
+        { name: "DB lateral raise", sets: 4 },
+        { name: "Concentration curl", sets: 4 },
+        { name: "Lateral step-up", sets: 4 },
+        { name: "Plank", sets: 3 },
+        { name: "Plank to push-up", sets: 3 },
+        { name: "Plank jack", sets: 3 },
+      ], {
+        slotId: "upper_back_shoulder_arms",
+        title: "Upper B",
+      }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-16", 2026, profile);
+    const names = draft.sections.flatMap((section) =>
+      section.exercises.map((exercise) => exercise.name),
+    );
+
+    expect(new Set(names).size).toBe(names.length);
+  });
+
   it("prefers an open upper slot when pull is still untouched this week", () => {
     const workouts = [
       workout("w1", "2026-05-05", [

@@ -1964,10 +1964,13 @@ export function generateNextWorkout(
 
     let second = pickForMovement(
       allowed.filter((movement) => movement !== first.movement),
-      filter,
+      (ex) => ex.name !== first.exercise.name && (filter ? filter(ex) : true),
     );
     if (!second) {
-      second = pickForMovement(allowed, filter);
+      second = pickForMovement(
+        allowed,
+        (ex) => ex.name !== first.exercise.name && (filter ? filter(ex) : true),
+      );
     }
     if (!second) return false;
 
