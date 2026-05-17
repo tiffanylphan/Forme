@@ -1,5 +1,8 @@
 export const formatMuscle = (m: string): string => m.replace("_", " ");
 
+export const normalizeSearch = (value: string): string =>
+  value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
 export const todayISO = (): string => {
   const d = new Date();
   const y = d.getFullYear();

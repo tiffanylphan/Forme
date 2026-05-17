@@ -27,6 +27,7 @@ describe("OnboardingPage", () => {
       equipment: "full_gym",
       experience: "beginner",
       intensity: "standard",
+      blockedExercises: [],
     });
     useTrainingProfileMock.mockReturnValue({
       ready: true,
@@ -36,6 +37,7 @@ describe("OnboardingPage", () => {
         equipment: "full_gym",
         experience: "beginner",
         intensity: "standard",
+        blockedExercises: [],
       },
     });
 
@@ -54,6 +56,7 @@ describe("OnboardingPage", () => {
       equipment: "home",
       experience: "intermediate",
       intensity: "hard",
+      blockedExercises: [],
     });
     expect(routerPushMock).toHaveBeenCalledWith("/next");
   });
@@ -64,5 +67,32 @@ describe("OnboardingPage", () => {
 
     render(<OnboardingPage />);
     expect(screen.getByText("Loading…")).toBeInTheDocument();
+  });
+
+  it("keeps unavailable exercise controls out of setup", () => {
+    loadTrainingProfileMock.mockReturnValue({
+      goal: "physique",
+      daysPerWeek: 4,
+      equipment: "full_gym",
+      experience: "beginner",
+      intensity: "standard",
+      blockedExercises: ["Hack squat"],
+    });
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "beginner",
+        intensity: "standard",
+        blockedExercises: ["Hack squat"],
+      },
+    });
+
+    render(<OnboardingPage />);
+
+    expect(screen.queryByText("Unavailable exercises")).not.toBeInTheDocument();
+    expect(screen.queryByText(/blocked/i)).not.toBeInTheDocument();
   });
 });

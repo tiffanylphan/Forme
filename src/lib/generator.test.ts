@@ -9,6 +9,7 @@ const profile: TrainingProfile = {
   equipment: "full_gym",
   experience: "beginner",
   intensity: "standard",
+  blockedExercises: [],
 };
 
 const threeDayProfile: TrainingProfile = {
@@ -17,6 +18,7 @@ const threeDayProfile: TrainingProfile = {
   equipment: "full_gym",
   experience: "beginner",
   intensity: "standard",
+  blockedExercises: [],
 };
 
 const workout = (
@@ -157,6 +159,17 @@ describe("generateNextWorkout", () => {
     expect(allExercises.some((exercise) => exercise.name === "Hanging knee raise")).toBe(false);
     expect(allExercises.some((exercise) => exercise.name === "Hanging leg raise")).toBe(false);
     expect(allExercises.some((exercise) => exercise.name === "Hyperextension")).toBe(false);
+  });
+
+  it("respects blocked exercises from the training profile", () => {
+    const draft = generateNextWorkout([], "2026-05-06", 123, {
+      ...profile,
+      blockedExercises: ["Hack squat", "Nordic hamstring curl"],
+    });
+    const allExercises = draft.sections.flatMap((section) => section.exercises);
+
+    expect(allExercises.some((exercise) => exercise.name === "Hack squat")).toBe(false);
+    expect(allExercises.some((exercise) => exercise.name === "Nordic hamstring curl")).toBe(false);
   });
 
   it("keeps home dumbbell suggestions capped and uses higher-rep home schemes", () => {

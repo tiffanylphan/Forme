@@ -35,6 +35,9 @@ export const EXERCISES: Exercise[] = [
   { name: "Kettlebell swing", primary: ["glutes", "hamstrings"], secondary: ["core", "shoulders"], equipment: "kettlebell", pattern: "hinge" },
   { name: "Good morning", primary: ["hamstrings", "back"], secondary: ["glutes", "core"], equipment: "barbell", pattern: "hinge" },
   { name: "Cable pull-through", primary: ["glutes", "hamstrings"], secondary: ["core"], equipment: "cable", pattern: "hinge" },
+  { name: "Cable kickback", primary: ["glutes"], secondary: ["hamstrings"], equipment: "cable", pattern: "hinge" },
+  { name: "Donkey kick", primary: ["glutes"], secondary: ["hamstrings"], equipment: "bodyweight", pattern: "hinge" },
+  { name: "Lateral band walk", primary: ["glutes"], secondary: ["adductors", "core"], equipment: "band", pattern: "hinge" },
   { name: "Bench single-leg hip thrust", primary: ["glutes"], secondary: ["hamstrings", "core"], equipment: "bodyweight", pattern: "hinge" },
   { name: "Barbell hip thrust", primary: ["glutes"], secondary: ["hamstrings", "core"], equipment: "barbell", pattern: "hinge" },
   { name: "Glute bridge", primary: ["glutes"], secondary: ["hamstrings"], equipment: "bodyweight", pattern: "hinge" },
@@ -96,6 +99,12 @@ export const EXERCISES: Exercise[] = [
   { name: "Straight-arm pulldown", primary: ["back"], secondary: ["core"], equipment: "cable", pattern: "pull" },
   { name: "DB reverse fly", primary: ["rear_delts"], secondary: ["back"], equipment: "dumbbell", pattern: "pull" },
   { name: "Band pull-apart", primary: ["rear_delts"], secondary: ["back"], equipment: "band", pattern: "pull" },
+  { name: "Chest-supported DB row", primary: ["back"], secondary: ["biceps", "rear_delts"], equipment: "dumbbell", pattern: "pull" },
+  { name: "Preacher curl", primary: ["biceps"], secondary: [], equipment: "dumbbell", pattern: "pull" },
+  { name: "Incline DB curl", primary: ["biceps"], secondary: [], equipment: "dumbbell", pattern: "pull" },
+  { name: "Band external rotation", primary: ["rear_delts", "shoulders"], secondary: [], equipment: "band", pattern: "pull" },
+  { name: "Prone Y raise", primary: ["back", "shoulders"], secondary: ["rear_delts"], equipment: "dumbbell", pattern: "pull" },
+  { name: "Prone T raise", primary: ["rear_delts", "back"], secondary: ["shoulders"], equipment: "dumbbell", pattern: "pull" },
 
   // === CORE ===
   { name: "V-up", primary: ["core", "hip_flexors"], secondary: [], equipment: "bodyweight", pattern: "core" },
@@ -133,6 +142,8 @@ export const EXERCISES: Exercise[] = [
   { name: "Lateral lunge", primary: ["glutes", "quads"], secondary: ["hamstrings", "core"], equipment: "bodyweight", pattern: "squat" },
   { name: "Reverse lunge", primary: ["quads", "glutes"], secondary: ["hamstrings", "core"], equipment: "bodyweight", pattern: "squat" },
   { name: "Burpee", primary: ["chest", "quads"], secondary: ["shoulders", "core"], equipment: "bodyweight", pattern: "plyo" },
+  { name: "Split squat jump", primary: ["quads", "glutes"], secondary: ["hamstrings", "calves"], equipment: "bodyweight", pattern: "plyo" },
+  { name: "Tuck jump", primary: ["quads", "core"], secondary: ["glutes", "calves"], equipment: "bodyweight", pattern: "plyo" },
   { name: "Half burpee w/ dumbbell", primary: ["chest", "quads"], secondary: ["shoulders", "core"], equipment: "dumbbell", pattern: "plyo" },
   { name: "DB snatch", primary: ["shoulders", "glutes"], secondary: ["back", "core"], equipment: "dumbbell", pattern: "plyo" },
   { name: "Wall ball shot", primary: ["quads", "shoulders"], secondary: ["glutes", "core"], equipment: "other", pattern: "conditioning" },
@@ -146,6 +157,11 @@ export const EXERCISES: Exercise[] = [
   { name: "Sled push", primary: ["quads", "glutes"], secondary: ["core", "calves"], equipment: "other", pattern: "conditioning" },
   { name: "Farmer carry", primary: ["core"], secondary: ["shoulders", "back"], equipment: "dumbbell", pattern: "carry" },
   { name: "Suitcase carry", primary: ["core"], secondary: ["shoulders"], equipment: "dumbbell", pattern: "carry" },
+
+  // === HIP ADDUCTORS ===
+  { name: "Adductor machine", primary: ["adductors"], secondary: [], equipment: "machine", pattern: "squat" },
+  { name: "Copenhagen plank", primary: ["adductors", "core"], secondary: ["glutes"], equipment: "bodyweight", pattern: "core" },
+  { name: "Cable hip adduction", primary: ["adductors"], secondary: ["glutes"], equipment: "cable", pattern: "squat" },
 
   // === CALVES ===
   { name: "Standing calf raise", primary: ["calves"], secondary: [], equipment: "machine", pattern: "squat" },

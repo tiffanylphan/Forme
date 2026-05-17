@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { MuscleTag } from "@/components/MuscleTag";
 import { computeCoverage, weekContaining } from "@/lib/coverage";
+import { environmentAllowsExercise } from "@/lib/exercise-availability";
 import { EXERCISES } from "@/lib/exercises";
 import { formatMuscle, todayISO } from "@/lib/format";
 import {
@@ -14,6 +15,7 @@ import {
 } from "@/lib/generator";
 import { movementOf, MOVEMENT_COLORS, MOVEMENT_LABELS } from "@/lib/movement";
 import {
+  DEFAULT_PROFILE,
   formatEnvironment,
   formatExperience,
   formatGoal,
@@ -414,6 +416,7 @@ export default function NextPage() {
         currentName={swapTarget?.currentName ?? null}
         movement={swapTarget?.movement ?? null}
         excludeNames={draftNames}
+        profile={profile ?? DEFAULT_PROFILE}
         knownExercises={knownExercises}
         onClose={() => setSwapTarget(null)}
         onPick={applySwap}
@@ -881,6 +884,7 @@ function SwapPicker({
   currentName,
   movement,
   excludeNames,
+  profile,
   knownExercises,
   onClose,
   onPick,
@@ -889,6 +893,7 @@ function SwapPicker({
   currentName: string | null;
   movement: MovementPattern | null;
   excludeNames: Set<string>;
+  profile: { equipment: "full_gym" | "dumbbells" | "home"; blockedExercises: string[] };
   knownExercises: Set<string>;
   onClose: () => void;
   onPick: (name: string) => void;
@@ -911,6 +916,7 @@ function SwapPicker({
   const options = useMemo(() => {
     const filtered = EXERCISES.filter((ex) => {
       if (excludeNames.has(ex.name)) return false;
+      if (!environmentAllowsExercise(ex, profile)) return false;
       if (movement && movementOf(ex) !== movement) return false;
       if (search && !ex.name.toLowerCase().includes(search.toLowerCase()))
         return false;
@@ -960,7 +966,7 @@ function SwapPicker({
       const bf = knownExercises.has(b.name) ? 0 : 1;
       return af - bf || a.name.localeCompare(b.name);
     });
-  }, [currentExercise, movement, excludeNames, knownExercises, search]);
+  }, [currentExercise, movement, excludeNames, knownExercises, profile, search]);
 
   if (!open) return null;
 

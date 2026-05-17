@@ -15,6 +15,7 @@ export const MUSCLE_COLORS: Record<MuscleGroup, ColorPair> = {
   triceps: { bg: "#EAF3DE", text: "#27500A" },
   core: { bg: "#FAEEDA", text: "#633806" },
   hip_flexors: { bg: "#F1EFE8", text: "#444441" },
+  adductors: { bg: "#FCEAF5", text: "#7A2060" },
 };
 
 export const PATTERN_COLORS: Record<Pattern, ColorPair> = {

@@ -3,29 +3,31 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { MUSCLE_COLORS, PATTERN_COLORS } from "@/lib/colors";
+import { environmentAllowsExercise } from "@/lib/exercise-availability";
 import { EXERCISES } from "@/lib/exercises";
-import { formatMuscle } from "@/lib/format";
+import { formatMuscle, normalizeSearch } from "@/lib/format";
+import { DEFAULT_PROFILE, saveTrainingProfile, useTrainingProfile } from "@/lib/profile";
 import { EQUIPMENT, MUSCLE_GROUPS, PATTERNS } from "@/lib/types";
 import type { Equipment, MuscleGroup, Pattern } from "@/lib/types";
 
-const normalizeSearch = (value: string): string =>
-  value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-
 export default function LibraryPage() {
+  const { profile } = useTrainingProfile();
   const [filterMuscle, setFilterMuscle] = useState<MuscleGroup | null>(null);
   const [filterPattern, setFilterPattern] = useState<Pattern | null>(null);
   const [filterEquipment, setFilterEquipment] = useState<Equipment | null>(null);
-  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const [expandedExercise, setExpandedExercise] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const activeProfile = profile ?? DEFAULT_PROFILE;
 
   const filtered = useMemo(() => {
-    const normalizedSearch = normalizeSearch(search);
+    const q = normalizeSearch(search);
     return EXERCISES.filter((ex) => {
-      if (
-        normalizedSearch &&
-        !normalizeSearch(ex.name).includes(normalizedSearch)
-      ) {
-        return false;
+      if (q) {
+        const nameMatch = normalizeSearch(ex.name).includes(q);
+        const muscleMatch = ex.primary.concat(ex.secondary).some(
+          (m) => normalizeSearch(formatMuscle(m)).includes(q),
+        );
+        if (!nameMatch && !muscleMatch) return false;
       }
       if (filterPattern && ex.pattern !== filterPattern) return false;
       if (filterEquipment && ex.equipment !== filterEquipment) return false;
@@ -39,21 +41,46 @@ export default function LibraryPage() {
     });
   }, [filterMuscle, filterPattern, filterEquipment, search]);
 
+  // Unavailable exercises (wrong equipment or explicitly blocked) sink to the bottom.
+  const sortedFiltered = useMemo(
+    () =>
+      [...filtered].sort((a, b) => {
+        const aOut = !environmentAllowsExercise(a, activeProfile);
+        const bOut = !environmentAllowsExercise(b, activeProfile);
+        return Number(aOut) - Number(bOut);
+      }),
+    [filtered, activeProfile],
+  );
+
+  // Counts reflect what's actually available for the user's environment.
   const muscleStats = useMemo(() => {
     const counts: Record<MuscleGroup, number> = {} as Record<MuscleGroup, number>;
     MUSCLE_GROUPS.forEach((m) => {
       counts[m] = EXERCISES.filter(
-        (ex) => ex.primary.includes(m) || ex.secondary.includes(m),
+        (ex) =>
+          (ex.primary.includes(m) || ex.secondary.includes(m)) &&
+          environmentAllowsExercise(ex, activeProfile),
       ).length;
     });
     return counts;
-  }, []);
+  }, [activeProfile]);
 
   const clearFilters = () => {
     setFilterMuscle(null);
     setFilterPattern(null);
     setFilterEquipment(null);
     setSearch("");
+  };
+
+  const toggleBlockedExercise = (name: string) => {
+    const blocked = activeProfile.blockedExercises.includes(name);
+    const blockedExercises = blocked
+      ? activeProfile.blockedExercises.filter((item) => item !== name)
+      : [...activeProfile.blockedExercises, name].sort((a, b) => a.localeCompare(b));
+    saveTrainingProfile({
+      ...activeProfile,
+      blockedExercises,
+    });
   };
 
   const hasFilters = filterMuscle || filterPattern || filterEquipment || search;
@@ -72,6 +99,11 @@ export default function LibraryPage() {
         <p className="mt-1 text-[14px] text-text-subtle">
           {EXERCISES.length} exercises · {MUSCLE_GROUPS.length} muscle groups ·{" "}
           {PATTERNS.length} patterns
+        </p>
+        <p className="mt-3 text-[13px] text-text-subtle">
+          Tap an exercise to mark it unavailable for the planner.
+          {activeProfile.blockedExercises.length > 0 &&
+            ` ${activeProfile.blockedExercises.length} blocked right now.`}
         </p>
       </div>
 
@@ -175,23 +207,38 @@ export default function LibraryPage() {
       )}
 
       <div>
-        {filtered.map((ex, idx) => {
-          const isOpen = expandedIdx === idx;
+        {sortedFiltered.map((ex) => {
+          const isOpen = expandedExercise === ex.name;
+          const blocked = activeProfile.blockedExercises.includes(ex.name);
+          const envIncompatible = !blocked && !environmentAllowsExercise(ex, activeProfile);
+          const unavailable = blocked || envIncompatible;
           const pc = PATTERN_COLORS[ex.pattern];
           return (
             <div
               key={ex.name}
-              onClick={() => setExpandedIdx(isOpen ? null : idx)}
-              className="cursor-pointer border-b border-divider py-3.5"
+              onClick={() => setExpandedExercise(isOpen ? null : ex.name)}
+              className={`cursor-pointer border-b border-divider py-3.5 transition-opacity ${unavailable ? "opacity-50" : ""}`}
             >
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-[14px] font-medium text-text">{ex.name}</span>
-                <span
-                  style={{ background: pc.bg, color: pc.text }}
-                  className="whitespace-nowrap rounded-full px-2.5 py-0.5 text-[10px] font-medium"
-                >
-                  {ex.pattern}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {blocked && (
+                    <span className="whitespace-nowrap rounded-full bg-[#F1E5E1] px-2.5 py-0.5 text-[10px] font-medium text-[#8E4D3C]">
+                      Blocked
+                    </span>
+                  )}
+                  {envIncompatible && (
+                    <span className="whitespace-nowrap rounded-full bg-[#F1EFE8] px-2.5 py-0.5 text-[10px] font-medium text-[#888780]">
+                      Unavailable
+                    </span>
+                  )}
+                  <span
+                    style={{ background: pc.bg, color: pc.text }}
+                    className="whitespace-nowrap rounded-full px-2.5 py-0.5 text-[10px] font-medium"
+                  >
+                    {ex.pattern}
+                  </span>
+                </div>
               </div>
               <div className="mt-1.5 flex flex-wrap gap-1">
                 {ex.primary.map((m) => (
@@ -223,10 +270,24 @@ export default function LibraryPage() {
                     <span className="font-medium text-text-subtle">Equipment: </span>
                     <span className="text-text">{ex.equipment}</span>
                   </div>
-                  <div>
+                  <div className="mb-3">
                     <span className="font-medium text-text-subtle">Pattern: </span>
                     <span className="text-text">{ex.pattern}</span>
                   </div>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      toggleBlockedExercise(ex.name);
+                    }}
+                    className={`rounded-full px-3 py-1.5 text-[12px] font-medium ${
+                      blocked
+                        ? "bg-text text-white"
+                        : "border border-[#D3D1C7] bg-white text-text-muted"
+                    }`}
+                  >
+                    {blocked ? "Allow in planner" : "Mark unavailable"}
+                  </button>
                 </div>
               )}
             </div>

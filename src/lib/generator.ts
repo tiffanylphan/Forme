@@ -1,4 +1,5 @@
 import { EXERCISES } from "./exercises";
+import { environmentAllowsExercise } from "./exercise-availability";
 import { movementOf } from "./movement";
 import { MOVEMENT_PATTERNS, MUSCLE_GROUPS } from "./types";
 import {
@@ -399,6 +400,7 @@ const MOVEMENT_PRIORITY: Record<MovementPattern, number> = {
 const PRIMARY_MUSCLE_PRIORITY: Partial<Record<MuscleGroup, number>> = {
   glutes: 1.8,
   hamstrings: 1.2,
+  adductors: 1.1,
   back: 1.5,
   shoulders: 1.5,
   rear_delts: 1.2,
@@ -428,37 +430,6 @@ const isTechnicalBarbell = (ex: Exercise): boolean =>
     ex.name.includes("squat") ||
     ex.name.includes("overhead press") ||
     ex.name.includes("walking lunge"));
-
-const environmentAllows = (
-  ex: Exercise,
-  environment: TrainingEnvironment,
-): boolean => {
-  if (environment === "full_gym") return true;
-  if (environment === "dumbbells") {
-    if (
-      [
-        "Nordic hamstring curl",
-        "Pull-up",
-        "Chin-up",
-        "Band-assisted pull-up",
-        "Dip",
-        "Inverted row",
-        "Hanging knee raise",
-        "Hanging leg raise",
-        "Hyperextension",
-      ].includes(ex.name)
-    ) {
-      return false;
-    }
-    if (["dumbbell", "kettlebell", "bodyweight", "band"].includes(ex.equipment)) {
-      return true;
-    }
-    if (ex.equipment === "cable") return true;
-    if (ex.equipment === "machine" && ex.name === "Leg press") return true;
-    return false;
-  }
-  return ["dumbbell", "bodyweight", "band"].includes(ex.equipment);
-};
 
 const capSuggestedWeight = (
   weight: number | null,
@@ -631,6 +602,7 @@ const WARMUP_BY_MUSCLE: Partial<Record<MuscleGroup, string[]>> = {
   triceps: ["Overhead reach x 20s/side", "Band pressdown x 15"],
   core: ["Dead bug x 6/side", "Bear plank hold x 20s"],
   hip_flexors: ["Half-kneeling hip flexor pulse x 8/side", "Marching bridge x 8/side"],
+  adductors: ["Lateral squat x 8/side", "Adductor rock x 8/side"],
 };
 
 const COOLDOWN_BY_MUSCLE: Partial<Record<MuscleGroup, string[]>> = {
@@ -645,6 +617,7 @@ const COOLDOWN_BY_MUSCLE: Partial<Record<MuscleGroup, string[]>> = {
   triceps: ["Overhead triceps stretch x 30s/side", "Child's pose side reach x 20s/side"],
   core: ["Crocodile breathing x 5 breaths", "Supine twist x 30s/side"],
   hip_flexors: ["Half-kneeling hip flexor stretch x 30s/side", "90/90 breathing x 4 breaths"],
+  adductors: ["Butterfly stretch x 45s", "Lateral lunge stretch x 30s/side"],
 };
 
 const buildSessionBookend = (
@@ -1202,10 +1175,10 @@ const getSplitTemplate = (
           id: "lower_glute_quad",
           title: "Lower B",
           summary: "Glute and quad emphasis.",
-          focusMuscles: ["glutes", "quads", "hamstrings", "core"],
+          focusMuscles: ["glutes", "quads", "hamstrings", "adductors", "core"],
           preferredMovements: ["single_leg", "squat", "hinge"],
           allowedMovements: ["single_leg", "squat", "hinge", "carry_core"],
-          targetPrimarySets: { glutes: 7, quads: 6, hamstrings: 4, core: 4 },
+          targetPrimarySets: { glutes: 7, quads: 6, hamstrings: 4, adductors: 2, core: 4 },
         },
       ];
     }
@@ -1225,10 +1198,10 @@ const getSplitTemplate = (
           id: "lower_glute_quad",
           title: "Lower B",
           summary: "Lower emphasis with quads, glutes, and shoulder support.",
-          focusMuscles: ["glutes", "quads", "hamstrings", "shoulders", "core"],
+          focusMuscles: ["glutes", "quads", "hamstrings", "adductors", "shoulders", "core"],
           preferredMovements: ["single_leg", "squat", "hinge"],
           allowedMovements: ["single_leg", "squat", "hinge", "push", "carry_core"],
-          targetPrimarySets: { glutes: 6, quads: 6, hamstrings: 4, shoulders: 2, core: 4 },
+          targetPrimarySets: { glutes: 6, quads: 6, hamstrings: 4, adductors: 2, shoulders: 2, core: 4 },
         },
         PHYSIQUE_UPPER_B_SLOT,
       ];
@@ -1248,10 +1221,10 @@ const getSplitTemplate = (
         id: "lower_glute_quad",
         title: "Lower B",
         summary: "Glute and quad emphasis.",
-        focusMuscles: ["glutes", "quads", "hamstrings", "core"],
+        focusMuscles: ["glutes", "quads", "hamstrings", "adductors", "core"],
         preferredMovements: ["single_leg", "squat", "hinge"],
         allowedMovements: ["single_leg", "squat", "hinge", "carry_core"],
-        targetPrimarySets: { glutes: 7, quads: 6, hamstrings: 4, core: 4 },
+        targetPrimarySets: { glutes: 7, quads: 6, hamstrings: 4, adductors: 2, core: 4 },
       },
       PHYSIQUE_UPPER_B_SLOT,
       {
@@ -1375,10 +1348,10 @@ const getSplitTemplate = (
       id: "lower_balanced",
       title: "Lower body",
       summary: "Balanced lower-body work.",
-      focusMuscles: ["glutes", "quads", "hamstrings", "core"],
+      focusMuscles: ["glutes", "quads", "hamstrings", "adductors", "core"],
       preferredMovements: ["hinge", "squat", "single_leg"],
       allowedMovements: ["hinge", "squat", "single_leg", "carry_core"],
-      targetPrimarySets: { glutes: 6, quads: 5, hamstrings: 4, core: 3 },
+      targetPrimarySets: { glutes: 6, quads: 5, hamstrings: 4, adductors: 1, core: 3 },
     },
     {
       id: "upper_balanced",
@@ -1465,6 +1438,7 @@ export function generateNextWorkout(
     equipment: "full_gym",
     experience: "beginner",
     intensity: "standard",
+    blockedExercises: [],
   };
   const preferredExerciseNames = new Set(overrides?.preferredExercises ?? []);
   const window = weekContaining(todayISO);
@@ -1583,7 +1557,7 @@ export function generateNextWorkout(
   const scoreExercise = (ex: Exercise): number => {
     const movement = movementOf(ex);
     if (!movement) return -10; // plyo/conditioning/calf — never a planned pick
-    if (!environmentAllows(ex, activeProfile.equipment)) return -10;
+    if (!environmentAllowsExercise(ex, activeProfile)) return -10;
     if (!goalAllows(ex, activeProfile.goal)) return -10;
     if (!slot.allowedMovements.includes(movement)) return -10;
     const remaining = Math.max(
@@ -2065,7 +2039,7 @@ export function generateNextWorkout(
     ? pickForMovement(
         lowerAnchorMovements,
         (ex) =>
-          environmentAllows(ex, activeProfile.equipment) &&
+          environmentAllowsExercise(ex, activeProfile) &&
           goalAllows(ex, activeProfile.goal) &&
           isStrongLowerAnchor(ex) &&
           (isHeavyEquipment(ex) || movementOf(ex) === "single_leg"),
@@ -2073,7 +2047,7 @@ export function generateNextWorkout(
     : pickForMovement(
         compoundMovements,
         (ex) =>
-          environmentAllows(ex, activeProfile.equipment) &&
+          environmentAllowsExercise(ex, activeProfile) &&
           isHeavyEquipment(ex) &&
           goalAllows(ex, activeProfile.goal),
       );
@@ -2083,17 +2057,17 @@ export function generateNextWorkout(
   );
   let secondaryPick = lowerBiasSlot
     ? pickForMovement(
-        secondaryMovements,
-        (ex) =>
-          environmentAllows(ex, activeProfile.equipment) &&
+      secondaryMovements,
+      (ex) =>
+          environmentAllowsExercise(ex, activeProfile) &&
           goalAllows(ex, activeProfile.goal) &&
           isGluteBiasedLower(ex) &&
           avoidSoftLowerAccessory(ex),
       )
     : pickForMovement(
-        secondaryMovements,
-        (ex) =>
-          environmentAllows(ex, activeProfile.equipment) &&
+      secondaryMovements,
+      (ex) =>
+          environmentAllowsExercise(ex, activeProfile) &&
           goalAllows(ex, activeProfile.goal) &&
           (isBackOrShoulderFocused(ex) || (armBiasSlot && isDirectArmFocus(ex))) &&
           avoidSoftLowerAccessory(ex),
@@ -2103,7 +2077,7 @@ export function generateNextWorkout(
       ? pickForMovement(
           secondaryMovements,
           (ex) =>
-            environmentAllows(ex, activeProfile.equipment) &&
+            environmentAllowsExercise(ex, activeProfile) &&
             goalAllows(ex, activeProfile.goal) &&
             isBackOrShoulderFocused(ex) &&
             avoidSoftLowerAccessory(ex),
@@ -2111,7 +2085,7 @@ export function generateNextWorkout(
       : pickForMovement(
           secondaryMovements,
           (ex) =>
-            environmentAllows(ex, activeProfile.equipment) &&
+            environmentAllowsExercise(ex, activeProfile) &&
             goalAllows(ex, activeProfile.goal) &&
             isGluteBiasedLower(ex) &&
             avoidSoftLowerAccessory(ex),
@@ -2121,7 +2095,7 @@ export function generateNextWorkout(
     secondaryPick = pickForMovement(
       secondaryMovements,
       (ex) =>
-        environmentAllows(ex, activeProfile.equipment) &&
+        environmentAllowsExercise(ex, activeProfile) &&
         goalAllows(ex, activeProfile.goal) &&
         avoidSoftLowerAccessory(ex) &&
         !(compoundPick?.exercise.equipment === "barbell" && ex.equipment === "barbell"),
@@ -2174,7 +2148,7 @@ export function generateNextWorkout(
     firstAccessoryRepScheme,
     firstAccessoryTargets,
     (ex) =>
-      environmentAllows(ex, activeProfile.equipment) &&
+      environmentAllowsExercise(ex, activeProfile) &&
       goalAllows(ex, activeProfile.goal) &&
       avoidSoftLowerAccessory(ex) &&
       (activeProfile.goal !== "physique" ||
@@ -2188,7 +2162,7 @@ export function generateNextWorkout(
 
   // 4. Second accessory superset — add enough volume for a fuller session.
   const secondAccessoryFilter = (ex: Exercise) =>
-    environmentAllows(ex, activeProfile.equipment) &&
+    environmentAllowsExercise(ex, activeProfile) &&
     goalAllows(ex, activeProfile.goal) &&
     avoidSoftLowerAccessory(ex) &&
     (activeProfile.goal !== "physique" ||
@@ -2239,7 +2213,7 @@ export function generateNextWorkout(
     return exercises.every(
       (exercise) =>
         !used.has(exercise.name) &&
-        environmentAllows(exercise, activeProfile.equipment),
+        environmentAllowsExercise(exercise, activeProfile),
     );
   };
   const templateScore = (template: FinisherTemplate): number => {
@@ -2312,7 +2286,7 @@ export function generateNextWorkout(
   } else {
     const finisherCandidates = EXERCISES.filter((ex) => {
       if (used.has(ex.name)) return false;
-      if (!environmentAllows(ex, activeProfile.equipment)) return false;
+      if (!environmentAllowsExercise(ex, activeProfile)) return false;
       if (allowConditioningFinisher) return isPreferredAccessibleFinisher(ex);
       return movementOf(ex) === "carry_core" || isAccessibleMetabolicFinisher(ex);
     });
@@ -2355,7 +2329,7 @@ export function generateNextWorkout(
 
   if (finisherPicks.length === 0) {
     const fin = pickBestFinisher((ex) => {
-      if (!environmentAllows(ex, activeProfile.equipment)) return false;
+      if (!environmentAllowsExercise(ex, activeProfile)) return false;
       if (allowConditioningFinisher) return isPreferredAccessibleFinisher(ex);
       return movementOf(ex) === "carry_core" || isAccessibleMetabolicFinisher(ex);
     });
@@ -2406,7 +2380,7 @@ export function generateNextWorkout(
           ? [15, 12, 12, 10]
           : [15, 12, 12],
       (ex) =>
-        environmentAllows(ex, activeProfile.equipment) &&
+        environmentAllowsExercise(ex, activeProfile) &&
         goalAllows(ex, activeProfile.goal) &&
         avoidSoftLowerAccessory(ex) &&
         slot.focusMuscles.some(
@@ -2422,7 +2396,7 @@ export function generateNextWorkout(
       "12–15 reps — direct arm finish",
       [15, 12],
       (ex) =>
-        environmentAllows(ex, activeProfile.equipment) &&
+        environmentAllowsExercise(ex, activeProfile) &&
         goalAllows(ex, activeProfile.goal) &&
         isDirectArmFocus(ex),
     );
@@ -2440,7 +2414,7 @@ export function generateNextWorkout(
       "10–12 reps — lower support",
       [12, 10],
       (ex) =>
-        environmentAllows(ex, activeProfile.equipment) &&
+        environmentAllowsExercise(ex, activeProfile) &&
         goalAllows(ex, activeProfile.goal) &&
         avoidSoftLowerAccessory(ex) &&
         isGluteBiasedLower(ex),

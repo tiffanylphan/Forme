@@ -4,11 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { EXERCISES } from "@/lib/exercises";
 import { MUSCLE_GROUPS, PATTERNS, EQUIPMENT } from "@/lib/types";
 import type { Equipment, MuscleGroup, Pattern } from "@/lib/types";
+import { formatMuscle, normalizeSearch } from "@/lib/format";
 import { MuscleTag } from "./MuscleTag";
 import { PatternBadge } from "./PatternBadge";
-
-const normalizeSearch = (value: string): string =>
-  value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 type Props = {
   open: boolean;
@@ -38,13 +36,14 @@ export function ExercisePicker({
   }, [open]);
 
   const filtered = useMemo(() => {
-    const normalizedSearch = normalizeSearch(search);
+    const q = normalizeSearch(search);
     return EXERCISES.filter((ex) => {
-      if (
-        normalizedSearch &&
-        !normalizeSearch(ex.name).includes(normalizedSearch)
-      ) {
-        return false;
+      if (q) {
+        const nameMatch = normalizeSearch(ex.name).includes(q);
+        const muscleMatch = ex.primary.concat(ex.secondary).some(
+          (m) => normalizeSearch(formatMuscle(m)).includes(q),
+        );
+        if (!nameMatch && !muscleMatch) return false;
       }
       if (pattern && ex.pattern !== pattern) return false;
       if (equip && ex.equipment !== equip) return false;

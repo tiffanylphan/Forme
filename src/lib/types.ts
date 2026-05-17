@@ -15,6 +15,7 @@ export const MUSCLE_GROUPS = [
   "triceps",
   "core",
   "hip_flexors",
+  "adductors",
 ] as const;
 
 // Includes "calves" so existing exercise tags type-check, but calves never
@@ -80,6 +81,7 @@ export type TrainingProfile = {
   equipment: TrainingEnvironment;
   experience: ExperienceLevel;
   intensity: SessionIntensity;
+  blockedExercises: string[];
 };
 
 export type SetEntry = {

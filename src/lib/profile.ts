@@ -32,6 +32,7 @@ export const DEFAULT_PROFILE: TrainingProfile = {
   equipment: "full_gym",
   experience: "beginner",
   intensity: "standard",
+  blockedExercises: [],
 };
 
 const EMPTY_SNAPSHOT = { profile: null, ready: false } as const;
@@ -75,6 +76,11 @@ const normalizeProfile = (raw: unknown): TrainingProfile | null => {
     intensity: isIntensity(candidate.intensity)
       ? candidate.intensity
       : DEFAULT_PROFILE.intensity,
+    blockedExercises: Array.isArray(candidate.blockedExercises)
+      ? candidate.blockedExercises.filter(
+          (value): value is string => typeof value === "string",
+        )
+      : DEFAULT_PROFILE.blockedExercises,
   };
 };
 
