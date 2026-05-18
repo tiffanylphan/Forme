@@ -93,4 +93,64 @@ describe("LogPage interactions", () => {
     expect(screen.getByText("Lat pulldown")).toBeInTheDocument();
     expect(screen.queryByText("Cable row")).not.toBeInTheDocument();
   });
+
+  it("allows swapping an exercise from a generated routine before saving", async () => {
+    const user = userEvent.setup();
+    popEditWorkoutMock.mockReturnValue(null);
+    popDraftMock.mockReturnValue({
+      source: "manual",
+      draft: {
+        split: {
+          slotId: "upper_back_shoulder",
+          title: "Upper A",
+          summary: "Back and shoulder emphasis.",
+          sessionIndex: 2,
+          totalSessions: 4,
+          targetPrimarySets: { back: 8, shoulders: 5 },
+        },
+        mobility: {
+          title: "5-minute warm-up",
+          items: ["Band row x 15"],
+          complementary: ["Arm circles x 20s each way"],
+        },
+        cooldown: {
+          title: "Cooldown",
+          items: ["Lat stretch x 30s"],
+          complementary: [],
+        },
+        rationale: [],
+        sections: [
+          {
+            kind: "compound",
+            rounds: 3,
+            repScheme: "3 x 10",
+            exercises: [
+              {
+                name: "Cable row",
+                primary: ["back"],
+                secondary: ["biceps"],
+                pattern: "pull",
+                movement: "pull",
+                targets: [10, 10, 10],
+                suggestedWeight: 70,
+                unit: "lb",
+                isFamiliar: false,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    getWorkoutMock.mockReturnValue(null);
+
+    render(<LogPage />);
+    await screen.findByText("Log workout");
+
+    await user.click(screen.getByText("Swap"));
+    await user.type(screen.getByPlaceholderText("Search exercises…"), "lat pulldown");
+    await user.click(screen.getByText("Lat pulldown"));
+
+    expect(screen.getByText("Lat pulldown")).toBeInTheDocument();
+    expect(screen.queryByText("Cable row")).not.toBeInTheDocument();
+  });
 });

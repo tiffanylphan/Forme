@@ -215,6 +215,32 @@ describe("generateNextWorkout", () => {
     expect(finisherSection?.exercises.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("avoids repeating the exact same finisher from a recent workout", () => {
+    const seed = 456;
+    const baselineDraft = generateNextWorkout([], "2026-05-18", seed, profile);
+    const baselineFinisher = baselineDraft.sections.find((section) => section.kind === "finisher");
+    const baselineNames = baselineFinisher?.exercises.map((exercise) => exercise.name) ?? [];
+
+    expect(baselineNames.length).toBeGreaterThan(0);
+
+    const repeatDraft = generateNextWorkout(
+      [
+        workout(
+          "w-repeat",
+          "2026-05-16",
+          baselineNames.map((name) => ({ name, sets: 2 })),
+        ),
+      ],
+      "2026-05-18",
+      seed,
+      profile,
+    );
+    const repeatFinisher = repeatDraft.sections.find((section) => section.kind === "finisher");
+    const repeatNames = repeatFinisher?.exercises.map((exercise) => exercise.name) ?? [];
+
+    expect(repeatNames).not.toEqual(baselineNames);
+  });
+
   it("advances to the next slot when the current week already has the prior sessions logged", () => {
     const workouts = [
       workout("w1", "2026-05-05", [

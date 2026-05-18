@@ -13,6 +13,7 @@ export const EXERCISES: Exercise[] = [
   { name: "DB forward lunge", primary: ["quads", "glutes"], secondary: ["hamstrings", "core"], equipment: "dumbbell", pattern: "squat" },
   { name: "DB reverse lunge", primary: ["quads", "glutes"], secondary: ["hamstrings", "core"], equipment: "dumbbell", pattern: "squat" },
   { name: "DB reverse lunge w/ pulse", primary: ["quads", "glutes"], secondary: ["hamstrings", "core"], equipment: "dumbbell", pattern: "squat" },
+  { name: "DB walking lunge", primary: ["quads", "glutes"], secondary: ["hamstrings", "core"], equipment: "dumbbell", pattern: "squat" },
   { name: "Barbell walking lunge", primary: ["quads", "glutes"], secondary: ["hamstrings", "core"], equipment: "barbell", pattern: "squat" },
   { name: "Lateral step-up", primary: ["quads", "glutes"], secondary: ["calves"], equipment: "dumbbell", pattern: "squat" },
   { name: "Box step-up", primary: ["quads", "glutes"], secondary: ["hamstrings"], equipment: "dumbbell", pattern: "squat" },

@@ -34,7 +34,7 @@ describe("WeekPage", () => {
       workouts: [
         {
           id: "w1",
-          date: "2026-05-11",
+          date: "2026-05-18",
           source: "manual",
           createdAt: 1,
           updatedAt: 1,

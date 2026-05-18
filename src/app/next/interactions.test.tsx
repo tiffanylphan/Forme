@@ -93,6 +93,30 @@ const generateNextWorkoutMock = vi.fn(
           ],
         },
         {
+          kind: "accessory",
+          rounds: 3,
+          repScheme: "12–15 reps · short rest",
+          exercises: [
+            {
+              name: "DB lateral raise",
+              primary: ["shoulders"],
+              secondary: ["rear_delts"],
+              pattern: "push",
+              movement: "push",
+              targets: [15, 12, 12],
+              suggestedWeight: 10,
+              unit: "lb",
+              isFamiliar: true,
+              progression: {
+                lastSummary: "10 lb x 15/12/12",
+                goal: "Own all reps before moving up.",
+                nextStep: "Keep the tempo clean and stay smooth.",
+                recentHistory: [],
+              },
+            },
+          ],
+        },
+        {
           kind: "superset",
           rounds: 4,
           repScheme: "strength pairing · main lift + support move",
@@ -133,6 +157,30 @@ const generateNextWorkoutMock = vi.fn(
             },
           ],
         },
+        {
+          kind: "finisher",
+          rounds: 2,
+          repScheme: "8–12 reps each · finisher pair",
+          exercises: [
+            {
+              name: "Burpee",
+              primary: ["quads", "core"],
+              secondary: ["shoulders", "chest"],
+              pattern: "conditioning",
+              movement: null,
+              targets: [10, 10],
+              suggestedWeight: null,
+              unit: "lb",
+              isFamiliar: true,
+              progression: {
+                lastSummary: "10 / 10 reps",
+                goal: "Keep the pace even across both rounds.",
+                nextStep: "Stay smooth and keep the output high.",
+                recentHistory: [],
+              },
+            },
+          ],
+        },
       ],
     };
   },
@@ -151,23 +199,38 @@ vi.mock("@/lib/profile", async () => {
 });
 
 vi.mock("@/lib/generator", () => ({
-  buildDraftExercise: (_exercise: unknown, targets: (number | string)[]) => ({
-    name: "Barbell bent-over row",
-    primary: ["back"],
-    secondary: ["biceps", "rear_delts", "core"],
-    pattern: "pull",
-    movement: "pull",
+  buildDraftExercise: (exercise: {
+    name: string;
+    primary: string[];
+    secondary: string[];
+    pattern: string;
+  }, targets: (number | string)[]) => ({
+    name: exercise.name,
+    primary: exercise.primary,
+    secondary: exercise.secondary,
+    pattern: exercise.pattern,
+    movement:
+      exercise.pattern === "pull"
+        ? "pull"
+        : exercise.pattern === "push"
+          ? "push"
+          : exercise.pattern === "hinge"
+            ? "hinge"
+            : exercise.pattern === "squat"
+              ? "squat"
+              : exercise.pattern === "carry" || exercise.pattern === "core"
+                ? "carry_core"
+                : null,
     targets,
-    suggestedWeight: 95,
+    suggestedWeight: null,
     unit: "lb",
     isFamiliar: true,
     progression: {
-      lastSummary: "95 lb x 10/8/8/6",
-      goal: "Match or beat 10/8/8/6 reps with solid form.",
-      nextStep: "Last time cleared the target. Add 2.5-5 lb if technique stays crisp.",
+      lastSummary: null,
+      goal: "Repeat the target cleanly.",
+      nextStep: "Keep the form sharp and build from there.",
       recentHistory: [
-        { date: "2026-05-04", summary: "95 lb x 10/8/8/6", status: "progressed" },
-        { date: "2026-05-01", summary: "95 lb x 10/8/7/6", status: "held" },
+        { date: "2026-05-04", summary: "solid session", status: "progressed" },
       ],
     },
   }),
@@ -365,5 +428,106 @@ describe("NextPage interactions", () => {
 
     render(<NextPage />);
     expect(screen.getByText("Strength pair")).toBeInTheDocument();
+  });
+
+  it("groups compound and accessory blocks into the same superset card", () => {
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "beginner",
+        intensity: "standard",
+      },
+    });
+    useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
+
+    render(<NextPage />);
+
+    expect(screen.getAllByText("Superset")).toHaveLength(1);
+    expect(screen.queryByText("Compound")).not.toBeInTheDocument();
+    expect(screen.queryByText("Accessory")).not.toBeInTheDocument();
+    expect(screen.getByText("Cable row")).toBeInTheDocument();
+    expect(screen.getByText("DB lateral raise")).toBeInTheDocument();
+  });
+
+  it("shows one shared summary for a grouped superset card", () => {
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "beginner",
+        intensity: "standard",
+      },
+    });
+    useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
+
+    render(<NextPage />);
+
+    const supersetCard = screen.getByText("Superset").closest("div.overflow-hidden.rounded-2xl");
+    expect(supersetCard).not.toBeNull();
+    expect(within(supersetCard as HTMLElement).getByText("4 rounds")).toBeInTheDocument();
+    expect(
+      within(supersetCard as HTMLElement).getByText("10 / 8 / 8 / 6 — build weight"),
+    ).toBeInTheDocument();
+    expect(within(supersetCard as HTMLElement).getAllByText("4 rounds")).toHaveLength(1);
+    expect(
+      within(supersetCard as HTMLElement).getAllByText("10 / 8 / 8 / 6 — build weight"),
+    ).toHaveLength(1);
+  });
+
+  it("does not add extra padded wrappers around grouped superset exercises", () => {
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "beginner",
+        intensity: "standard",
+      },
+    });
+    useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
+
+    render(<NextPage />);
+
+    const supersetCard = screen.getByText("Superset").closest("div.overflow-hidden.rounded-2xl");
+    expect(supersetCard).not.toBeNull();
+    expect((supersetCard as HTMLElement).querySelectorAll(":scope > div.divide-y > div.px-4.py-3")).toHaveLength(2);
+  });
+
+  it("can swap a finisher through the finisher picker", async () => {
+    const user = userEvent.setup();
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "beginner",
+        intensity: "standard",
+      },
+    });
+    useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
+
+    render(<NextPage />);
+    expect(screen.getByText("Burpee")).toBeInTheDocument();
+
+    expect(screen.getByText("Finisher circuit")).toBeInTheDocument();
+
+    const swapButtons = screen.getAllByText("Swap");
+    await user.click(swapButtons[swapButtons.length - 1]);
+
+    expect(screen.getByText("Swap finisher")).toBeInTheDocument();
+    expect(screen.queryByText("Pull only")).not.toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText("Search…"), "high knees");
+    await user.click(screen.getByText("High knees"));
+
+    expect(screen.getByText("High knees")).toBeInTheDocument();
+    expect(screen.queryByText("Swap finisher")).not.toBeInTheDocument();
   });
 });

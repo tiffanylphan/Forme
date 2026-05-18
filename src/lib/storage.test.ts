@@ -5,6 +5,7 @@ import {
   deleteWorkout,
   getWorkout,
   loadWorkouts,
+  normalizeWorkouts,
   popEditWorkout,
   saveWorkouts,
   stashEditWorkout,
@@ -67,5 +68,105 @@ describe("storage", () => {
     });
 
     expect(result.current.workouts.map((w) => w.id)).toEqual(["w1"]);
+  });
+
+  it("normalizes imported workouts with missing optional fields", () => {
+    const normalized = normalizeWorkouts([
+      {
+        id: "legacy-1",
+        date: "2026-05-06",
+        exercises: [
+          {
+            exerciseName: "Cable row",
+            sets: [{ reps: 12, weight: 70 }],
+          },
+        ],
+      },
+    ]);
+
+    expect(normalized).toHaveLength(1);
+    expect(normalized[0]?.source).toBe("manual");
+    expect(normalized[0]?.exercises[0]?.supersetGroup).toBeNull();
+    expect(normalized[0]?.exercises[0]?.sets[0]?.unit).toBe("lb");
+    expect(typeof normalized[0]?.createdAt).toBe("number");
+    expect(typeof normalized[0]?.updatedAt).toBe("number");
+  });
+
+  it("drops malformed workouts instead of letting them poison storage", () => {
+    saveWorkouts([
+      {
+        id: "broken",
+        date: "2026-05-06",
+        source: "manual",
+        createdAt: 1,
+        updatedAt: 1,
+        exercises: [],
+      } as Workout,
+      makeWorkout("good"),
+    ]);
+
+    expect(loadWorkouts().map((workout) => workout.id)).toEqual(["good"]);
+  });
+
+  it("normalizes flattened row-per-set exports into grouped workouts", () => {
+    const normalized = normalizeWorkouts([
+      {
+        workout_id: "flat-1",
+        date: "2026-05-16",
+        source: "manual",
+        plan_slot: "Lower A",
+        exercise: "Leg press",
+        set_number: 2,
+        reps: 10,
+        weight: 140,
+        unit: "lb",
+        duration_sec: "",
+        distance_m: "",
+        progression_status: "baseline",
+        workout_notes: "",
+      },
+      {
+        workout_id: "flat-1",
+        date: "2026-05-16",
+        source: "manual",
+        plan_slot: "Lower A",
+        exercise: "Leg press",
+        set_number: 1,
+        reps: 8,
+        weight: 130,
+        unit: "lb",
+        duration_sec: "",
+        distance_m: "",
+        progression_status: "baseline",
+        workout_notes: "",
+      },
+      {
+        workout_id: "flat-1",
+        date: "2026-05-16",
+        source: "manual",
+        plan_slot: "Lower A",
+        exercise: "Bear crawl",
+        set_number: 1,
+        reps: 20,
+        weight: "",
+        unit: "lb",
+        duration_sec: "",
+        distance_m: "",
+        progression_status: "baseline",
+        workout_notes: "",
+      },
+    ]);
+
+    expect(normalized).toHaveLength(1);
+    expect(normalized[0]?.id).toBe("flat-1");
+    expect(normalized[0]?.planSlot).toEqual({
+      slotId: "lower_a",
+      title: "Lower A",
+    });
+    expect(normalized[0]?.exercises).toHaveLength(2);
+    expect(normalized[0]?.exercises[0]?.exerciseName).toBe("Leg press");
+    expect(normalized[0]?.exercises[0]?.sets.map((set) => set.reps)).toEqual([8, 10]);
+    expect(normalized[0]?.exercises[1]?.exerciseName).toBe("Bear crawl");
+    expect(normalized[0]?.exercises[1]?.sets[0]?.weight).toBeNull();
   });
 });

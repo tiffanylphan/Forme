@@ -99,6 +99,12 @@ export type ExerciseLog = {
   exerciseName: string;
   sets: SetEntry[];
   supersetGroup: string | null;
+  routineGroup?: {
+    id: string;
+    kind: "set";
+    rounds: number;
+    repScheme: string;
+  } | null;
   progressionStatus?: "progressed" | "held" | "missed" | "baseline";
   notes?: string;
 };

@@ -27,8 +27,8 @@ import type { DraftExercise, DraftSection, WorkoutDraft } from "@/lib/generator"
 import type { Exercise, MovementPattern, MuscleGroup } from "@/lib/types";
 
 const SECTION_TITLE: Record<DraftSection["kind"], string> = {
-  compound: "Compound",
-  accessory: "Accessory",
+  compound: "Set",
+  accessory: "Set",
   superset: "Superset",
   finisher: "Finisher",
 };
@@ -39,6 +39,9 @@ const sectionTitleFor = (section: DraftSection): string => {
   }
   if (section.kind === "superset" && section.exercises.length > 2) {
     return "Circuit";
+  }
+  if (section.kind === "finisher") {
+    return "Finisher circuit";
   }
   return SECTION_TITLE[section.kind];
 };
@@ -52,7 +55,19 @@ type SwapTarget = {
   currentName: string;
   movement: MovementPattern | null;
   targets: (number | string)[];
+  mode: "standard" | "finisher";
 };
+
+type DisplaySection =
+  | {
+      kind: "single";
+      section: DraftSection;
+      sectionIdx: number;
+    }
+  | {
+      kind: "set_group";
+      entries: Array<{ section: DraftSection; sectionIdx: number }>;
+    };
 
 type SwapRole =
   | "horizontal_pull"
@@ -212,6 +227,12 @@ const similarityScore = (
   return score;
 };
 
+const isFinisherSwapCandidate = (ex: Exercise): boolean =>
+  ex.pattern === "conditioning" ||
+  ex.pattern === "plyo" ||
+  ex.pattern === "carry" ||
+  movementOf(ex) === "carry_core";
+
 const DEFAULT_RATIONALE_COUNT = 2;
 const LONG_RATIONALE_LENGTH = 90;
 
@@ -228,6 +249,29 @@ const prioritizeRationale = (rationale: string[]): string[] =>
     };
     return score(b) - score(a);
   });
+
+const buildDisplaySections = (sections: DraftSection[]): DisplaySection[] => {
+  const display: DisplaySection[] = [];
+  let currentSetGroup: Array<{ section: DraftSection; sectionIdx: number }> = [];
+
+  const flushSetGroup = () => {
+    if (currentSetGroup.length === 0) return;
+    display.push({ kind: "set_group", entries: currentSetGroup });
+    currentSetGroup = [];
+  };
+
+  sections.forEach((section, sectionIdx) => {
+    if (section.kind === "compound" || section.kind === "accessory") {
+      currentSetGroup.push({ section, sectionIdx });
+      return;
+    }
+    flushSetGroup();
+    display.push({ kind: "single", section, sectionIdx });
+  });
+
+  flushSetGroup();
+  return display;
+};
 
 export default function NextPage() {
   const { workouts, ready } = useWorkouts();
@@ -281,6 +325,7 @@ export default function NextPage() {
     () => new Set(workouts.flatMap((w) => w.exercises.map((e) => e.exerciseName))),
     [workouts],
   );
+  const displaySections = useMemo(() => buildDisplaySections(draft.sections), [draft.sections]);
   const coverage = useMemo(
     () => computeCoverage(workouts, weekContaining(today)),
     [workouts, today],
@@ -356,18 +401,18 @@ export default function NextPage() {
 
           {/* Sections */}
           <div className="space-y-5">
-            {draft.sections.map((sec, si) => (
+            {displaySections.map((displaySection, index) => (
               <SectionCard
-                key={si}
-                section={sec}
-                sectionIdx={si}
-                onSwapRequest={(ei, movement, targets) =>
+                key={index}
+                displaySection={displaySection}
+                onSwapRequest={(sectionIdx, exerciseIdx, movement, targets, mode) =>
                   setSwapTarget({
-                    sectionIdx: si,
-                    exerciseIdx: ei,
-                    currentName: sec.exercises[ei].name,
+                    sectionIdx,
+                    exerciseIdx,
+                    currentName: draft.sections[sectionIdx]?.exercises[exerciseIdx]?.name ?? "",
                     movement,
                     targets,
+                    mode,
                   })
                 }
               />
@@ -415,6 +460,7 @@ export default function NextPage() {
         open={swapTarget !== null}
         currentName={swapTarget?.currentName ?? null}
         movement={swapTarget?.movement ?? null}
+        mode={swapTarget?.mode ?? "standard"}
         excludeNames={draftNames}
         profile={profile ?? DEFAULT_PROFILE}
         knownExercises={knownExercises}
@@ -700,18 +746,54 @@ function BookendCard({
 // ---------- Section card ----------
 
 function SectionCard({
-  section,
-  sectionIdx,
+  displaySection,
   onSwapRequest,
 }: {
-  section: DraftSection;
-  sectionIdx: number;
+  displaySection: DisplaySection;
   onSwapRequest: (
+    sectionIdx: number,
     exerciseIdx: number,
     movement: MovementPattern | null,
     targets: (number | string)[],
+    mode: "standard" | "finisher",
   ) => void;
 }) {
+  if (displaySection.kind === "set_group") {
+    const firstEntry = displaySection.entries[0];
+    const sharedRounds = `${firstEntry.section.rounds} rounds`;
+    const sharedRepScheme = firstEntry.section.repScheme;
+
+    return (
+      <div className="overflow-hidden rounded-2xl border border-[#E6E3D8] bg-surface">
+        <div className="flex items-start justify-between gap-3 border-b border-divider px-4 py-2.5">
+          <span className="label-eyebrow">Superset</span>
+          <div className="min-w-0 text-right">
+            <div className="text-[11px] text-text-subtle">{sharedRounds}</div>
+            {sharedRepScheme && (
+              <div className="text-[10px] leading-snug text-text-subtle">
+                {sharedRepScheme}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="divide-y divide-divider">
+          {displaySection.entries.flatMap(({ section, sectionIdx }) =>
+            section.exercises.map((ex, ei) => (
+              <ExerciseRow
+                key={`${sectionIdx}-${ei}-${ex.name}`}
+                ex={ex}
+                onSwap={() =>
+                  onSwapRequest(sectionIdx, ei, ex.movement, ex.targets, "standard")
+                }
+              />
+            )),
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const { section, sectionIdx } = displaySection;
   return (
     <div className="overflow-hidden rounded-2xl border border-[#E6E3D8] bg-surface">
       <div className="flex items-start justify-between gap-3 border-b border-divider px-4 py-2.5">
@@ -729,7 +811,15 @@ function SectionCard({
             key={`${sectionIdx}-${ei}-${ex.name}`}
             ex={ex}
             compact={section.kind === "finisher"}
-            onSwap={() => onSwapRequest(ei, ex.movement, ex.targets)}
+            onSwap={() =>
+              onSwapRequest(
+                sectionIdx,
+                ei,
+                ex.movement,
+                ex.targets,
+                section.kind === "finisher" ? "finisher" : "standard",
+              )
+            }
           />
         ))}
       </div>
@@ -773,6 +863,12 @@ function ExerciseRow({
               ))}
             </div>
           </div>
+          <button
+            onClick={onSwap}
+            className="shrink-0 rounded-full border border-[#E6E3D8] px-2.5 py-0.5 text-[10px] font-medium text-text-muted"
+          >
+            Swap
+          </button>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           {ex.targets.map((t, i) => (
@@ -883,6 +979,7 @@ function SwapPicker({
   open,
   currentName,
   movement,
+  mode,
   excludeNames,
   profile,
   knownExercises,
@@ -892,6 +989,7 @@ function SwapPicker({
   open: boolean;
   currentName: string | null;
   movement: MovementPattern | null;
+  mode: "standard" | "finisher";
   excludeNames: Set<string>;
   profile: { equipment: "full_gym" | "dumbbells" | "home"; blockedExercises: string[] };
   knownExercises: Set<string>;
@@ -900,6 +998,7 @@ function SwapPicker({
 }) {
   const [search, setSearch] = useState("");
   const movColor = movement ? MOVEMENT_COLORS[movement] : null;
+  const finisherMode = mode === "finisher";
   const currentExercise = useMemo(
     () => EXERCISES.find((ex) => ex.name === currentName),
     [currentName],
@@ -917,13 +1016,17 @@ function SwapPicker({
     const filtered = EXERCISES.filter((ex) => {
       if (excludeNames.has(ex.name)) return false;
       if (!environmentAllowsExercise(ex, profile)) return false;
-      if (movement && movementOf(ex) !== movement) return false;
+      if (finisherMode) {
+        if (!isFinisherSwapCandidate(ex)) return false;
+      } else if (movement && movementOf(ex) !== movement) {
+        return false;
+      }
       if (search && !ex.name.toLowerCase().includes(search.toLowerCase()))
         return false;
       return true;
     });
 
-    if (search || !currentExercise) {
+    if (search || !currentExercise || finisherMode) {
       return filtered.sort((a, b) => {
         const scoreDiff =
           similarityScore(b, currentExercise, knownExercises) -
@@ -966,7 +1069,7 @@ function SwapPicker({
       const bf = knownExercises.has(b.name) ? 0 : 1;
       return af - bf || a.name.localeCompare(b.name);
     });
-  }, [currentExercise, movement, excludeNames, knownExercises, profile, search]);
+  }, [currentExercise, excludeNames, finisherMode, knownExercises, movement, profile, search]);
 
   if (!open) return null;
 
@@ -985,9 +1088,9 @@ function SwapPicker({
         <div className="flex items-center justify-between px-4 pt-2 pb-3">
           <div>
             <h2 className="text-[17px] font-semibold tracking-tight text-text">
-              Swap exercise
+              {finisherMode ? "Swap finisher" : "Swap exercise"}
             </h2>
-            {movement && movColor && (
+            {!finisherMode && movement && movColor && (
               <span
                 style={{ background: movColor.bg, color: movColor.text }}
                 className="mt-1 inline-block rounded-full px-2.5 py-0.5 text-[10px] font-medium"
@@ -1018,7 +1121,9 @@ function SwapPicker({
 
         <p className="px-4 pb-1 text-[11px] text-text-subtle">
           {options.length} alternative{options.length !== 1 ? "s" : ""} ·
-          most directly comparable matches shown first
+          {finisherMode
+            ? " finisher-friendly options shown first"
+            : " most directly comparable matches shown first"}
         </p>
 
         {/* List */}

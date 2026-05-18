@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { saveWorkouts } from "@/lib/storage";
-import type { Workout } from "@/lib/types";
+import { normalizeWorkouts, saveWorkouts } from "@/lib/storage";
 
 export default function ImportPage() {
   const router = useRouter();
@@ -24,7 +23,12 @@ export default function ImportPage() {
       setError("Expected a JSON array of workouts.");
       return;
     }
-    saveWorkouts(parsed as Workout[]);
+    const normalized = normalizeWorkouts(parsed);
+    if (normalized.length === 0) {
+      setError("Couldn't recognize any valid workouts in that JSON.");
+      return;
+    }
+    saveWorkouts(normalized);
     setDone(true);
     setTimeout(() => router.push("/"), 1500);
   };

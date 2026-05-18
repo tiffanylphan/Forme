@@ -1121,6 +1121,42 @@ const maybeOverrideForCriticalGap = (
 const compareWorkoutsDesc = (a: Workout, b: Workout): number =>
   a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt;
 
+const ymdToUtcMs = (date: string): number => {
+  const [year, month, day] = date.split("-").map(Number);
+  return Date.UTC(year, month - 1, day);
+};
+
+const isWithinPastDays = (date: string, todayISO: string, days: number): boolean => {
+  const diff = ymdToUtcMs(todayISO) - ymdToUtcMs(date);
+  return diff >= 0 && diff <= days * 24 * 60 * 60 * 1000;
+};
+
+const finisherRepeatPenalty = (
+  exerciseNames: string[],
+  workouts: Workout[],
+  todayISO: string,
+): number => {
+  const uniqueNames = [...new Set(exerciseNames)];
+  if (uniqueNames.length === 0) return 0;
+
+  const recentWorkouts = workouts
+    .filter((workout) => isWithinPastDays(workout.date, todayISO, 21))
+    .sort(compareWorkoutsDesc)
+    .slice(0, 6);
+
+  return recentWorkouts.reduce((penalty, workout, index) => {
+    const workoutNames = new Set(workout.exercises.map((exercise) => exercise.exerciseName));
+    const overlap = uniqueNames.filter((name) => workoutNames.has(name)).length;
+    if (overlap === 0) return penalty;
+
+    const recencyMultiplier = Math.max(0.4, 1 - index * 0.15);
+    if (overlap === uniqueNames.length) return penalty + 12 * recencyMultiplier;
+    if (overlap >= Math.max(2, uniqueNames.length - 1)) return penalty + 4.5 * recencyMultiplier;
+    if (overlap >= 2) return penalty + 1.5 * recencyMultiplier;
+    return penalty;
+  }, 0);
+};
+
 const resolveSplitVariants = (
   split: SplitSlot[],
   profile: TrainingProfile,
@@ -2233,6 +2269,7 @@ export function generateNextWorkout(
     }
     if (template.tags.includes("upper") && lowerBiasSlot) score -= 0.5;
     if (template.tags.includes("lower") && upperBiasSlot) score -= 0.5;
+    score -= finisherRepeatPenalty(template.exercises, workouts, todayISO);
     return score;
   };
   const scoredTemplates = [...FINISHER_TEMPLATES]
@@ -2296,7 +2333,7 @@ export function generateNextWorkout(
   const finisherFamilies = new Set<string>();
   const finisherNoise = new Map<string, number>();
   finisherCandidates.forEach((ex) => finisherNoise.set(ex.name, rng()));
-  const sortFinisherScore = (ex: Exercise): number => {
+  const sortFinisherScore = (ex: Exercise, currentPicks: Exercise[]): number => {
     let s = 0;
     if (isAccessibleConditioningFinisher(ex)) s += 5;
     if (isAccessibleMetabolicFinisher(ex)) s += 4.5;
@@ -2306,25 +2343,46 @@ export function generateNextWorkout(
     ex.primary.forEach((m) => {
       if (recent.has(m)) s -= 1;
     });
+    s -= finisherRepeatPenalty(
+      [...currentPicks.map((pick) => pick.name), ex.name],
+      workouts,
+      todayISO,
+    );
     return s + (finisherNoise.get(ex.name) ?? 0) * 0.5;
   };
 
-  for (const ex of [...finisherCandidates].sort((a, b) => sortFinisherScore(b) - sortFinisherScore(a))) {
-    if (finisherPicks.length >= preferredFinisherCount) break;
-    if (finisherNames.has(ex.name)) continue;
-    const family = familyOf(ex);
-    if (finisherFamilies.has(family)) continue;
-    if (
-      finisherPicks.length > 0 &&
-      movementOf(ex) !== "carry_core" &&
-      movementOf(ex) !== null &&
-      finisherPicks.some((picked) => movementOf(picked) === movementOf(ex))
-    ) {
-      continue;
+  const remainingFinisherCandidates = [...finisherCandidates];
+  while (finisherPicks.length < preferredFinisherCount && remainingFinisherCandidates.length > 0) {
+    const rankedCandidates = [...remainingFinisherCandidates].sort(
+      (a, b) => sortFinisherScore(b, finisherPicks) - sortFinisherScore(a, finisherPicks),
+    );
+    let picked: Exercise | null = null;
+
+    for (const ex of rankedCandidates) {
+      if (finisherNames.has(ex.name)) continue;
+      const family = familyOf(ex);
+      if (finisherFamilies.has(family)) continue;
+      if (
+        finisherPicks.length > 0 &&
+        movementOf(ex) !== "carry_core" &&
+        movementOf(ex) !== null &&
+        finisherPicks.some((existing) => movementOf(existing) === movementOf(ex))
+      ) {
+        continue;
+      }
+      picked = ex;
+      break;
     }
-    finisherPicks.push(ex);
-    finisherNames.add(ex.name);
-    finisherFamilies.add(family);
+
+    if (!picked) break;
+
+    finisherPicks.push(picked);
+    finisherNames.add(picked.name);
+    finisherFamilies.add(familyOf(picked));
+    const pickedIndex = remainingFinisherCandidates.findIndex(
+      (candidate) => candidate.name === picked?.name,
+    );
+    if (pickedIndex >= 0) remainingFinisherCandidates.splice(pickedIndex, 1);
   }
 
   if (finisherPicks.length === 0) {

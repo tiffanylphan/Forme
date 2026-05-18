@@ -179,6 +179,148 @@ describe("LogPage", () => {
     });
   });
 
+  it("shows the warm-up for a generated routine in the logger", async () => {
+    popEditWorkoutMock.mockReturnValue(null);
+    popDraftMock.mockReturnValue({
+      source: "manual",
+      draft: {
+        split: {
+          slotId: "upper_back_shoulder",
+          title: "Upper A",
+          summary: "Back and shoulder emphasis.",
+          sessionIndex: 2,
+          totalSessions: 4,
+          targetPrimarySets: {
+            back: 8,
+            shoulders: 5,
+          },
+        },
+        mobility: {
+          title: "5-minute warm-up",
+          items: ["Band row x 15", "Arm circles x 20s each way"],
+          complementary: ["Scap push-up x 10"],
+        },
+        cooldown: {
+          title: "Cooldown and stretch",
+          items: ["Lat stretch x 30s"],
+          complementary: [],
+        },
+        rationale: [],
+        sections: [
+          {
+            kind: "compound",
+            rounds: 3,
+            repScheme: "3 x 10",
+            exercises: [
+              {
+                name: "Cable row",
+                primary: ["back"],
+                secondary: ["biceps"],
+                pattern: "pull",
+                movement: "pull",
+                targets: [10, 10, 10],
+                suggestedWeight: 70,
+                unit: "lb",
+                isFamiliar: false,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    getWorkoutMock.mockReturnValue(null);
+
+    render(<LogPage />);
+
+    expect(await screen.findByText("Before you lift")).toBeInTheDocument();
+    expect(screen.getByText("5-minute warm-up")).toBeInTheDocument();
+    expect(screen.getByText("· Band row x 15")).toBeInTheDocument();
+    expect(screen.getByText("Complementary mobility")).toBeInTheDocument();
+    expect(screen.getByText("· Scap push-up x 10")).toBeInTheDocument();
+  });
+
+  it("preserves grouped superset structure from a generated routine", async () => {
+    popEditWorkoutMock.mockReturnValue(null);
+    popDraftMock.mockReturnValue({
+      source: "manual",
+      draft: {
+        split: {
+          slotId: "upper_back_shoulder",
+          title: "Upper A",
+          summary: "Back and shoulder emphasis.",
+          sessionIndex: 2,
+          totalSessions: 4,
+          targetPrimarySets: {
+            back: 8,
+            shoulders: 5,
+          },
+        },
+        mobility: {
+          title: "5-minute warm-up",
+          items: ["Band row x 15"],
+          complementary: [],
+        },
+        cooldown: {
+          title: "Cooldown and stretch",
+          items: ["Lat stretch x 30s"],
+          complementary: [],
+        },
+        rationale: [],
+        sections: [
+          {
+            kind: "compound",
+            rounds: 4,
+            repScheme: "10 / 8 / 8 / 6 — build weight",
+            exercises: [
+              {
+                name: "Cable row",
+                primary: ["back"],
+                secondary: ["biceps"],
+                pattern: "pull",
+                movement: "pull",
+                targets: [10, 8, 8, 6],
+                suggestedWeight: 70,
+                unit: "lb",
+                isFamiliar: true,
+              },
+            ],
+          },
+          {
+            kind: "accessory",
+            rounds: 3,
+            repScheme: "12–15 reps · short rest",
+            exercises: [
+              {
+                name: "DB lateral raise",
+                primary: ["shoulders"],
+                secondary: ["rear_delts"],
+                pattern: "push",
+                movement: "push",
+                targets: [15, 12, 12],
+                suggestedWeight: 10,
+                unit: "lb",
+                isFamiliar: true,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    getWorkoutMock.mockReturnValue(null);
+
+    render(<LogPage />);
+
+    const supersetHeader = await screen.findByText((content) =>
+      content.includes("Superset · 2 exercises · 4 rounds"),
+    );
+    const supersetCard = supersetHeader.closest("div.overflow-hidden.rounded-2xl");
+    expect(supersetCard).not.toBeNull();
+    expect(screen.getAllByText((content) => content.includes("Superset · 2 exercises · 4 rounds"))).toHaveLength(1);
+    expect(screen.getByText("Cable row")).toBeInTheDocument();
+    expect(screen.getByText("DB lateral raise")).toBeInTheDocument();
+    expect(screen.getByText("10 / 8 / 8 / 6 — build weight")).toBeInTheDocument();
+  });
+
   it("persists progression status when a previous performance exists", async () => {
     const user = userEvent.setup();
     let persistedWorkout: Record<string, unknown> | null = null;

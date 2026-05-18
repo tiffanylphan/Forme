@@ -26,7 +26,16 @@ type ColorPair = { bg: string; text: string };
 
 type Block = {
   key: string;
+  kind: "single" | "superset";
   groupId: string | null;
+  routineGroup:
+    | {
+        id: string;
+        kind: "set";
+        rounds: number;
+        repScheme: string;
+      }
+    | null;
   exercises: ExerciseLog[];
   startIndex: number;
   rounds: number;
@@ -50,7 +59,25 @@ const newExerciseLog = (exerciseName: string): ExerciseLog => ({
 // Convert a generator draft into ExerciseLog[] ready to seed the logger.
 const hydrateDraft = (draft: WorkoutDraft): ExerciseLog[] => {
   const out: ExerciseLog[] = [];
+  let activeSetGroup:
+    | {
+        id: string;
+        kind: "set";
+        rounds: number;
+        repScheme: string;
+      }
+    | null = null;
   for (const sec of draft.sections) {
+    if (sec.kind === "compound" || sec.kind === "accessory") {
+      activeSetGroup ??= {
+        id: uid("set"),
+        kind: "set",
+        rounds: sec.rounds,
+        repScheme: sec.repScheme,
+      };
+    } else {
+      activeSetGroup = null;
+    }
     const groupId =
       sec.kind === "superset" && sec.exercises.length > 1 ? uid("ss") : null;
     for (const dex of sec.exercises) {
@@ -65,7 +92,9 @@ const hydrateDraft = (draft: WorkoutDraft): ExerciseLog[] => {
         id: uid("ex"),
         exerciseName: dex.name,
         sets,
-        supersetGroup: groupId,
+        supersetGroup:
+          groupId ?? (sec.kind === "compound" || sec.kind === "accessory" ? activeSetGroup?.id ?? null : null),
+        routineGroup: activeSetGroup,
       });
     }
   }
@@ -78,6 +107,7 @@ type InitialState = {
   source: WorkoutSource;
   exercises: ExerciseLog[];
   planSlot: Workout["planSlot"];
+  pendingDraft: WorkoutDraft | null;
   notes: string;
   isEditing: boolean;
   recovered: boolean;
@@ -96,6 +126,7 @@ type LogDraftSnapshot = {
   source: WorkoutSource;
   exercises: ExerciseLog[];
   planSlot: Workout["planSlot"];
+  pendingDraft: WorkoutDraft | null;
   notes: string;
   isEditing: boolean;
   defaultUnit: WeightUnit;
@@ -136,6 +167,7 @@ const resolveInitialState = (): InitialState => {
     source: "manual",
     exercises: [],
     planSlot: undefined,
+    pendingDraft: null,
     notes: "",
     isEditing: false,
     recovered: false,
@@ -152,6 +184,7 @@ const resolveInitialState = (): InitialState => {
       source: normalizeWorkoutSource(editWorkout.source),
       exercises: editWorkout.exercises,
       planSlot: editWorkout.planSlot,
+      pendingDraft: null,
       notes: editWorkout.notes ?? "",
       isEditing: true,
       recovered: false,
@@ -169,6 +202,7 @@ const resolveInitialState = (): InitialState => {
         slotId: pending.draft.split.slotId,
         title: pending.draft.split.title,
       },
+      pendingDraft: pending.draft,
     };
   }
 
@@ -180,6 +214,7 @@ const resolveInitialState = (): InitialState => {
       source: normalizeWorkoutSource(savedDraft.source),
       exercises: savedDraft.exercises,
       planSlot: savedDraft.planSlot,
+      pendingDraft: savedDraft.pendingDraft,
       notes: savedDraft.notes,
       isEditing: savedDraft.isEditing,
       recovered: true,
@@ -192,13 +227,18 @@ const resolveInitialState = (): InitialState => {
 const buildBlocks = (exs: ExerciseLog[]): Block[] => {
   const blocks: Block[] = [];
   exs.forEach((ex, i) => {
+    const effectiveGroupId =
+      ex.supersetGroup ??
+      (ex.routineGroup?.kind === "set" ? ex.routineGroup.id : null);
     const last = blocks[blocks.length - 1];
-    if (last && ex.supersetGroup && last.groupId === ex.supersetGroup) {
+    if (last && effectiveGroupId && last.kind === "superset" && last.groupId === effectiveGroupId) {
       last.exercises.push(ex);
     } else {
       blocks.push({
         key: ex.id,
-        groupId: ex.supersetGroup,
+        kind: effectiveGroupId ? "superset" : "single",
+        groupId: effectiveGroupId,
+        routineGroup: ex.routineGroup ?? null,
         exercises: [ex],
         startIndex: i,
         rounds: ex.sets.length,
@@ -206,7 +246,10 @@ const buildBlocks = (exs: ExerciseLog[]): Block[] => {
     }
   });
   for (const b of blocks) {
-    b.rounds = Math.max(...b.exercises.map((e) => e.sets.length));
+    b.rounds =
+      b.routineGroup
+        ? b.routineGroup.rounds
+        : Math.max(...b.exercises.map((e) => e.sets.length));
   }
   return blocks;
 };
@@ -249,6 +292,7 @@ export default function LogPage() {
   const [date, setDate] = useState(init.date);
   const [exercises, setExercises] = useState<ExerciseLog[]>(init.exercises);
   const [planSlot] = useState(init.planSlot);
+  const [pendingDraft] = useState<WorkoutDraft | null>(init.pendingDraft);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [guideExerciseName, setGuideExerciseName] = useState<string | null>(null);
   const [swapExerciseId, setSwapExerciseId] = useState<string | null>(null);
@@ -268,11 +312,12 @@ export default function LogPage() {
       source: "manual",
       exercises,
       planSlot,
+      pendingDraft,
       notes,
       isEditing,
       defaultUnit,
     });
-  }, [hydrated, workoutId, date, exercises, planSlot, notes, isEditing, defaultUnit]);
+  }, [hydrated, workoutId, date, exercises, planSlot, pendingDraft, notes, isEditing, defaultUnit]);
 
   const blocks = useMemo(() => buildBlocks(exercises), [exercises]);
 
@@ -281,7 +326,7 @@ export default function LogPage() {
       Array.from(
         new Set(
           exercises
-            .map((e) => e.supersetGroup)
+            .map((e) => e.supersetGroup ?? (e.routineGroup?.kind === "set" ? e.routineGroup.id : null))
             .filter((g): g is string => Boolean(g)),
         ),
       ),
@@ -449,6 +494,7 @@ export default function LogPage() {
   };
 
   const canSave = exercises.length > 0;
+  const canSwapExercises = isEditing || pendingDraft !== null;
 
   const save = () => {
     if (!hydrated || !canSave) return;
@@ -556,6 +602,15 @@ export default function LogPage() {
       </header>
 
       <main className="flex-1 px-4 pt-4 pb-32">
+        {pendingDraft?.mobility && (
+          <PrepCard
+            title={pendingDraft.mobility.title}
+            eyebrow="Before you lift"
+            items={pendingDraft.mobility.items}
+            complementary={pendingDraft.mobility.complementary ?? []}
+          />
+        )}
+
         {exercises.length === 0 && (
           <div className="mt-8 rounded-2xl border border-dashed border-[#D3D1C7] p-8 text-center">
             <p className="text-[14px] text-text-subtle">
@@ -566,10 +621,10 @@ export default function LogPage() {
 
         <div className="space-y-3">
           {blocks.map((block, blockIdx) => {
-            const isSuperset = block.exercises.length > 1;
+            const isSuperset = block.kind === "superset";
             const groupColor = groupColorFor(block.groupId, groupOrder);
             const above = blocks[blockIdx - 1];
-            const aboveIsGroup = above ? above.exercises.length > 1 : false;
+            const aboveIsGroup = above ? above.kind === "superset" : false;
             const linkLabel = aboveIsGroup
               ? "+ Add to superset above"
               : "+ Link as superset";
@@ -591,7 +646,7 @@ export default function LogPage() {
                   <SupersetBlockView
                     block={block}
                     color={groupColor}
-                    isEditing={isEditing}
+                    canSwapExercise={canSwapExercises}
                     onMoveExercise={moveExercise}
                     onRemoveExercise={removeExercise}
                     onOpenGuide={(exerciseName) => setGuideExerciseName(exerciseName)}
@@ -612,7 +667,7 @@ export default function LogPage() {
                   <StandaloneBlockView
                     block={block}
                     totalExercises={exercises.length}
-                    isEditing={isEditing}
+                    canSwapExercise={canSwapExercises}
                     onMoveExercise={moveExercise}
                     onRemoveExercise={removeExercise}
                     onAddSet={addSet}
@@ -684,7 +739,7 @@ export default function LogPage() {
 function StandaloneBlockView({
   block,
   totalExercises,
-  isEditing,
+  canSwapExercise,
   onMoveExercise,
   onRemoveExercise,
   onAddSet,
@@ -696,7 +751,7 @@ function StandaloneBlockView({
 }: {
   block: Block;
   totalExercises: number;
-  isEditing: boolean;
+  canSwapExercise: boolean;
   onMoveExercise: (id: string, dir: -1 | 1) => void;
   onRemoveExercise: (id: string) => void;
   onAddSet: (id: string) => void;
@@ -713,6 +768,56 @@ function StandaloneBlockView({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-[#E6E3D8] bg-surface">
+      <ExerciseEditor
+        ex={ex}
+        meta={meta}
+        canSwapExercise={canSwapExercise}
+        isFirst={isFirst}
+        isLast={isLast}
+        onMoveExercise={onMoveExercise}
+        onRemoveExercise={onRemoveExercise}
+        onAddSet={onAddSet}
+        onOpenGuide={onOpenGuide}
+        onSwapExercise={onSwapExercise}
+        onUpdateSet={onUpdateSet}
+        onRemoveSet={onRemoveSet}
+        onUnitChange={onUnitChange}
+      />
+    </div>
+  );
+}
+
+function ExerciseEditor({
+  ex,
+  meta,
+  canSwapExercise,
+  isFirst,
+  isLast,
+  onMoveExercise,
+  onRemoveExercise,
+  onAddSet,
+  onOpenGuide,
+  onSwapExercise,
+  onUpdateSet,
+  onRemoveSet,
+  onUnitChange,
+}: {
+  ex: ExerciseLog;
+  meta: ReturnType<typeof findExercise>;
+  canSwapExercise: boolean;
+  isFirst: boolean;
+  isLast: boolean;
+  onMoveExercise: (id: string, dir: -1 | 1) => void;
+  onRemoveExercise: (id: string) => void;
+  onAddSet: (id: string) => void;
+  onOpenGuide: (exerciseName: string) => void;
+  onSwapExercise: (exerciseId: string) => void;
+  onUpdateSet: (exId: string, setId: string, patch: Partial<SetEntry>) => void;
+  onRemoveSet: (exId: string, setId: string) => void;
+  onUnitChange: (u: WeightUnit) => void;
+}) {
+  return (
+    <>
       <div className="flex items-start justify-between gap-2 px-4 pt-3 pb-2">
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-[15px] font-medium text-text">
@@ -730,7 +835,7 @@ function StandaloneBlockView({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {isEditing && (
+          {canSwapExercise && (
             <button
               onClick={() => onSwapExercise(ex.id)}
               className="rounded-full border border-[#E6E3D8] px-2.5 py-0.5 text-[10px] font-medium text-text-muted"
@@ -840,7 +945,7 @@ function StandaloneBlockView({
           + Add set
         </button>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -849,7 +954,7 @@ function StandaloneBlockView({
 function SupersetBlockView({
   block,
   color,
-  isEditing,
+  canSwapExercise,
   onMoveExercise,
   onRemoveExercise,
   onOpenGuide,
@@ -862,7 +967,7 @@ function SupersetBlockView({
 }: {
   block: Block;
   color: ColorPair;
-  isEditing: boolean;
+  canSwapExercise: boolean;
   onMoveExercise: (id: string, dir: -1 | 1) => void;
   onRemoveExercise: (id: string) => void;
   onOpenGuide: (exerciseName: string) => void;
@@ -886,10 +991,17 @@ function SupersetBlockView({
         className="flex items-center justify-between px-4 py-2"
         style={{ background: color.bg, color: color.text }}
       >
-        <span className="text-[10px] font-medium uppercase tracking-wider">
-          Superset · {lanes.length} exercise{lanes.length !== 1 ? "s" : ""} ·{" "}
-          {rounds} round{rounds !== 1 ? "s" : ""}
-        </span>
+        <div className="min-w-0">
+          <span className="text-[10px] font-medium uppercase tracking-wider">
+            Superset · {lanes.length} exercise{lanes.length !== 1 ? "s" : ""} ·{" "}
+            {rounds} round{rounds !== 1 ? "s" : ""}
+          </span>
+          {block.routineGroup?.repScheme && (
+            <div className="mt-0.5 text-[10px] opacity-80">
+              {block.routineGroup.repScheme}
+            </div>
+          )}
+        </div>
         <button
           onClick={onBreakGroup}
           className="text-[10px] font-medium uppercase tracking-wider opacity-70"
@@ -923,7 +1035,7 @@ function SupersetBlockView({
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                {isEditing && (
+                {canSwapExercise && (
                   <button
                     onClick={() => onSwapExercise(ex.id)}
                     className="rounded-full border border-[#E6E3D8] px-2.5 py-0.5 text-[10px] font-medium text-text-muted"
@@ -1052,6 +1164,48 @@ function SupersetBlockView({
         </button>
       </div>
     </div>
+  );
+}
+
+function PrepCard({
+  title,
+  eyebrow,
+  items,
+  complementary,
+}: {
+  title: string;
+  eyebrow: string;
+  items: string[];
+  complementary: string[];
+}) {
+  return (
+    <section className="mb-4 rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-3">
+      <p className="label-eyebrow">{eyebrow}</p>
+      <div className="mt-1 flex items-center justify-between gap-3">
+        <h2 className="text-[16px] font-medium text-text">{title}</h2>
+      </div>
+      <ul className="mt-2 space-y-1">
+        {items.map((item) => (
+          <li key={item} className="text-[13px] leading-snug text-text">
+            · {item}
+          </li>
+        ))}
+      </ul>
+      {complementary.length > 0 && (
+        <div className="mt-2 border-t border-divider pt-2">
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-subtle">
+            Complementary mobility
+          </p>
+          <ul className="mt-1 space-y-1">
+            {complementary.map((item) => (
+              <li key={item} className="text-[12px] leading-snug text-text-muted">
+                · {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }
 
