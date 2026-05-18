@@ -153,4 +153,125 @@ describe("LogPage interactions", () => {
     expect(screen.getByText("Lat pulldown")).toBeInTheDocument();
     expect(screen.queryByText("Cable row")).not.toBeInTheDocument();
   });
+
+  it("clears a restored draft and removes the warm-up block", async () => {
+    const user = userEvent.setup();
+    popEditWorkoutMock.mockReturnValue(null);
+    popDraftMock.mockReturnValue(null);
+    getWorkoutMock.mockReturnValue(null);
+    sessionStorage.setItem(
+      "workout.log-draft.v1",
+      JSON.stringify({
+        workoutId: "draft-1",
+        date: "2026-05-06",
+        source: "manual",
+        exercises: [
+          {
+            id: "ex1",
+            exerciseName: "Cable row",
+            supersetGroup: null,
+            sets: [{ id: "set1", reps: 12, weight: 70, unit: "lb" }],
+          },
+        ],
+        planSlot: {
+          slotId: "upper_back_shoulder",
+          title: "Upper A",
+        },
+        pendingDraft: {
+          split: {
+            slotId: "upper_back_shoulder",
+            title: "Upper A",
+            summary: "Back and shoulder emphasis.",
+            sessionIndex: 2,
+            totalSessions: 4,
+            targetPrimarySets: { back: 8, shoulders: 5 },
+          },
+          mobility: {
+            title: "5-minute warm-up",
+            items: ["Band row x 15"],
+            complementary: [],
+          },
+          cooldown: {
+            title: "Cooldown",
+            items: ["Lat stretch x 30s"],
+            complementary: [],
+          },
+          rationale: [],
+          sections: [],
+        },
+        notes: "",
+        isEditing: false,
+        defaultUnit: "lb",
+      }),
+    );
+
+    render(<LogPage />);
+    expect(await screen.findByText("Restored your in-progress workout draft.")).toBeInTheDocument();
+    expect(screen.getByText("Before you lift")).toBeInTheDocument();
+
+    await user.click(screen.getByText("Clear draft"));
+
+    expect(screen.queryByText("Before you lift")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cable row")).not.toBeInTheDocument();
+    expect(screen.getByText("No exercises yet. Tap below to add your first one.")).toBeInTheDocument();
+  });
+
+  it("auto-clears draft metadata after removing the last exercise", async () => {
+    const user = userEvent.setup();
+    popEditWorkoutMock.mockReturnValue(null);
+    popDraftMock.mockReturnValue({
+      source: "manual",
+      draft: {
+        split: {
+          slotId: "upper_back_shoulder",
+          title: "Upper A",
+          summary: "Back and shoulder emphasis.",
+          sessionIndex: 2,
+          totalSessions: 4,
+          targetPrimarySets: { back: 8, shoulders: 5 },
+        },
+        mobility: {
+          title: "5-minute warm-up",
+          items: ["Band row x 15"],
+          complementary: [],
+        },
+        cooldown: {
+          title: "Cooldown",
+          items: ["Lat stretch x 30s"],
+          complementary: [],
+        },
+        rationale: [],
+        sections: [
+          {
+            kind: "compound",
+            rounds: 3,
+            repScheme: "3 x 10",
+            exercises: [
+              {
+                name: "Cable row",
+                primary: ["back"],
+                secondary: ["biceps"],
+                pattern: "pull",
+                movement: "pull",
+                targets: [10, 10, 10],
+                suggestedWeight: 70,
+                unit: "lb",
+                isFamiliar: false,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    getWorkoutMock.mockReturnValue(null);
+
+    render(<LogPage />);
+    expect(await screen.findByText("Before you lift")).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText("Remove"));
+
+    expect(screen.queryByText("Before you lift")).not.toBeInTheDocument();
+    expect(screen.queryByText("Clear draft")).not.toBeInTheDocument();
+    expect(screen.getByText("No exercises yet. Tap below to add your first one.")).toBeInTheDocument();
+  });
 });

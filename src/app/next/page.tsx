@@ -766,7 +766,7 @@ function SectionCard({
     return (
       <div className="overflow-hidden rounded-2xl border border-[#E6E3D8] bg-surface">
         <div className="flex items-start justify-between gap-3 border-b border-divider px-4 py-2.5">
-          <span className="label-eyebrow">Superset</span>
+          <span className="label-eyebrow">Strength pair</span>
           <div className="min-w-0 text-right">
             <div className="text-[11px] text-text-subtle">{sharedRounds}</div>
             {sharedRepScheme && (

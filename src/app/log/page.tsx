@@ -291,8 +291,8 @@ export default function LogPage() {
   const [workoutId] = useState(init.workoutId);
   const [date, setDate] = useState(init.date);
   const [exercises, setExercises] = useState<ExerciseLog[]>(init.exercises);
-  const [planSlot] = useState(init.planSlot);
-  const [pendingDraft] = useState<WorkoutDraft | null>(init.pendingDraft);
+  const [planSlot, setPlanSlot] = useState(init.planSlot);
+  const [pendingDraft, setPendingDraft] = useState<WorkoutDraft | null>(init.pendingDraft);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [guideExerciseName, setGuideExerciseName] = useState<string | null>(null);
   const [swapExerciseId, setSwapExerciseId] = useState<string | null>(null);
@@ -306,6 +306,10 @@ export default function LogPage() {
 
   useEffect(() => {
     if (!hydrated || !workoutId) return;
+    if (!isEditing && exercises.length === 0 && !pendingDraft && notes.trim() === "") {
+      clearLogDraft();
+      return;
+    }
     saveLogDraft({
       workoutId,
       date,
@@ -318,6 +322,15 @@ export default function LogPage() {
       defaultUnit,
     });
   }, [hydrated, workoutId, date, exercises, planSlot, pendingDraft, notes, isEditing, defaultUnit]);
+
+  useEffect(() => {
+    if (isEditing) return;
+    if (exercises.length > 0) return;
+    if (!pendingDraft && !planSlot) return;
+    setPendingDraft(null);
+    setPlanSlot(undefined);
+    clearLogDraft();
+  }, [isEditing, exercises.length, pendingDraft, planSlot]);
 
   const blocks = useMemo(() => buildBlocks(exercises), [exercises]);
 
@@ -496,6 +509,16 @@ export default function LogPage() {
   const canSave = exercises.length > 0;
   const canSwapExercises = isEditing || pendingDraft !== null;
 
+  const clearDraftState = () => {
+    if (isEditing) return;
+    setSaveError(null);
+    setExercises([]);
+    setNotes("");
+    setPendingDraft(null);
+    setPlanSlot(undefined);
+    clearLogDraft();
+  };
+
   const save = () => {
     if (!hydrated || !canSave) return;
     const now = Date.now();
@@ -570,9 +593,27 @@ export default function LogPage() {
           </p>
         )}
         {!isEditing && init.recovered && (
-          <p className="mt-0.5 text-[12px] text-text-subtle">
-            Restored your in-progress workout draft.
-          </p>
+          <div className="mt-1 flex items-center justify-between gap-3">
+            <p className="text-[12px] text-text-subtle">
+              Restored your in-progress workout draft.
+            </p>
+            <button
+              onClick={clearDraftState}
+              className="shrink-0 rounded-full border border-[#E6E3D8] px-2.5 py-0.5 text-[10px] font-medium text-text-muted"
+            >
+              Clear draft
+            </button>
+          </div>
+        )}
+        {!isEditing && !init.recovered && pendingDraft && (
+          <div className="mt-1 flex justify-end">
+            <button
+              onClick={clearDraftState}
+              className="rounded-full border border-[#E6E3D8] px-2.5 py-0.5 text-[10px] font-medium text-text-muted"
+            >
+              Clear draft
+            </button>
+          </div>
         )}
         {saveError && (
           <p className="mt-2 text-[12px] text-[#A13C1B]">
@@ -993,7 +1034,7 @@ function SupersetBlockView({
       >
         <div className="min-w-0">
           <span className="text-[10px] font-medium uppercase tracking-wider">
-            Superset · {lanes.length} exercise{lanes.length !== 1 ? "s" : ""} ·{" "}
+            Strength pair · {lanes.length} exercise{lanes.length !== 1 ? "s" : ""} ·{" "}
             {rounds} round{rounds !== 1 ? "s" : ""}
           </span>
           {block.routineGroup?.repScheme && (

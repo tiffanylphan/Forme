@@ -427,10 +427,10 @@ describe("NextPage interactions", () => {
     useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
 
     render(<NextPage />);
-    expect(screen.getByText("Strength pair")).toBeInTheDocument();
+    expect(screen.getAllByText("Strength pair").length).toBeGreaterThan(0);
   });
 
-  it("groups compound and accessory blocks into the same superset card", () => {
+  it("groups compound and accessory blocks into the same strength pair card", () => {
     useTrainingProfileMock.mockReturnValue({
       ready: true,
       profile: {
@@ -445,14 +445,14 @@ describe("NextPage interactions", () => {
 
     render(<NextPage />);
 
-    expect(screen.getAllByText("Superset")).toHaveLength(1);
+    expect(screen.getAllByText("Strength pair")).toHaveLength(2);
     expect(screen.queryByText("Compound")).not.toBeInTheDocument();
     expect(screen.queryByText("Accessory")).not.toBeInTheDocument();
     expect(screen.getByText("Cable row")).toBeInTheDocument();
     expect(screen.getByText("DB lateral raise")).toBeInTheDocument();
   });
 
-  it("shows one shared summary for a grouped superset card", () => {
+  it("shows one shared summary for a grouped strength pair card", () => {
     useTrainingProfileMock.mockReturnValue({
       ready: true,
       profile: {
@@ -467,19 +467,25 @@ describe("NextPage interactions", () => {
 
     render(<NextPage />);
 
-    const supersetCard = screen.getByText("Superset").closest("div.overflow-hidden.rounded-2xl");
-    expect(supersetCard).not.toBeNull();
-    expect(within(supersetCard as HTMLElement).getByText("4 rounds")).toBeInTheDocument();
+    const strengthPairCards = screen
+      .getAllByText("Strength pair")
+      .map((node) => node.closest("div.overflow-hidden.rounded-2xl"))
+      .filter((node): node is HTMLElement => Boolean(node));
+    const groupedCard = strengthPairCards.find((card) =>
+      within(card).queryByText("DB lateral raise"),
+    );
+    expect(groupedCard).not.toBeUndefined();
+    expect(within(groupedCard as HTMLElement).getByText("4 rounds")).toBeInTheDocument();
     expect(
-      within(supersetCard as HTMLElement).getByText("10 / 8 / 8 / 6 — build weight"),
+      within(groupedCard as HTMLElement).getByText("10 / 8 / 8 / 6 — build weight"),
     ).toBeInTheDocument();
-    expect(within(supersetCard as HTMLElement).getAllByText("4 rounds")).toHaveLength(1);
+    expect(within(groupedCard as HTMLElement).getAllByText("4 rounds")).toHaveLength(1);
     expect(
-      within(supersetCard as HTMLElement).getAllByText("10 / 8 / 8 / 6 — build weight"),
+      within(groupedCard as HTMLElement).getAllByText("10 / 8 / 8 / 6 — build weight"),
     ).toHaveLength(1);
   });
 
-  it("does not add extra padded wrappers around grouped superset exercises", () => {
+  it("does not add extra padded wrappers around grouped strength pair exercises", () => {
     useTrainingProfileMock.mockReturnValue({
       ready: true,
       profile: {
@@ -494,9 +500,15 @@ describe("NextPage interactions", () => {
 
     render(<NextPage />);
 
-    const supersetCard = screen.getByText("Superset").closest("div.overflow-hidden.rounded-2xl");
-    expect(supersetCard).not.toBeNull();
-    expect((supersetCard as HTMLElement).querySelectorAll(":scope > div.divide-y > div.px-4.py-3")).toHaveLength(2);
+    const strengthPairCards = screen
+      .getAllByText("Strength pair")
+      .map((node) => node.closest("div.overflow-hidden.rounded-2xl"))
+      .filter((node): node is HTMLElement => Boolean(node));
+    const groupedCard = strengthPairCards.find((card) =>
+      within(card).queryByText("DB lateral raise"),
+    );
+    expect(groupedCard).not.toBeUndefined();
+    expect((groupedCard as HTMLElement).querySelectorAll(":scope > div.divide-y > div.px-4.py-3")).toHaveLength(2);
   });
 
   it("can swap a finisher through the finisher picker", async () => {
