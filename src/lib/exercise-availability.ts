@@ -4,7 +4,7 @@ export const environmentAllowsExercise = (
   ex: Exercise,
   profileOrEnvironment:
     | TrainingEnvironment
-    | Pick<TrainingProfile, "equipment" | "blockedExercises">,
+    | Pick<TrainingProfile, "equipment" | "blockedExercises" | "allowedExercises">,
 ): boolean => {
   const environment =
     typeof profileOrEnvironment === "string"
@@ -14,8 +14,13 @@ export const environmentAllowsExercise = (
     typeof profileOrEnvironment === "string"
       ? []
       : profileOrEnvironment.blockedExercises ?? [];
+  const allowedExercises =
+    typeof profileOrEnvironment === "string"
+      ? []
+      : profileOrEnvironment.allowedExercises ?? [];
 
   if (blockedExercises.includes(ex.name)) return false;
+  if (allowedExercises.includes(ex.name)) return true;
   if (environment === "full_gym") return true;
   if (environment === "dumbbells") {
     if (

@@ -20,6 +20,7 @@ describe("profile storage", () => {
       experience: "intermediate",
       intensity: "hard",
       blockedExercises: ["Hack squat"],
+      allowedExercises: [],
     });
 
     expect(loadTrainingProfile()).toEqual({
@@ -29,6 +30,7 @@ describe("profile storage", () => {
       experience: "intermediate",
       intensity: "hard",
       blockedExercises: ["Hack squat"],
+      allowedExercises: [],
     });
   });
 

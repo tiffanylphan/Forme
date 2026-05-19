@@ -95,6 +95,7 @@ describe("LibraryPage", () => {
     expect(saveTrainingProfileMock).toHaveBeenCalledWith({
       ...defaultProfile,
       blockedExercises: ["Nordic hamstring curl"],
+      allowedExercises: [],
     });
   });
 });

@@ -74,13 +74,24 @@ export default function LibraryPage() {
 
   const toggleBlockedExercise = (name: string) => {
     const blocked = activeProfile.blockedExercises.includes(name);
-    const blockedExercises = blocked
-      ? activeProfile.blockedExercises.filter((item) => item !== name)
-      : [...activeProfile.blockedExercises, name].sort((a, b) => a.localeCompare(b));
-    saveTrainingProfile({
-      ...activeProfile,
-      blockedExercises,
-    });
+    const ex = EXERCISES.find((e) => e.name === name);
+    // Check equipment compatibility ignoring blocked/allowed lists
+    const equipmentAllows = !ex || environmentAllowsExercise(ex, activeProfile.equipment);
+
+    if (blocked || !equipmentAllows) {
+      // Allowing: remove from blocked. If equipment doesn't support this exercise,
+      // also add to allowedExercises so the override persists.
+      const blockedExercises = activeProfile.blockedExercises.filter((item) => item !== name);
+      const allowedExercises = !equipmentAllows
+        ? [...(activeProfile.allowedExercises ?? []), name].sort((a, b) => a.localeCompare(b))
+        : (activeProfile.allowedExercises ?? []).filter((item) => item !== name);
+      saveTrainingProfile({ ...activeProfile, blockedExercises, allowedExercises });
+    } else {
+      // Blocking: add to blocked, clear any explicit allow override
+      const blockedExercises = [...activeProfile.blockedExercises, name].sort((a, b) => a.localeCompare(b));
+      const allowedExercises = (activeProfile.allowedExercises ?? []).filter((item) => item !== name);
+      saveTrainingProfile({ ...activeProfile, blockedExercises, allowedExercises });
+    }
   };
 
   const hasFilters = filterMuscle || filterPattern || filterEquipment || search;
@@ -286,7 +297,7 @@ export default function LibraryPage() {
                         : "border border-[#D3D1C7] bg-white text-text-muted"
                     }`}
                   >
-                    {blocked ? "Allow in planner" : "Mark unavailable"}
+                    {blocked || envIncompatible ? "Allow in planner" : "Mark unavailable"}
                   </button>
                 </div>
               )}

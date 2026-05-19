@@ -82,6 +82,7 @@ export type TrainingProfile = {
   experience: ExperienceLevel;
   intensity: SessionIntensity;
   blockedExercises: string[];
+  allowedExercises: string[];
 };
 
 export type SetEntry = {
