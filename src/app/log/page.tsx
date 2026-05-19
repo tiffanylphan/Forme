@@ -7,6 +7,7 @@ import { ExercisePicker } from "@/components/ExercisePicker";
 import { MuscleTag } from "@/components/MuscleTag";
 import { formatExerciseEquipment, getExerciseCoaching } from "@/lib/exerciseCoaching";
 import { findExercise } from "@/lib/exercises";
+import { movementOf } from "@/lib/movement";
 import { SUPERSET_COLORS } from "@/lib/colors";
 import { formatDate, todayISO, uid } from "@/lib/format";
 import { popDraft } from "@/lib/generator";
@@ -990,6 +991,27 @@ function ExerciseEditor({
   );
 }
 
+function groupLabel(exercises: ExerciseLog[]): string {
+  const exs = exercises.map((e) => findExercise(e.exerciseName));
+
+  if (exercises.length >= 3) {
+    const hasConditioning = exs.some(
+      (ex) => ex?.pattern === "conditioning" || ex?.pattern === "plyo"
+    );
+    return hasConditioning ? "Conditioning circuit" : "Circuit";
+  }
+
+  const [a, b] = exs.map((ex) => (ex ? movementOf(ex) : null));
+  const isUpper = (m: typeof a) => m === "push" || m === "pull";
+  const isLower = (m: typeof a) => m === "squat" || m === "hinge" || m === "single_leg";
+
+  if (a === "push" && b === "pull") return "Push / pull pair";
+  if (a === "pull" && b === "push") return "Push / pull pair";
+  if ((isUpper(a) && isLower(b)) || (isLower(a) && isUpper(b))) return "Upper / lower pair";
+  if (a && b && a === b) return "Superset";
+  return "Strength pair";
+}
+
 // ---------- Superset block (round-major) ----------
 
 function SupersetBlockView({
@@ -1034,7 +1056,7 @@ function SupersetBlockView({
       >
         <div className="min-w-0">
           <span className="text-[10px] font-medium uppercase tracking-wider">
-            Strength pair · {lanes.length} exercise{lanes.length !== 1 ? "s" : ""} ·{" "}
+            {groupLabel(lanes)} · {lanes.length} exercise{lanes.length !== 1 ? "s" : ""} ·{" "}
             {rounds} round{rounds !== 1 ? "s" : ""}
           </span>
           {block.routineGroup?.repScheme && (

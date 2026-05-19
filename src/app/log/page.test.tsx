@@ -311,11 +311,11 @@ describe("LogPage", () => {
     render(<LogPage />);
 
     const supersetHeader = await screen.findByText((content) =>
-      content.includes("Strength pair · 2 exercises · 4 rounds"),
+      content.includes("Push / pull pair · 2 exercises · 4 rounds"),
     );
     const supersetCard = supersetHeader.closest("div.overflow-hidden.rounded-2xl");
     expect(supersetCard).not.toBeNull();
-    expect(screen.getAllByText((content) => content.includes("Strength pair · 2 exercises · 4 rounds"))).toHaveLength(1);
+    expect(screen.getAllByText((content) => content.includes("Push / pull pair · 2 exercises · 4 rounds"))).toHaveLength(1);
     expect(screen.getByText("Cable row")).toBeInTheDocument();
     expect(screen.getByText("DB lateral raise")).toBeInTheDocument();
     expect(screen.getByText("10 / 8 / 8 / 6 — build weight")).toBeInTheDocument();
