@@ -982,7 +982,7 @@ const scoreWorkoutForSlot = (workout: Workout, slot: SplitSlot): number => {
   }
 
   if (slotUpper && summary.strongLowerSets >= PLANNER_TUNING.slotInference.upperStrongLowerSetThreshold) {
-    score -= summary.strongLowerSets * PLANNER_TUNING.slotInference.upperStrongLowerPenalty;
+    score -= summary.strongLowerSets * PLANNER_TUNING.slotInference.upperStrongLowerSetPenalty;
     if (summary.lowerSets >= summary.upperSets - 1) {
       score -= PLANNER_TUNING.slotInference.upperMixedLowerPenalty;
     }

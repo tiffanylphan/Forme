@@ -47,7 +47,7 @@ export const PLANNER_TUNING = {
     lowerQuadGapPenalty: 8,
     lowerPosteriorImbalancePenalty: 5,
     upperStrongLowerSetThreshold: 4,
-    upperStrongLowerPenalty: 2,
+    upperStrongLowerSetPenalty: 2,
     upperMixedLowerPenalty: 10,
     armBiasNoDirectPenalty: 8,
     armBiasDirectBonus: 0.75,
