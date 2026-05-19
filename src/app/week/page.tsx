@@ -13,7 +13,7 @@ import {
   weekContaining,
 } from "@/lib/coverage";
 import { formatMuscle, todayISO } from "@/lib/format";
-import { getWeeklyTargetSets } from "@/lib/generator";
+import { getWeeklyTargetStimulus } from "@/lib/generator";
 import {
   MOVEMENT_BLURBS,
   MOVEMENT_COLORS,
@@ -51,7 +51,7 @@ export default function WeekPage() {
   const movGaps = useMemo(() => movementGaps(coverage), [coverage]);
   const sessionsCount = coverage.workouts.length;
   const weeklyTargets = useMemo(
-    () => (profile ? getWeeklyTargetSets(profile, coverage.workouts) : {}),
+    () => (profile ? getWeeklyTargetStimulus(profile, coverage.workouts) : {}),
     [profile, coverage.workouts],
   );
   const targetRows = useMemo(
@@ -60,7 +60,7 @@ export default function WeekPage() {
         .filter((entry): entry is [MuscleGroup, number] => typeof entry[1] === "number" && entry[1] > 0)
         .sort((a, b) => b[1] - a[1])
         .map(([muscle, target]) => {
-          const done = coverage.muscleStats[muscle]?.asPrimarySets ?? 0;
+          const done = coverage.muscleStats[muscle]?.primaryStimulus ?? 0;
           const pct = Math.min(100, Math.round((done / target) * 100));
           const remaining = Math.max(0, target - done);
           return { muscle, target, done, pct, remaining };
@@ -72,15 +72,19 @@ export default function WeekPage() {
       MUSCLE_GROUPS.map((muscle) => {
         const primarySets = coverage.muscleStats[muscle]?.asPrimarySets ?? 0;
         const secondarySets = coverage.muscleStats[muscle]?.asSecondarySets ?? 0;
+        const primaryStimulus = coverage.muscleStats[muscle]?.primaryStimulus ?? 0;
+        const secondaryStimulus = coverage.muscleStats[muscle]?.secondaryStimulus ?? 0;
         const targetSets = weeklyTargets[muscle] ?? 0;
-        const effectiveSets = primarySets + secondarySets * 0.35;
+        const effectiveStimulus = primaryStimulus + secondaryStimulus;
         const intensity = targetSets > 0
-          ? Math.min(1, effectiveSets / targetSets)
-          : Math.min(1, effectiveSets / 6);
+          ? Math.min(1, effectiveStimulus / targetSets)
+          : Math.min(1, effectiveStimulus / 6);
         return {
           muscle,
           primarySets,
           secondarySets,
+          primaryStimulus,
+          secondaryStimulus,
           targetSets,
           intensity,
         };
@@ -317,9 +321,9 @@ export default function WeekPage() {
 
           {targetRows.length > 0 && (
             <section className="mb-6 rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-4">
-              <p className="label-eyebrow mb-2">Weekly muscle targets</p>
+              <p className="label-eyebrow mb-2">Weekly muscle stimulus</p>
               <p className="mb-3 text-[12px] text-text-subtle">
-                Keep stacking sets. Filling these bars is how this week turns into visible progress.
+                Keep stacking high-quality stimulus. Filling these bars is how this week turns into visible progress.
               </p>
               <div className="space-y-3">
                 {targetRows.map((row) => (
@@ -330,18 +334,18 @@ export default function WeekPage() {
                         <span className="text-[12px] text-text-subtle">
                           {row.remaining === 0
                             ? "On target"
-                            : `${row.remaining} set${row.remaining !== 1 ? "s" : ""} left`}
+                            : `${row.remaining.toFixed(1)} stimulus left`}
                         </span>
                       </div>
                       <span className="font-mono text-[13px] text-text">
-                        {row.done}/{row.target}
+                        {row.done.toFixed(1)}/{row.target.toFixed(1)}
                       </span>
                     </div>
                     <div className="h-2 overflow-hidden rounded-full bg-[#ECE8DE]">
                       <div
                         className="h-full rounded-full bg-text"
                         style={{ width: `${row.pct}%` }}
-                        aria-label={`${formatMuscle(row.muscle)} ${row.done} of ${row.target} sets`}
+                        aria-label={`${formatMuscle(row.muscle)} ${row.done.toFixed(1)} of ${row.target.toFixed(1)} stimulus`}
                       />
                     </div>
                   </div>

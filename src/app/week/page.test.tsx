@@ -56,7 +56,7 @@ describe("WeekPage", () => {
     render(<WeekPage />);
     expect(screen.getByText("Movement coverage")).toBeInTheDocument();
     expect(screen.getByText("Patterns to fill")).toBeInTheDocument();
-    expect(screen.getByText("Weekly muscle targets")).toBeInTheDocument();
+    expect(screen.getByText("Weekly muscle stimulus")).toBeInTheDocument();
     expect(screen.getByText("Muscle heat")).toBeInTheDocument();
     expect(screen.getByText("Front")).toBeInTheDocument();
     expect(screen.getByText("Back")).toBeInTheDocument();

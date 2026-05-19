@@ -16,6 +16,11 @@ const generateNextWorkoutMock = vi.fn(
         summary: "Back and shoulder emphasis.",
         sessionIndex: 1,
         totalSessions: 4,
+        targetPrimaryStimulus: {
+          back: 8,
+          shoulders: 5,
+          rear_delts: 4,
+        },
         targetPrimarySets: {
           back: 8,
           shoulders: 5,
@@ -33,12 +38,12 @@ const generateNextWorkoutMock = vi.fn(
       rationale: broughtBack
         ? [
             "This is Upper A: Back and shoulder emphasis.",
-            "Still building this slot's focus volume: back, shoulders.",
+            "Still building this slot's focus stimulus: back, shoulders.",
           ]
         : [
             "This is Upper A: Back and shoulder emphasis.",
             "Rotated off stalled lift: Barbell hip thrust.",
-            "Still building this slot's focus volume: back, shoulders.",
+            "Still building this slot's focus stimulus: back, shoulders.",
             "Hit only once: pull, push.",
           ],
       rotatedOffLifts: broughtBack ? [] : ["Barbell hip thrust"],
@@ -377,7 +382,7 @@ describe("NextPage interactions", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText((content) =>
-        content.includes("Still building this slot's focus volume: back, shoulders."),
+        content.includes("Still building this slot's focus stimulus: back, shoulders."),
       ),
     ).toBeInTheDocument();
     expect(

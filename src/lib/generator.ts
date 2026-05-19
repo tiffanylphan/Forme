@@ -1,9 +1,13 @@
 import { EXERCISES } from "./exercises";
 import { environmentAllowsExercise } from "./exercise-availability";
 import { movementOf } from "./movement";
+import { PLANNER_TUNING } from "./planner-tuning";
 import { MOVEMENT_PATTERNS, MUSCLE_GROUPS } from "./types";
 import {
   computeCoverage,
+  distributeRecoveryStress,
+  estimateExerciseStimulus,
+  recentMuscleStressWithin,
   recentMusclesWithin,
   weekContaining,
 } from "./coverage";
@@ -58,6 +62,7 @@ export type WorkoutDraft = {
     summary: string;
     sessionIndex: number;
     totalSessions: number;
+    targetPrimaryStimulus: Partial<Record<MuscleGroup, number>>;
     targetPrimarySets: Partial<Record<MuscleGroup, number>>;
   };
   rationale: string[];
@@ -86,7 +91,7 @@ type SplitSlot = {
   focusMuscles: MuscleGroup[];
   preferredMovements: MovementPattern[];
   allowedMovements: MovementPattern[];
-  targetPrimarySets: Partial<Record<MuscleGroup, number>>;
+  targetPrimaryStimulus: Partial<Record<MuscleGroup, number>>;
 };
 
 type FinisherTemplate = {
@@ -106,7 +111,7 @@ const PHYSIQUE_UPPER_A_SLOT: SplitSlot = {
   focusMuscles: ["back", "shoulders", "rear_delts", "glutes", "core"],
   preferredMovements: ["pull", "push"],
   allowedMovements: ["pull", "push", "hinge", "carry_core"],
-  targetPrimarySets: { back: 7, shoulders: 5, rear_delts: 4, glutes: 2, core: 3 },
+  targetPrimaryStimulus: { back: 7, shoulders: 5, rear_delts: 4, glutes: 2, core: 3 },
 };
 
 const PHYSIQUE_UPPER_B_SLOT: SplitSlot = {
@@ -116,7 +121,7 @@ const PHYSIQUE_UPPER_B_SLOT: SplitSlot = {
   focusMuscles: ["back", "shoulders", "rear_delts", "biceps", "triceps", "glutes", "core"],
   preferredMovements: ["pull", "push"],
   allowedMovements: ["pull", "push", "single_leg", "carry_core"],
-  targetPrimarySets: { back: 6, shoulders: 5, rear_delts: 4, biceps: 3, triceps: 2, glutes: 2, core: 2 },
+  targetPrimaryStimulus: { back: 6, shoulders: 5, rear_delts: 4, biceps: 3, triceps: 2, glutes: 2, core: 2 },
 };
 
 const FINISHER_TEMPLATES: FinisherTemplate[] = [
@@ -678,49 +683,112 @@ type WorkoutSlotSummary = {
   posteriorSets: number;
 };
 
-const summarizeWorkoutForSlotInference = (workout: Workout): WorkoutSlotSummary => {
-  let lowerSets = 0;
-  let upperSets = 0;
-  let strongLowerSets = 0;
-  let directArmSets = 0;
-  let quadSets = 0;
-  let posteriorSets = 0;
+type WorkoutStimulusProfile = {
+  primary: Partial<Record<MuscleGroup, number>>;
+  secondary: Partial<Record<MuscleGroup, number>>;
+  lowerStimulus: number;
+  upperStimulus: number;
+  strongLowerStress: number;
+  directArmStimulus: number;
+  quadStimulus: number;
+  posteriorStimulus: number;
+};
+
+const LOWER_BIAS_MUSCLES: MuscleGroup[] = [
+  "quads",
+  "glutes",
+  "hamstrings",
+  "adductors",
+  "hip_flexors",
+];
+
+const UPPER_BIAS_MUSCLES: MuscleGroup[] = [
+  "chest",
+  "back",
+  "shoulders",
+  "rear_delts",
+  "biceps",
+  "triceps",
+];
+
+const summarizeWorkoutStimulusProfile = (workout: Workout): WorkoutStimulusProfile => {
+  const primary: Partial<Record<MuscleGroup, number>> = {};
+  const secondary: Partial<Record<MuscleGroup, number>> = {};
+  let lowerStimulus = 0;
+  let upperStimulus = 0;
+  let strongLowerStress = 0;
+  let directArmStimulus = 0;
+  let quadStimulus = 0;
+  let posteriorStimulus = 0;
 
   workout.exercises.forEach((logEx) => {
     const exercise = EXERCISES.find((candidate) => candidate.name === logEx.exerciseName);
     if (!exercise) return;
 
     const sets = logEx.sets.length;
+    const stimulus = estimateExerciseStimulus(exercise);
+    const primaryDose = sets * stimulus.primaryPerSet;
+    const secondaryDose = sets * stimulus.secondaryPerSet;
+    const recoveryDose = sets * stimulus.recoveryPerSet;
     const movement = movementOf(exercise);
-    if (movement === "hinge" || movement === "squat" || movement === "single_leg") {
-      lowerSets += sets;
-    }
-    if (movement === "push" || movement === "pull") upperSets += sets;
-    else if (isBackOrShoulderFocused(exercise) || isDirectArmFocus(exercise)) upperSets += sets;
-    if (isStrongLowerAnchor(exercise)) strongLowerSets += sets;
-    if (isDirectArmFocus(exercise)) directArmSets += sets;
-    if (hasAnyMuscle(exercise, ["quads"])) quadSets += sets;
-    if (hasAnyMuscle(exercise, ["glutes", "hamstrings"])) posteriorSets += sets;
+
+    exercise.primary.forEach((muscle) => {
+      primary[muscle] = (primary[muscle] ?? 0) + primaryDose;
+      if (LOWER_BIAS_MUSCLES.includes(muscle)) lowerStimulus += primaryDose;
+      if (UPPER_BIAS_MUSCLES.includes(muscle)) upperStimulus += primaryDose;
+    });
+    exercise.secondary.forEach((muscle) => {
+      secondary[muscle] = (secondary[muscle] ?? 0) + secondaryDose;
+      if (LOWER_BIAS_MUSCLES.includes(muscle)) lowerStimulus += secondaryDose * 0.35;
+      if (UPPER_BIAS_MUSCLES.includes(muscle)) upperStimulus += secondaryDose * 0.35;
+    });
+
+    if (isStrongLowerAnchor(exercise)) strongLowerStress += recoveryDose;
+    if (isDirectArmFocus(exercise)) directArmStimulus += primaryDose;
+    if (hasAnyMuscle(exercise, ["quads"])) quadStimulus += primaryDose;
+    if (hasAnyMuscle(exercise, ["glutes", "hamstrings"])) posteriorStimulus += primaryDose;
+    if (movement === "push" || movement === "pull") upperStimulus += 0;
   });
 
   return {
-    lowerSets,
-    upperSets,
-    strongLowerSets,
-    directArmSets,
-    quadSets,
-    posteriorSets,
+    primary,
+    secondary,
+    lowerStimulus,
+    upperStimulus,
+    strongLowerStress,
+    directArmStimulus,
+    quadStimulus,
+    posteriorStimulus,
+  };
+};
+
+const summarizeWorkoutForSlotInference = (workout: Workout): WorkoutSlotSummary => {
+  const profile = summarizeWorkoutStimulusProfile(workout);
+
+  return {
+    lowerSets: profile.lowerStimulus,
+    upperSets: profile.upperStimulus,
+    strongLowerSets: profile.strongLowerStress,
+    directArmSets: profile.directArmStimulus,
+    quadSets: profile.quadStimulus,
+    posteriorSets: profile.posteriorStimulus,
   };
 };
 
 const inferWorkoutBias = (workout: Workout): InferredWorkoutBias => {
-  const { lowerSets, upperSets, strongLowerSets, directArmSets } =
-    summarizeWorkoutForSlotInference(workout);
-  const lowerStress = lowerSets + strongLowerSets * 1.5;
-  const upperStress = upperSets + directArmSets * 0.5;
+  const profile = summarizeWorkoutStimulusProfile(workout);
+  const lowerStress =
+    profile.lowerStimulus +
+    profile.strongLowerStress * PLANNER_TUNING.workoutBias.strongLowerStressMultiplier;
+  const upperStress =
+    profile.upperStimulus +
+    profile.directArmStimulus * PLANNER_TUNING.workoutBias.directArmStimulusMultiplier;
 
-  if (lowerStress >= upperStress + 2) return "lower";
-  if (upperStress >= lowerStress + 4 && strongLowerSets < 4) return "upper";
+  if (lowerStress >= upperStress + PLANNER_TUNING.workoutBias.lowerLeadThreshold) return "lower";
+  if (
+    upperStress >= lowerStress + PLANNER_TUNING.workoutBias.upperLeadThreshold &&
+    profile.strongLowerStress < PLANNER_TUNING.workoutBias.upperStrongLowerCap
+  ) return "upper";
   return "mixed";
 };
 
@@ -730,9 +798,28 @@ type WeeklyBiasBalance = {
 };
 
 type MuscleDeficitMap = Partial<Record<MuscleGroup, number>>;
+type BiasPressure = {
+  lower: number;
+  upper: number;
+};
 
 const getSlotBias = (slot: SplitSlot): InferredWorkoutBias =>
   isLowerSlot(slot) ? "lower" : isUpperSlot(slot) ? "upper" : "mixed";
+
+const summarizeStalledBiasPressure = (exerciseNames: Iterable<string>): BiasPressure => {
+  let lower = 0;
+  let upper = 0;
+
+  for (const name of exerciseNames) {
+    const exercise = EXERCISES.find((candidate) => candidate.name === name);
+    if (!exercise) continue;
+    const movement = movementOf(exercise);
+    if (movement === "hinge" || movement === "squat" || movement === "single_leg") lower += 1;
+    if (movement === "push" || movement === "pull") upper += 1;
+  }
+
+  return { lower, upper };
+};
 
 const summarizeWeeklyBiasBalance = (
   split: SplitSlot[],
@@ -751,27 +838,30 @@ const summarizeWeeklyBiasBalance = (
     }
 
     const summary = summarizeWorkoutForSlotInference(workout);
-    if (summary.strongLowerSets >= 4 && summary.lowerSets >= 6) {
-      lower += 0.75;
-      upper += 0.25;
+    if (
+      summary.strongLowerSets >= PLANNER_TUNING.weeklyBiasBalance.strongLowerFloor &&
+      summary.lowerSets >= PLANNER_TUNING.weeklyBiasBalance.lowerStimulusFloor
+    ) {
+      lower += PLANNER_TUNING.weeklyBiasBalance.strongLowerSplitLower;
+      upper += PLANNER_TUNING.weeklyBiasBalance.strongLowerSplitUpper;
       return;
     }
-    if (summary.lowerSets >= summary.upperSets + 2) {
+    if (summary.lowerSets >= summary.upperSets + PLANNER_TUNING.weeklyBiasBalance.sideLeadThreshold) {
       lower += 1;
       return;
     }
-    if (summary.upperSets >= summary.lowerSets + 2) {
+    if (summary.upperSets >= summary.lowerSets + PLANNER_TUNING.weeklyBiasBalance.sideLeadThreshold) {
       upper += 1;
       return;
     }
     if (summary.strongLowerSets > 0 && summary.lowerSets >= summary.upperSets) {
-      lower += 0.75;
-      upper += 0.25;
+      lower += PLANNER_TUNING.weeklyBiasBalance.strongLowerSplitLower;
+      upper += PLANNER_TUNING.weeklyBiasBalance.strongLowerSplitUpper;
       return;
     }
 
-    lower += 0.5;
-    upper += 0.5;
+    lower += PLANNER_TUNING.weeklyBiasBalance.mixedSplit;
+    upper += PLANNER_TUNING.weeklyBiasBalance.mixedSplit;
   });
 
   return { lower, upper };
@@ -784,63 +874,124 @@ const scoreWorkoutForSlot = (workout: Workout, slot: SplitSlot): number => {
   const armBiasSlot =
     slot.focusMuscles.includes("biceps") || slot.focusMuscles.includes("triceps");
   const summary = summarizeWorkoutForSlotInference(workout);
+  const profile = summarizeWorkoutStimulusProfile(workout);
   let directArmSets = 0;
+
+  const targetMatch = (Object.entries(slot.targetPrimaryStimulus) as [MuscleGroup, number][])
+    .filter(([, target]) => target > 0)
+    .reduce((total, [muscle, target]) => {
+      const primary = profile.primary[muscle] ?? 0;
+      const secondary = profile.secondary[muscle] ?? 0;
+      const effective = primary + secondary * 0.35;
+      const weight = PRIMARY_MUSCLE_PRIORITY[muscle] ?? 1;
+      return total + Math.min(target, effective) * weight;
+    }, 0);
+  const focusMatch = slot.focusMuscles.reduce((total, muscle) => {
+    const primary = profile.primary[muscle] ?? 0;
+    const secondary = profile.secondary[muscle] ?? 0;
+    return total + primary * 1.2 + secondary * 0.35;
+  }, 0);
+  const offTargetPrimary = (MUSCLE_GROUPS as readonly MuscleGroup[]).reduce((total, muscle) => {
+    if (slot.focusMuscles.includes(muscle) || (slot.targetPrimaryStimulus[muscle] ?? 0) > 0) {
+      return total;
+    }
+    return total + (profile.primary[muscle] ?? 0);
+  }, 0);
+
+  score += targetMatch * PLANNER_TUNING.slotInference.targetMatchWeight;
+  score += focusMatch * PLANNER_TUNING.slotInference.focusMatchWeight;
+  score -= offTargetPrimary * PLANNER_TUNING.slotInference.offTargetPrimaryPenalty;
 
   workout.exercises.forEach((logEx) => {
     const exercise = EXERCISES.find((candidate) => candidate.name === logEx.exerciseName);
     if (!exercise) return;
 
     const sets = logEx.sets.length;
+    const stimulus = estimateExerciseStimulus(exercise);
+    const primaryDose = sets * stimulus.primaryPerSet;
+    const secondaryDose = sets * stimulus.secondaryPerSet;
+    const recoveryDose = sets * stimulus.recoveryPerSet;
     const movement = movementOf(exercise);
 
-    if (movement && slot.preferredMovements.includes(movement)) score += sets * 2.5;
+    if (movement && slot.preferredMovements.includes(movement)) {
+      score += primaryDose * PLANNER_TUNING.slotInference.preferredMovementWeight;
+    }
     else if (movement && slot.allowedMovements.includes(movement)) {
       const isLowerMovement =
         movement === "hinge" || movement === "squat" || movement === "single_leg";
       const isUpperMovement = movement === "pull" || movement === "push";
-      if ((slotUpper && isLowerMovement) || (slotLower && isUpperMovement)) score += sets * 0.5;
-      else score += sets * 1.5;
+      if ((slotUpper && isLowerMovement) || (slotLower && isUpperMovement)) {
+        score += primaryDose * PLANNER_TUNING.slotInference.crossBiasMovementWeight;
+      } else score += primaryDose * PLANNER_TUNING.slotInference.allowedMovementWeight;
     }
 
-    if (movement === "carry_core" && slot.focusMuscles.includes("core")) score += sets;
+    if (movement === "carry_core" && slot.focusMuscles.includes("core")) {
+      score += primaryDose * PLANNER_TUNING.slotInference.carryCoreFocusWeight;
+    }
 
-    if (slotUpper && isStrongLowerAnchor(exercise)) score -= sets * 3;
-    if (slotLower && isBackOrShoulderFocused(exercise)) score -= sets * 0.5;
-    if (slotLower && isDirectArmFocus(exercise)) score -= sets * 0.75;
-    if (isDirectArmFocus(exercise)) directArmSets += sets;
+    if (slotUpper && isStrongLowerAnchor(exercise)) {
+      score -= recoveryDose * PLANNER_TUNING.slotInference.upperStrongLowerPenalty;
+    }
+    if (slotLower && isBackOrShoulderFocused(exercise)) {
+      score -= primaryDose * PLANNER_TUNING.slotInference.lowerBackShoulderPenalty;
+    }
+    if (slotLower && isDirectArmFocus(exercise)) {
+      score -= primaryDose * PLANNER_TUNING.slotInference.lowerDirectArmPenalty;
+    }
+    if (isDirectArmFocus(exercise)) directArmSets += primaryDose;
 
     exercise.primary.forEach((muscle) => {
-      if (slot.focusMuscles.includes(muscle)) score += sets * 2.25;
-      if ((slot.targetPrimarySets[muscle] ?? 0) > 0) score += sets * 0.5;
+      if (slot.focusMuscles.includes(muscle)) {
+        score += primaryDose * PLANNER_TUNING.slotInference.focusPrimaryWeight;
+      }
+      if ((slot.targetPrimaryStimulus[muscle] ?? 0) > 0) {
+        score += primaryDose * PLANNER_TUNING.slotInference.targetPrimaryWeight;
+      }
     });
     exercise.secondary.forEach((muscle) => {
-      if (slot.focusMuscles.includes(muscle)) score += sets * 0.75;
+      if (slot.focusMuscles.includes(muscle)) {
+        score += secondaryDose * PLANNER_TUNING.slotInference.focusSecondaryWeight;
+      }
     });
 
-    if (isLowerSlot(slot) && isStrongLowerAnchor(exercise)) score += sets * 0.75;
-    if (isUpperSlot(slot) && isBackOrShoulderFocused(exercise)) score += sets * 0.75;
-    if (isUpperSlot(slot) && isDirectArmFocus(exercise)) score += sets * 0.5;
+    if (isLowerSlot(slot) && isStrongLowerAnchor(exercise)) {
+      score += recoveryDose * PLANNER_TUNING.slotInference.lowerStrongAnchorBonus;
+    }
+    if (isUpperSlot(slot) && isBackOrShoulderFocused(exercise)) {
+      score += primaryDose * PLANNER_TUNING.slotInference.upperBackShoulderBonus;
+    }
+    if (isUpperSlot(slot) && isDirectArmFocus(exercise)) {
+      score += primaryDose * PLANNER_TUNING.slotInference.upperDirectArmBonus;
+    }
   });
 
   if (slot.id === "lower_glute_ham") {
-    if (summary.posteriorSets === 0) score -= 8;
-    else score += summary.posteriorSets * 0.5;
-    if (summary.quadSets >= summary.posteriorSets + 4) score -= 4;
+    if (summary.posteriorSets === 0) score -= PLANNER_TUNING.slotInference.lowerPosteriorGapPenalty;
+    else score += summary.posteriorSets * PLANNER_TUNING.slotInference.lowerPosteriorPresentBonus;
+    if (summary.quadSets >= summary.posteriorSets + 4) {
+      score -= PLANNER_TUNING.slotInference.lowerQuadImbalancePenalty;
+    }
   }
 
   if (slot.id === "lower_glute_quad") {
-    if (summary.quadSets === 0) score -= 8;
-    else score += summary.quadSets * 0.75;
-    if (summary.posteriorSets >= summary.quadSets + 4) score -= 5;
+    if (summary.quadSets === 0) score -= PLANNER_TUNING.slotInference.lowerQuadGapPenalty;
+    else score += summary.quadSets * PLANNER_TUNING.slotInference.lowerQuadPresentBonus;
+    if (summary.posteriorSets >= summary.quadSets + 4) {
+      score -= PLANNER_TUNING.slotInference.lowerPosteriorImbalancePenalty;
+    }
   }
 
-  if (slotUpper && summary.strongLowerSets >= 4) {
-    score -= summary.strongLowerSets * 2;
-    if (summary.lowerSets >= summary.upperSets - 1) score -= 10;
+  if (slotUpper && summary.strongLowerSets >= PLANNER_TUNING.slotInference.upperStrongLowerSetThreshold) {
+    score -= summary.strongLowerSets * PLANNER_TUNING.slotInference.upperStrongLowerPenalty;
+    if (summary.lowerSets >= summary.upperSets - 1) {
+      score -= PLANNER_TUNING.slotInference.upperMixedLowerPenalty;
+    }
   }
 
-  if (armBiasSlot && directArmSets === 0) score -= 8;
-  if (armBiasSlot && directArmSets > 0) score += directArmSets * 0.75;
+  if (armBiasSlot && directArmSets === 0) score -= PLANNER_TUNING.slotInference.armBiasNoDirectPenalty;
+  if (armBiasSlot && directArmSets > 0) {
+    score += directArmSets * PLANNER_TUNING.slotInference.armBiasDirectBonus;
+  }
 
   return score;
 };
@@ -869,18 +1020,16 @@ const inferCompletedSlotIds = (
       available.delete(explicitSlotId);
       return;
     }
+    const hasStrugglingLift = workout.exercises.some(
+      (exercise) =>
+        exercise.progressionStatus === "held" || exercise.progressionStatus === "missed",
+    );
+    if (hasExplicitSlots && hasStrugglingLift) {
+      return;
+    }
 
     const workoutBias = inferWorkoutBias(workout);
-    const workoutSummary = summarizeWorkoutForSlotInference(workout);
-    const eligibleSlots = split.filter((slot) => {
-      if (!available.has(slot.id)) return false;
-      if (workoutBias === "mixed" && workoutSummary.strongLowerSets >= 4) {
-        return isLowerSlot(slot);
-      }
-      if (workoutBias === "lower") return isLowerSlot(slot);
-      if (workoutBias === "upper") return isUpperSlot(slot);
-      return true;
-    });
+    const eligibleSlots = split.filter((slot) => available.has(slot.id));
     const candidates = split
       .filter((slot) => eligibleSlots.some((candidate) => candidate.id === slot.id))
       .map((slot) => ({ slot, score: scoreWorkoutForSlot(workout, slot) }))
@@ -891,14 +1040,40 @@ const inferCompletedSlotIds = (
     const completedSlotScores = split
       .filter((slot) => completed.has(slot.id))
       .map((slot) => scoreWorkoutForSlot(workout, slot));
+    const sameBiasCompletedScores = split
+      .filter(
+        (slot) =>
+          completed.has(slot.id) &&
+          getSlotBias(slot) === workoutBias &&
+          workoutBias !== "mixed",
+      )
+      .map((slot) => scoreWorkoutForSlot(workout, slot));
     const bestCompletedScore =
       completedSlotScores.length > 0 ? Math.max(...completedSlotScores) : -Infinity;
+    const bestSameBiasCompletedScore =
+      sameBiasCompletedScores.length > 0 ? Math.max(...sameBiasCompletedScores) : -Infinity;
     const confidenceGap = best && secondBest ? best.score - secondBest.score : best?.score ?? 0;
-    if (!best || best.score < 12) return;
-    if (hasExplicitSlots && bestCompletedScore > -Infinity && best.score < bestCompletedScore + 3) {
+    if (!best || best.score < PLANNER_TUNING.slotInference.mixedExplicitSkipScoreThreshold) return;
+    if (hasExplicitSlots && workoutBias === "mixed") {
       return;
     }
-    if (confidenceGap < 3) {
+    if (
+      hasExplicitSlots &&
+      !explicitSlotId &&
+      bestSameBiasCompletedScore > -Infinity &&
+      (best.score < bestSameBiasCompletedScore + PLANNER_TUNING.slotInference.sameBiasCompletedMargin ||
+        confidenceGap < PLANNER_TUNING.slotInference.sameBiasConfidenceThreshold)
+    ) {
+      return;
+    }
+    if (
+      hasExplicitSlots &&
+      bestCompletedScore > -Infinity &&
+      best.score < bestCompletedScore + PLANNER_TUNING.slotInference.completedMargin
+    ) {
+      return;
+    }
+    if (confidenceGap < PLANNER_TUNING.slotInference.lowConfidenceThreshold) {
       if (hasExplicitSlots && bestCompletedScore > -Infinity) return;
       completed.add(eligibleSlots[0]?.id ?? best.slot.id);
       available.delete(eligibleSlots[0]?.id ?? best.slot.id);
@@ -934,16 +1109,16 @@ const computeMuscleDeficits = (
 ): MuscleDeficitMap => {
   const weeklyTargets: Partial<Record<MuscleGroup, number>> = {};
   split.forEach((slot) => {
-    (Object.entries(slot.targetPrimarySets) as [MuscleGroup, number][]).forEach(([muscle, sets]) => {
+    (Object.entries(slot.targetPrimaryStimulus) as [MuscleGroup, number][]).forEach(([muscle, sets]) => {
       if (sets > 0) weeklyTargets[muscle] = (weeklyTargets[muscle] ?? 0) + sets;
     });
   });
 
   const deficits: MuscleDeficitMap = {};
   (Object.entries(weeklyTargets) as [MuscleGroup, number][]).forEach(([muscle, target]) => {
-    const primary = coverage.muscleStats[muscle]?.asPrimarySets ?? 0;
-    const secondary = coverage.muscleStats[muscle]?.asSecondarySets ?? 0;
-    const effectiveDone = primary + secondary * 0.35;
+    const primary = coverage.muscleStats[muscle]?.primaryStimulus ?? 0;
+    const secondary = coverage.muscleStats[muscle]?.secondaryStimulus ?? 0;
+    const effectiveDone = primary + secondary;
     deficits[muscle] = Math.max(0, target - effectiveDone);
   });
 
@@ -959,6 +1134,10 @@ const scoreSplitSlot = (
   lastSessionMovements: Set<MovementPattern> = new Set(),
   weeklyBiasBalance: WeeklyBiasBalance = { lower: 0, upper: 0 },
 ): number => {
+  const slotPrimaryTargetTotal = Object.values(slot.targetPrimaryStimulus).reduce(
+    (sum, sets) => sum + (sets ?? 0),
+    0,
+  );
   const preferredScores = slot.preferredMovements
     .map((movement) => (need[movement] ?? 0) * (MOVEMENT_PRIORITY[movement] ?? 1))
     .sort((a, b) => b - a);
@@ -966,36 +1145,49 @@ const scoreSplitSlot = (
     .filter((movement) => !slot.preferredMovements.includes(movement))
     .map((movement) => (need[movement] ?? 0) * (MOVEMENT_PRIORITY[movement] ?? 1))
     .sort((a, b) => b - a);
-  const deficitScores = (Object.entries(slot.targetPrimarySets) as [MuscleGroup, number][])
+  const deficitScores = (Object.entries(slot.targetPrimaryStimulus) as [MuscleGroup, number][])
     .filter(([, target]) => target > 0)
     .map(([muscle, target]) => {
       const deficit = muscleDeficits[muscle] ?? 0;
       const weight = PRIMARY_MUSCLE_PRIORITY[muscle] ?? 1;
-      return Math.min(target, deficit) * weight;
+      return {
+        target,
+        value: Math.min(target, deficit) * weight,
+      };
     })
-    .sort((a, b) => b - a);
+    .sort((a, b) => b.value - a.value);
 
   let score = 0;
-  if (preferredScores[0]) score += preferredScores[0] * 5;
-  if (preferredScores[1]) score += preferredScores[1] * 2;
-  if (allowedScores[0]) score += allowedScores[0];
-  if (deficitScores[0]) score += deficitScores[0] * 0.75;
-  if (deficitScores[1]) score += deficitScores[1] * 0.35;
+  const deficitCoverage =
+    slotPrimaryTargetTotal > 0
+      ? deficitScores.reduce((sum, item) => sum + item.value, 0) / slotPrimaryTargetTotal
+      : 0;
+  if (deficitCoverage > 0) score += deficitCoverage * PLANNER_TUNING.splitSelection.deficitCoverageWeight;
+  if (deficitScores[0]) score += deficitScores[0].value * PLANNER_TUNING.splitSelection.topDeficitWeight;
+  if (deficitScores[1]) score += deficitScores[1].value * PLANNER_TUNING.splitSelection.secondDeficitWeight;
+  if (deficitScores[2]) score += deficitScores[2].value * PLANNER_TUNING.splitSelection.thirdDeficitWeight;
+
+  if (preferredScores[0]) score += preferredScores[0] * PLANNER_TUNING.splitSelection.preferredNeedTopWeight;
+  if (preferredScores[1]) score += preferredScores[1] * PLANNER_TUNING.splitSelection.preferredNeedSecondWeight;
+  if (allowedScores[0]) score += allowedScores[0] * PLANNER_TUNING.splitSelection.allowedNeedWeight;
 
   // Keep a slight bias toward the earliest missing slot so the split does not
   // drift unless another slot closes a more urgent weekly gap.
-  score -= index * 0.25;
+  score -= index * PLANNER_TUNING.splitSelection.slotOrderPenalty;
 
   // Penalize slots whose primary muscles have already met their weekly volume
   // target — training a saturated muscle group adds fatigue without adaptation.
-  const targetedMuscles = Object.keys(slot.targetPrimarySets) as MuscleGroup[];
+  const targetedMuscles = Object.keys(slot.targetPrimaryStimulus) as MuscleGroup[];
   const saturations = targetedMuscles
-    .filter((m) => (slot.targetPrimarySets[m] ?? 0) > 0 && muscleSaturation[m] !== undefined)
+    .filter((m) => (slot.targetPrimaryStimulus[m] ?? 0) > 0 && muscleSaturation[m] !== undefined)
     .map((m) => muscleSaturation[m] as number);
   if (saturations.length > 0) {
     const avg = saturations.reduce((a, b) => a + b, 0) / saturations.length;
-    if (avg >= 0.9) score -= 10;
-    else if (avg >= 0.7) score -= 4;
+    if (avg >= PLANNER_TUNING.splitSelection.saturationHighThreshold) {
+      score -= PLANNER_TUNING.splitSelection.saturationHighPenalty;
+    } else if (avg >= PLANNER_TUNING.splitSelection.saturationMediumThreshold) {
+      score -= PLANNER_TUNING.splitSelection.saturationMediumPenalty;
+    }
   }
 
   // Penalize repeating the same movement patterns as the last session.
@@ -1004,23 +1196,72 @@ const scoreSplitSlot = (
   if (lastSessionMovements.size > 0 && slot.preferredMovements.length > 0) {
     const overlap = slot.preferredMovements.filter(m => lastSessionMovements.has(m)).length;
     const overlapFraction = overlap / slot.preferredMovements.length;
-    if (overlapFraction >= 1.0) score -= 9;
-    else if (overlapFraction >= 0.67) score -= 5;
+    if (overlapFraction >= 1.0) score -= PLANNER_TUNING.splitSelection.fullOverlapPenalty;
+    else if (overlapFraction >= 0.67) score -= PLANNER_TUNING.splitSelection.partialOverlapPenalty;
   }
 
   const lowerLead = weeklyBiasBalance.lower - weeklyBiasBalance.upper;
-  if (lowerLead >= 1.25) {
-    if (isUpperSlot(slot)) score += Math.min(8, lowerLead * 3);
-    if (isLowerSlot(slot)) score -= Math.min(8, lowerLead * 2.5);
+  if (lowerLead >= PLANNER_TUNING.splitSelection.leadThreshold) {
+    if (isUpperSlot(slot)) {
+      score += Math.min(
+        PLANNER_TUNING.splitSelection.leadCap,
+        lowerLead * PLANNER_TUNING.splitSelection.leadCatchupBoost,
+      );
+    }
+    if (isLowerSlot(slot)) {
+      score -= Math.min(
+        PLANNER_TUNING.splitSelection.leadCap,
+        lowerLead * PLANNER_TUNING.splitSelection.leadSameSidePenalty,
+      );
+    }
   }
 
   const upperLead = weeklyBiasBalance.upper - weeklyBiasBalance.lower;
-  if (upperLead >= 1.25) {
-    if (isLowerSlot(slot)) score += Math.min(8, upperLead * 3);
-    if (isUpperSlot(slot)) score -= Math.min(8, upperLead * 2.5);
+  if (upperLead >= PLANNER_TUNING.splitSelection.leadThreshold) {
+    if (isLowerSlot(slot)) {
+      score += Math.min(
+        PLANNER_TUNING.splitSelection.leadCap,
+        upperLead * PLANNER_TUNING.splitSelection.leadCatchupBoost,
+      );
+    }
+    if (isUpperSlot(slot)) {
+      score -= Math.min(
+        PLANNER_TUNING.splitSelection.leadCap,
+        upperLead * PLANNER_TUNING.splitSelection.leadSameSidePenalty,
+      );
+    }
   }
 
   return score;
+};
+
+const pickBestSplitSlotIndex = (
+  split: SplitSlot[],
+  candidateIndices: number[],
+  need: Record<MovementPattern, number>,
+  muscleDeficits: MuscleDeficitMap = {},
+  muscleSaturation: Partial<Record<MuscleGroup, number>> = {},
+  lastSessionMovements: Set<MovementPattern> = new Set(),
+  weeklyBiasBalance: WeeklyBiasBalance = { lower: 0, upper: 0 },
+): { index: number; score: number } | null => {
+  let best: { index: number; score: number } | null = null;
+
+  candidateIndices.forEach((index) => {
+    const score = scoreSplitSlot(
+      split[index],
+      index,
+      need,
+      muscleDeficits,
+      muscleSaturation,
+      lastSessionMovements,
+      weeklyBiasBalance,
+    );
+    if (!best || score > best.score) {
+      best = { index, score };
+    }
+  });
+
+  return best;
 };
 
 const getNextSplitSlotIndex = (
@@ -1035,31 +1276,33 @@ const getNextSplitSlotIndex = (
   const incompleteIndices = getIncompleteSplitSlotIndices(split, workouts);
 
   if (incompleteIndices.length > 0) {
-    let bestIndex = incompleteIndices[0];
-    let bestScore = -Infinity;
-
-    for (const index of incompleteIndices) {
-      const score = scoreSplitSlot(
-        split[index],
-        index,
-        need,
-        muscleDeficits,
-        muscleSaturation,
-        lastSessionMovements,
-        weeklyBiasBalance,
-      );
-      if (score > bestScore) {
-        bestIndex = index;
-        bestScore = score;
-      }
-    }
-
-    if (bestScore > 0) return bestIndex;
+    const bestIncomplete = pickBestSplitSlotIndex(
+      split,
+      incompleteIndices,
+      need,
+      muscleDeficits,
+      muscleSaturation,
+      lastSessionMovements,
+      weeklyBiasBalance,
+    );
+    if (bestIncomplete && bestIncomplete.score > 0) return bestIncomplete.index;
     const firstIncompleteIndex = incompleteIndices[0];
     if (firstIncompleteIndex >= 0) return firstIncompleteIndex;
   }
 
-  return workouts.length % split.length;
+  const allIndices = split.map((_, index) => index);
+  const bestOverall = pickBestSplitSlotIndex(
+    split,
+    allIndices,
+    need,
+    muscleDeficits,
+    muscleSaturation,
+    lastSessionMovements,
+    weeklyBiasBalance,
+  );
+  if (bestOverall) return bestOverall.index;
+
+  return 0;
 };
 
 const maybeOverrideForCriticalGap = (
@@ -1118,8 +1361,99 @@ const maybeOverrideForCriticalGap = (
   return baseIndex;
 };
 
+const maybeOverrideForStalledBias = (
+  split: SplitSlot[],
+  baseIndex: number,
+  incompleteIndices: number[],
+  need: Record<MovementPattern, number>,
+  muscleDeficits: MuscleDeficitMap,
+  muscleSaturation: Partial<Record<MuscleGroup, number>>,
+  lastSessionMovements: Set<MovementPattern>,
+  weeklyBiasBalance: WeeklyBiasBalance,
+  stalledBiasPressure: BiasPressure,
+): number => {
+  const preferredBias =
+    stalledBiasPressure.lower >= stalledBiasPressure.upper + 1
+      ? "lower"
+      : stalledBiasPressure.upper >= stalledBiasPressure.lower + 1
+        ? "upper"
+        : "mixed";
+  if (preferredBias === "mixed") return baseIndex;
+
+  const baseBias = getSlotBias(split[baseIndex]);
+  if (baseBias === preferredBias) return baseIndex;
+
+  const candidateIndices = incompleteIndices.filter(
+    (index) => getSlotBias(split[index]) === preferredBias,
+  );
+  if (candidateIndices.length === 0) return baseIndex;
+
+  const preferred = pickBestSplitSlotIndex(
+    split,
+    candidateIndices,
+    need,
+    muscleDeficits,
+    muscleSaturation,
+    lastSessionMovements,
+    weeklyBiasBalance,
+  );
+  if (!preferred) return baseIndex;
+  return preferred.index;
+};
+
 const compareWorkoutsDesc = (a: Workout, b: Workout): number =>
   a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt;
+
+const summarizeWorkoutMuscleStress = (
+  workout: Workout,
+): Partial<Record<MuscleGroup, number>> => {
+  const stress: Partial<Record<MuscleGroup, number>> = {};
+
+  workout.exercises.forEach((logEx) => {
+    const exercise = EXERCISES.find((candidate) => candidate.name === logEx.exerciseName);
+    if (!exercise) return;
+    const sets = logEx.sets.length;
+    const stimulus = estimateExerciseStimulus(exercise);
+    const distributedStress = distributeRecoveryStress(
+      exercise,
+      sets * stimulus.recoveryPerSet,
+    );
+
+    Object.entries(distributedStress).forEach(([muscle, value]) => {
+      const key = muscle as MuscleGroup;
+      stress[key] = (stress[key] ?? 0) + value;
+    });
+  });
+
+  return stress;
+};
+
+const sumMuscleStress = (
+  stress: Partial<Record<MuscleGroup, number>>,
+): number =>
+  Object.values(stress).reduce((total, value) => total + (value ?? 0), 0);
+
+const addMuscleStress = (
+  target: Partial<Record<MuscleGroup, number>>,
+  incoming: Partial<Record<MuscleGroup, number>>,
+): void => {
+  Object.entries(incoming).forEach(([muscle, value]) => {
+    const key = muscle as MuscleGroup;
+    target[key] = (target[key] ?? 0) + (value ?? 0);
+  });
+};
+
+const estimatePlannedExerciseStress = (
+  exercise: Exercise,
+  rounds: number,
+  multiplier = 1,
+): Partial<Record<MuscleGroup, number>> => {
+  const stimulus = estimateExerciseStimulus(exercise);
+  return distributeRecoveryStress(
+    exercise,
+    rounds * stimulus.recoveryPerSet * multiplier,
+  );
+};
 
 const ymdToUtcMs = (date: string): number => {
   const [year, month, day] = date.split("-").map(Number);
@@ -1204,7 +1538,7 @@ const getSplitTemplate = (
           focusMuscles: ["glutes", "hamstrings", "core"],
           preferredMovements: ["hinge", "single_leg", "squat"],
           allowedMovements: ["hinge", "single_leg", "squat", "carry_core"],
-          targetPrimarySets: { glutes: 8, hamstrings: 6, core: 4 },
+          targetPrimaryStimulus: { glutes: 8, hamstrings: 6, core: 4 },
         },
         PHYSIQUE_UPPER_A_SLOT,
         {
@@ -1214,7 +1548,7 @@ const getSplitTemplate = (
           focusMuscles: ["glutes", "quads", "hamstrings", "adductors", "core"],
           preferredMovements: ["single_leg", "squat", "hinge"],
           allowedMovements: ["single_leg", "squat", "hinge", "carry_core"],
-          targetPrimarySets: { glutes: 7, quads: 6, hamstrings: 4, adductors: 2, core: 4 },
+          targetPrimaryStimulus: { glutes: 7, quads: 6, hamstrings: 4, adductors: 2, core: 4 },
         },
       ];
     }
@@ -1227,7 +1561,7 @@ const getSplitTemplate = (
           focusMuscles: ["glutes", "hamstrings", "back", "core"],
           preferredMovements: ["hinge", "single_leg", "squat"],
           allowedMovements: ["hinge", "single_leg", "squat", "pull", "carry_core"],
-          targetPrimarySets: { glutes: 7, hamstrings: 6, back: 2, core: 4 },
+          targetPrimaryStimulus: { glutes: 7, hamstrings: 6, back: 2, core: 4 },
         },
         PHYSIQUE_UPPER_A_SLOT,
         {
@@ -1237,7 +1571,7 @@ const getSplitTemplate = (
           focusMuscles: ["glutes", "quads", "hamstrings", "adductors", "shoulders", "core"],
           preferredMovements: ["single_leg", "squat", "hinge"],
           allowedMovements: ["single_leg", "squat", "hinge", "push", "carry_core"],
-          targetPrimarySets: { glutes: 6, quads: 6, hamstrings: 4, adductors: 2, shoulders: 2, core: 4 },
+          targetPrimaryStimulus: { glutes: 6, quads: 6, hamstrings: 4, adductors: 2, shoulders: 2, core: 4 },
         },
         PHYSIQUE_UPPER_B_SLOT,
       ];
@@ -1250,7 +1584,7 @@ const getSplitTemplate = (
         focusMuscles: ["glutes", "hamstrings", "core"],
         preferredMovements: ["hinge", "single_leg", "squat"],
         allowedMovements: ["hinge", "single_leg", "squat", "carry_core"],
-        targetPrimarySets: { glutes: 8, hamstrings: 6, core: 4 },
+        targetPrimaryStimulus: { glutes: 8, hamstrings: 6, core: 4 },
       },
       PHYSIQUE_UPPER_A_SLOT,
       {
@@ -1260,7 +1594,7 @@ const getSplitTemplate = (
         focusMuscles: ["glutes", "quads", "hamstrings", "adductors", "core"],
         preferredMovements: ["single_leg", "squat", "hinge"],
         allowedMovements: ["single_leg", "squat", "hinge", "carry_core"],
-        targetPrimarySets: { glutes: 7, quads: 6, hamstrings: 4, adductors: 2, core: 4 },
+        targetPrimaryStimulus: { glutes: 7, quads: 6, hamstrings: 4, adductors: 2, core: 4 },
       },
       PHYSIQUE_UPPER_B_SLOT,
       {
@@ -1270,7 +1604,7 @@ const getSplitTemplate = (
         focusMuscles: ["glutes", "shoulders", "rear_delts", "core"],
         preferredMovements: ["single_leg", "hinge", "push", "pull"],
         allowedMovements: ["single_leg", "hinge", "push", "pull", "carry_core"],
-        targetPrimarySets: { glutes: 8, shoulders: 6, rear_delts: 4, core: 4 },
+        targetPrimaryStimulus: { glutes: 8, shoulders: 6, rear_delts: 4, core: 4 },
       },
     ];
   }
@@ -1285,7 +1619,7 @@ const getSplitTemplate = (
           focusMuscles: ["quads", "glutes", "hamstrings", "core"],
           preferredMovements: ["squat", "hinge"],
           allowedMovements: ["squat", "hinge", "carry_core"],
-          targetPrimarySets: { quads: 7, glutes: 5, hamstrings: 5, core: 3 },
+          targetPrimaryStimulus: { quads: 7, glutes: 5, hamstrings: 5, core: 3 },
         },
         {
           id: "upper_strength",
@@ -1294,7 +1628,7 @@ const getSplitTemplate = (
           focusMuscles: ["back", "shoulders", "chest", "triceps"],
           preferredMovements: ["pull", "push"],
           allowedMovements: ["pull", "push", "carry_core"],
-          targetPrimarySets: { back: 6, shoulders: 5, chest: 5, triceps: 3, core: 2 },
+          targetPrimaryStimulus: { back: 6, shoulders: 5, chest: 5, triceps: 3, core: 2 },
         },
         {
           id: "full_strength",
@@ -1303,7 +1637,7 @@ const getSplitTemplate = (
           focusMuscles: ["glutes", "back", "quads", "shoulders", "core"],
           preferredMovements: ["hinge", "squat", "pull", "push"],
           allowedMovements: ["hinge", "squat", "pull", "push", "carry_core"],
-          targetPrimarySets: { glutes: 5, back: 5, quads: 4, shoulders: 4, core: 3 },
+          targetPrimaryStimulus: { glutes: 5, back: 5, quads: 4, shoulders: 4, core: 3 },
         },
       ];
     }
@@ -1315,7 +1649,7 @@ const getSplitTemplate = (
         focusMuscles: ["quads", "glutes", "core"],
         preferredMovements: ["squat", "single_leg"],
         allowedMovements: ["squat", "single_leg", "carry_core"],
-        targetPrimarySets: { quads: 7, glutes: 5, core: 3 },
+        targetPrimaryStimulus: { quads: 7, glutes: 5, core: 3 },
       },
       {
         id: "push_day",
@@ -1324,7 +1658,7 @@ const getSplitTemplate = (
         focusMuscles: ["shoulders", "chest", "triceps", "core"],
         preferredMovements: ["push"],
         allowedMovements: ["push", "carry_core"],
-        targetPrimarySets: { shoulders: 6, chest: 5, triceps: 4, core: 3 },
+        targetPrimaryStimulus: { shoulders: 6, chest: 5, triceps: 4, core: 3 },
       },
       {
         id: "hinge_day",
@@ -1333,7 +1667,7 @@ const getSplitTemplate = (
         focusMuscles: ["hamstrings", "glutes", "back", "core"],
         preferredMovements: ["hinge"],
         allowedMovements: ["hinge", "single_leg", "carry_core"],
-        targetPrimarySets: { hamstrings: 7, glutes: 5, back: 4, core: 3 },
+        targetPrimaryStimulus: { hamstrings: 7, glutes: 5, back: 4, core: 3 },
       },
       {
         id: "pull_day",
@@ -1342,7 +1676,7 @@ const getSplitTemplate = (
         focusMuscles: ["back", "rear_delts", "biceps", "core"],
         preferredMovements: ["pull"],
         allowedMovements: ["pull", "carry_core"],
-        targetPrimarySets: { back: 8, rear_delts: 4, biceps: 4, core: 3 },
+        targetPrimaryStimulus: { back: 8, rear_delts: 4, biceps: 4, core: 3 },
       },
     ];
   }
@@ -1356,7 +1690,7 @@ const getSplitTemplate = (
         focusMuscles: ["glutes", "back", "shoulders", "core"],
         preferredMovements: ["hinge", "pull", "push"],
         allowedMovements: ["hinge", "squat", "single_leg", "pull", "push", "carry_core"],
-        targetPrimarySets: { glutes: 6, back: 5, shoulders: 4, core: 3 },
+        targetPrimaryStimulus: { glutes: 6, back: 5, shoulders: 4, core: 3 },
       },
       {
         id: "full_b",
@@ -1365,7 +1699,7 @@ const getSplitTemplate = (
         focusMuscles: ["glutes", "quads", "back", "shoulders", "core"],
         preferredMovements: ["single_leg", "pull", "push"],
         allowedMovements: ["hinge", "squat", "single_leg", "pull", "push", "carry_core"],
-        targetPrimarySets: { glutes: 5, quads: 5, back: 4, shoulders: 4, core: 3 },
+        targetPrimaryStimulus: { glutes: 5, quads: 5, back: 4, shoulders: 4, core: 3 },
       },
       {
         id: "full_c",
@@ -1374,7 +1708,7 @@ const getSplitTemplate = (
         focusMuscles: ["quads", "glutes", "back", "core"],
         preferredMovements: ["squat", "pull", "push"],
         allowedMovements: ["hinge", "squat", "single_leg", "pull", "push", "carry_core"],
-        targetPrimarySets: { quads: 5, glutes: 4, back: 5, core: 3 },
+        targetPrimaryStimulus: { quads: 5, glutes: 4, back: 5, core: 3 },
       },
     ];
   }
@@ -1387,7 +1721,7 @@ const getSplitTemplate = (
       focusMuscles: ["glutes", "quads", "hamstrings", "adductors", "core"],
       preferredMovements: ["hinge", "squat", "single_leg"],
       allowedMovements: ["hinge", "squat", "single_leg", "carry_core"],
-      targetPrimarySets: { glutes: 6, quads: 5, hamstrings: 4, adductors: 1, core: 3 },
+      targetPrimaryStimulus: { glutes: 6, quads: 5, hamstrings: 4, adductors: 1, core: 3 },
     },
     {
       id: "upper_balanced",
@@ -1396,7 +1730,7 @@ const getSplitTemplate = (
       focusMuscles: ["back", "shoulders", "chest", "core"],
       preferredMovements: ["pull", "push"],
       allowedMovements: ["pull", "push", "carry_core"],
-      targetPrimarySets: { back: 6, shoulders: 4, chest: 4, core: 3 },
+      targetPrimaryStimulus: { back: 6, shoulders: 4, chest: 4, core: 3 },
     },
     {
       id: "full_balanced",
@@ -1405,7 +1739,7 @@ const getSplitTemplate = (
       focusMuscles: ["glutes", "back", "shoulders", "core"],
       preferredMovements: ["hinge", "single_leg", "pull", "push"],
       allowedMovements: ["hinge", "squat", "single_leg", "pull", "push", "carry_core"],
-      targetPrimarySets: { glutes: 5, back: 5, shoulders: 4, core: 3 },
+      targetPrimaryStimulus: { glutes: 5, back: 5, shoulders: 4, core: 3 },
     },
     {
       id: "upper_pull_bias",
@@ -1414,12 +1748,12 @@ const getSplitTemplate = (
       focusMuscles: ["back", "shoulders", "rear_delts", "core"],
       preferredMovements: ["pull", "push"],
       allowedMovements: ["pull", "push", "carry_core"],
-      targetPrimarySets: { back: 6, shoulders: 4, rear_delts: 3, core: 3 },
+      targetPrimaryStimulus: { back: 6, shoulders: 4, rear_delts: 3, core: 3 },
     },
   ];
 };
 
-export function getWeeklyTargetSets(
+export function getWeeklyTargetStimulus(
   profile: TrainingProfile,
   workouts: Workout[],
 ): Partial<Record<MuscleGroup, number>> {
@@ -1427,7 +1761,7 @@ export function getWeeklyTargetSets(
   const totals: Partial<Record<MuscleGroup, number>> = {};
 
   split.forEach((slot) => {
-    Object.entries(slot.targetPrimarySets).forEach(([muscle, sets]) => {
+    Object.entries(slot.targetPrimaryStimulus).forEach(([muscle, sets]) => {
       if (typeof sets !== "number" || sets <= 0) return;
       const key = muscle as MuscleGroup;
       totals[key] = (totals[key] ?? 0) + sets;
@@ -1436,6 +1770,8 @@ export function getWeeklyTargetSets(
 
   return totals;
 }
+
+export const getWeeklyTargetSets = getWeeklyTargetStimulus;
 
 // Public helper — lets the UI build a DraftExercise from a library exercise
 // without re-running the full generator (used by the per-exercise swap feature).
@@ -1480,6 +1816,7 @@ export function generateNextWorkout(
   const window = weekContaining(todayISO);
   const coverage = computeCoverage(workouts, window);
   const recent = recentMusclesWithin(workouts, todayISO, 48);
+  const recentStress = recentMuscleStressWithin(workouts, todayISO, 96);
   const rng = mulberry32(seed);
   const split = resolveSplitVariants(
     getSplitTemplate(activeProfile),
@@ -1501,7 +1838,7 @@ export function generateNextWorkout(
   // Used to deprioritize split slots whose primary muscles are already at volume.
   const weeklyMuscleTargets: Partial<Record<MuscleGroup, number>> = {};
   split.forEach((s) => {
-    (Object.entries(s.targetPrimarySets) as [MuscleGroup, number][]).forEach(([m, sets]) => {
+    (Object.entries(s.targetPrimaryStimulus) as [MuscleGroup, number][]).forEach(([m, sets]) => {
       if (sets > 0) weeklyMuscleTargets[m] = (weeklyMuscleTargets[m] ?? 0) + sets;
     });
   });
@@ -1509,11 +1846,17 @@ export function generateNextWorkout(
   MUSCLE_GROUPS.forEach((m) => {
     const target = weeklyMuscleTargets[m];
     if (target && target > 0) {
-      const done = coverage.muscleStats[m]?.asPrimarySets ?? 0;
+      const done = coverage.muscleStats[m]?.primaryStimulus ?? 0;
       muscleSaturation[m] = Math.min(1, done / target);
     }
   });
   const muscleDeficits = computeMuscleDeficits(split, coverage);
+  const stalledExerciseNames = new Set(
+    EXERCISES.filter((exercise) => getStallState(exercise.name, workouts) === "stalled").map(
+      (exercise) => exercise.name,
+    ),
+  );
+  const stalledBiasPressure = summarizeStalledBiasPressure(stalledExerciseNames);
 
   // Movement patterns from the most recent session — used to avoid recommending
   // the same movement category back-to-back regardless of weekly volume targets.
@@ -1528,22 +1871,44 @@ export function generateNextWorkout(
       }
     });
   }
+  const recentSessionStressMaps = [...workouts]
+    .sort(compareWorkoutsDesc)
+    .slice(0, 2)
+    .map((workout, index) => ({
+      decay:
+        index === 0
+          ? PLANNER_TUNING.recentSessionOverlap.latestDecay
+          : PLANNER_TUNING.recentSessionOverlap.priorDecay,
+      stress: summarizeWorkoutMuscleStress(workout),
+    }));
 
-  const sessionIndex = maybeOverrideForCriticalGap(
+  const incompleteIndices = getIncompleteSplitSlotIndices(split, coverage.workouts);
+  const weeklyBiasBalance = summarizeWeeklyBiasBalance(split, coverage.workouts);
+  const sessionIndex = maybeOverrideForStalledBias(
     split,
-    getNextSplitSlotIndex(
+    maybeOverrideForCriticalGap(
       split,
-      coverage.workouts,
+      getNextSplitSlotIndex(
+        split,
+        coverage.workouts,
+        need,
+        muscleDeficits,
+        muscleSaturation,
+        lastSessionMovements,
+      ),
       need,
       muscleDeficits,
       muscleSaturation,
       lastSessionMovements,
+      weeklyBiasBalance,
     ),
+    incompleteIndices,
     need,
     muscleDeficits,
     muscleSaturation,
     lastSessionMovements,
-    summarizeWeeklyBiasBalance(split, coverage.workouts),
+    weeklyBiasBalance,
+    stalledBiasPressure,
   );
   const slot = split[sessionIndex];
   const currentWeekExerciseNames = new Set(
@@ -1565,11 +1930,6 @@ export function generateNextWorkout(
     w.exercises.forEach((e) => known.add(e.exerciseName)),
   );
 
-  const stalledExerciseNames = new Set(
-    EXERCISES.filter((exercise) => getStallState(exercise.name, workouts) === "stalled").map(
-      (exercise) => exercise.name,
-    ),
-  );
   const watchedExerciseNames = new Set(
     EXERCISES.filter((exercise) => getStallState(exercise.name, workouts) === "watch").map(
       (exercise) => exercise.name,
@@ -1584,91 +1944,195 @@ export function generateNextWorkout(
   const used = new Set<string>();
   const claimedFamilies: Partial<Record<string, number>> = {};
   let barbellCount = 0;
+  const plannedSessionStress: Partial<Record<MuscleGroup, number>> = {};
   const claimedMovements: Record<MovementPattern, number> = {} as Record<
     MovementPattern,
     number
   >;
   MOVEMENT_PATTERNS.forEach((mp) => (claimedMovements[mp] = 0));
 
-  const scoreExercise = (ex: Exercise): number => {
+  const scoreExercise = (ex: Exercise, plannedRounds = 1): number => {
     const movement = movementOf(ex);
     if (!movement) return -10; // plyo/conditioning/calf — never a planned pick
     if (!environmentAllowsExercise(ex, activeProfile)) return -10;
     if (!goalAllows(ex, activeProfile.goal)) return -10;
     if (!slot.allowedMovements.includes(movement)) return -10;
+    const stimulus = estimateExerciseStimulus(ex);
+    const projectedStress = estimatePlannedExerciseStress(ex, plannedRounds);
+    const projectedSessionTotal =
+      sumMuscleStress(plannedSessionStress) + sumMuscleStress(projectedStress);
     const remaining = Math.max(
       0,
       need[movement] - claimedMovements[movement],
     );
-    let s = remaining * 5;
+    let s = remaining * 2.75;
+    s = remaining * PLANNER_TUNING.exerciseSelection.movementNeedWeight;
     const physiqueFactor =
       activeProfile.goal === "physique"
         ? 1
         : activeProfile.goal === "balanced"
           ? 0.35
           : 0;
-    s += (MOVEMENT_PRIORITY[movement] ?? 0) * (physiqueFactor || 0.2);
+    s +=
+      (MOVEMENT_PRIORITY[movement] ?? 0) *
+      (physiqueFactor || PLANNER_TUNING.exerciseSelection.fallbackMovementPriorityWeight);
+
+    let deficitClosureScore = 0;
+    let recoveryPenalty = 0;
+    let sessionOverlapPenalty = 0;
 
     ex.primary.forEach((m) => {
-      s += (PRIMARY_MUSCLE_PRIORITY[m] ?? 0) * physiqueFactor;
-      if (recent.has(m)) s -= 5;
+      const deficit = muscleDeficits[m] ?? 0;
+      const closure = Math.min(deficit, stimulus.primaryPerSet);
+      const weight = PRIMARY_MUSCLE_PRIORITY[m] ?? 1;
+      const focusMultiplier = slot.focusMuscles.includes(m)
+        ? PLANNER_TUNING.exerciseSelection.primaryFocusMultiplier
+        : 1;
+      deficitClosureScore += closure * weight * focusMultiplier;
+      recoveryPenalty +=
+        (recentStress[m] ?? 0) *
+        stimulus.recoveryPerSet *
+        PLANNER_TUNING.exerciseSelection.primaryRecoveryPenaltyWeight;
+      recentSessionStressMaps.forEach(({ stress, decay }) => {
+        sessionOverlapPenalty +=
+          (stress[m] ?? 0) *
+          stimulus.recoveryPerSet *
+          decay *
+          PLANNER_TUNING.exerciseSelection.latestSessionPrimaryOverlapWeight;
+      });
+      sessionOverlapPenalty +=
+        (plannedSessionStress[m] ?? 0) *
+        stimulus.recoveryPerSet *
+        PLANNER_TUNING.exerciseSelection.plannedPrimaryOverlapWeight;
+      s +=
+        (PRIMARY_MUSCLE_PRIORITY[m] ?? 0) *
+        physiqueFactor *
+        PLANNER_TUNING.exerciseSelection.primaryPriorityWeight;
     });
     ex.secondary.forEach((m) => {
-      s += (SECONDARY_MUSCLE_PRIORITY[m] ?? 0) * physiqueFactor;
-      if (recent.has(m)) s -= 1.5;
+      const deficit = muscleDeficits[m] ?? 0;
+      const closure = Math.min(deficit, stimulus.secondaryPerSet);
+      const weight = SECONDARY_MUSCLE_PRIORITY[m] ?? PRIMARY_MUSCLE_PRIORITY[m] ?? 1;
+      const focusMultiplier = slot.focusMuscles.includes(m)
+        ? PLANNER_TUNING.exerciseSelection.secondaryFocusMultiplier
+        : 1;
+      deficitClosureScore +=
+        closure *
+        weight *
+        focusMultiplier *
+        PLANNER_TUNING.exerciseSelection.secondaryClosureWeight;
+      recoveryPenalty +=
+        (recentStress[m] ?? 0) *
+        stimulus.recoveryPerSet *
+        PLANNER_TUNING.exerciseSelection.secondaryRecoveryPenaltyWeight;
+      recentSessionStressMaps.forEach(({ stress, decay }) => {
+        sessionOverlapPenalty +=
+          (stress[m] ?? 0) *
+          stimulus.recoveryPerSet *
+          decay *
+          PLANNER_TUNING.exerciseSelection.latestSessionSecondaryOverlapWeight;
+      });
+      sessionOverlapPenalty +=
+        (plannedSessionStress[m] ?? 0) *
+        stimulus.recoveryPerSet *
+        PLANNER_TUNING.exerciseSelection.plannedSecondaryOverlapWeight;
+      s +=
+        (SECONDARY_MUSCLE_PRIORITY[m] ?? 0) *
+        physiqueFactor *
+        PLANNER_TUNING.exerciseSelection.secondaryPriorityWeight;
     });
 
+    s += deficitClosureScore * PLANNER_TUNING.exerciseSelection.deficitClosureWeight;
+    s -= Math.min(PLANNER_TUNING.exerciseSelection.recoveryPenaltyCap, recoveryPenalty);
+    s -= Math.min(PLANNER_TUNING.exerciseSelection.overlapPenaltyCap, sessionOverlapPenalty);
+    if (projectedSessionTotal > sessionFatigueBudget) {
+      const budgetPenaltyMultiplier =
+        armBiasSlot && isDirectArmFocus(ex)
+          ? PLANNER_TUNING.exerciseSelection.armBiasBudgetPenaltyMultiplier
+          : PLANNER_TUNING.exerciseSelection.defaultBudgetPenaltyMultiplier;
+      s -= (projectedSessionTotal - sessionFatigueBudget) * budgetPenaltyMultiplier;
+    }
+
     if (activeProfile.goal === "physique") {
-      if (movement === "push" && ex.primary.includes("chest")) s -= 0.8;
-      if (movement === "push" && ex.primary.includes("triceps")) s -= 0.6;
-      if (movement === "hinge" && ex.primary.includes("glutes")) s += 0.8;
-      if (movement === "single_leg" && ex.primary.includes("glutes")) s += 0.8;
-      if (isDirectGluteFocus(ex)) s += 0.7;
-      if (movement === "pull" && ex.primary.includes("back")) s += 0.7;
-      if (ex.primary.includes("shoulders") || ex.primary.includes("rear_delts")) {
-        s += 0.5;
+      if (movement === "push" && ex.primary.includes("chest")) {
+        s -= PLANNER_TUNING.exerciseSelection.physiquePushChestPenalty;
       }
-      if (armBiasSlot && isDirectArmFocus(ex)) s += 1.2;
+      if (movement === "push" && ex.primary.includes("triceps")) {
+        s -= PLANNER_TUNING.exerciseSelection.physiquePushTricepsPenalty;
+      }
+      if (movement === "hinge" && ex.primary.includes("glutes")) {
+        s += PLANNER_TUNING.exerciseSelection.physiqueHingeGluteBonus;
+      }
+      if (movement === "single_leg" && ex.primary.includes("glutes")) {
+        s += PLANNER_TUNING.exerciseSelection.physiqueSingleLegGluteBonus;
+      }
+      if (isDirectGluteFocus(ex)) s += PLANNER_TUNING.exerciseSelection.physiqueDirectGluteBonus;
+      if (movement === "pull" && ex.primary.includes("back")) {
+        s += PLANNER_TUNING.exerciseSelection.physiquePullBackBonus;
+      }
+      if (ex.primary.includes("shoulders") || ex.primary.includes("rear_delts")) {
+        s += PLANNER_TUNING.exerciseSelection.physiqueShoulderBonus;
+      }
+      if (armBiasSlot && isDirectArmFocus(ex)) s += PLANNER_TUNING.exerciseSelection.physiqueArmBiasBonus;
     }
 
     if (activeProfile.goal === "strength" && isHeavyEquipment(ex)) {
-      s += 1.4;
+      s += PLANNER_TUNING.exerciseSelection.strengthHeavyEquipmentBonus;
     }
     if (activeProfile.equipment === "full_gym") {
-      if (ex.equipment === "barbell") s += 0.8;
-      if (ex.equipment === "machine" || ex.equipment === "cable") s += 0.5;
+      if (ex.equipment === "barbell") s += PLANNER_TUNING.exerciseSelection.fullGymBarbellBonus;
+      if (ex.equipment === "machine" || ex.equipment === "cable") {
+        s += PLANNER_TUNING.exerciseSelection.fullGymMachineCableBonus;
+      }
     }
     if (activeProfile.equipment === "dumbbells") {
-      if (ex.equipment === "dumbbell") s += 0.8;
-      if (ex.equipment === "kettlebell") s += 0.4;
+      if (ex.equipment === "dumbbell") s += PLANNER_TUNING.exerciseSelection.dumbbellEnvDumbbellBonus;
+      if (ex.equipment === "kettlebell") s += PLANNER_TUNING.exerciseSelection.dumbbellEnvKettlebellBonus;
     }
     if (activeProfile.equipment === "home") {
-      if (isHomeConditioningFriendly(ex)) s += 1.1;
-      if (ex.equipment === "dumbbell") s += 0.3;
-      if (ex.pattern === "hinge" && ex.equipment === "dumbbell") s -= 0.4;
+      if (isHomeConditioningFriendly(ex)) s += PLANNER_TUNING.exerciseSelection.homeConditioningBonus;
+      if (ex.equipment === "dumbbell") s += PLANNER_TUNING.exerciseSelection.homeDumbbellBonus;
+      if (ex.pattern === "hinge" && ex.equipment === "dumbbell") {
+        s -= PLANNER_TUNING.exerciseSelection.homeDumbbellHingePenalty;
+      }
     }
     if (activeProfile.experience === "beginner") {
-      if (isTechnicalBarbell(ex)) s -= 1.2;
-      if (!known.has(ex.name)) s -= 0.8;
+      if (isTechnicalBarbell(ex)) s -= PLANNER_TUNING.exerciseSelection.beginnerTechnicalBarbellPenalty;
+      if (!known.has(ex.name)) s -= PLANNER_TUNING.exerciseSelection.beginnerNovelLiftPenalty;
     }
 
-    if (ex.equipment === "barbell" && barbellCount >= 2) s -= 12;
+    if (ex.equipment === "barbell" && barbellCount >= 2) {
+      s -= PLANNER_TUNING.exerciseSelection.barbellCapPenalty;
+    }
 
-    if (preferredExerciseNames.has(ex.name)) s += 9;
-    else if (stalledExerciseNames.has(ex.name)) s -= 7;
-    else if (watchedExerciseNames.has(ex.name)) s -= 2.5;
+    if (preferredExerciseNames.has(ex.name)) s += PLANNER_TUNING.exerciseSelection.preferredExerciseBonus;
+    else if (stalledExerciseNames.has(ex.name)) s -= PLANNER_TUNING.exerciseSelection.stalledExercisePenalty;
+    else if (watchedExerciseNames.has(ex.name)) s -= PLANNER_TUNING.exerciseSelection.watchedExercisePenalty;
     if (stalledFamilies.has(familyOf(ex)) && !stalledExerciseNames.has(ex.name)) {
-      s += 1.6;
+      s += PLANNER_TUNING.exerciseSelection.stalledFamilySubBonus;
     }
 
-    if (known.has(ex.name)) s += 1;
-    if (slot.preferredMovements.includes(movement)) s += 1.4;
-    if (currentWeekExerciseNames.has(ex.name)) s -= activeProfile.goal === "strength" ? 0.6 : 2.4;
-    if (currentWeekFamilies.has(familyOf(ex))) s -= activeProfile.goal === "strength" ? 0.4 : 1.2;
+    if (known.has(ex.name)) s += PLANNER_TUNING.exerciseSelection.knownExerciseBonus;
+    if (slot.preferredMovements.includes(movement)) s += PLANNER_TUNING.exerciseSelection.preferredMovementBonus;
+    if (currentWeekExerciseNames.has(ex.name)) {
+      s -=
+        activeProfile.goal === "strength"
+          ? PLANNER_TUNING.exerciseSelection.repeatExerciseStrengthPenalty
+          : PLANNER_TUNING.exerciseSelection.repeatExercisePenalty;
+    }
+    if (currentWeekFamilies.has(familyOf(ex))) {
+      s -=
+        activeProfile.goal === "strength"
+          ? PLANNER_TUNING.exerciseSelection.repeatFamilyStrengthPenalty
+          : PLANNER_TUNING.exerciseSelection.repeatFamilyPenalty;
+    }
     const family = familyOf(ex);
     const familyCount = claimedFamilies[family] ?? 0;
     if (familyCount > 0) {
-      s -= activeProfile.goal === "strength" ? familyCount * 1.5 : familyCount * 4;
+      s -=
+        activeProfile.goal === "strength"
+          ? familyCount * PLANNER_TUNING.exerciseSelection.repeatClaimedFamilyStrengthPenalty
+          : familyCount * PLANNER_TUNING.exerciseSelection.repeatClaimedFamilyPenalty;
     }
     const lowerUnilateralFamily = lowerUnilateralKneeFamilyOf(ex);
     if (lowerBiasSlot && lowerUnilateralFamily) {
@@ -1676,37 +2140,40 @@ export function generateNextWorkout(
         (count, key) => count + (claimedFamilies[key] ?? 0),
         0,
       );
-      if (usedLowerUnilateralFamilies >= 1) s -= 7;
-      if (usedLowerUnilateralFamilies >= 2) s -= 12;
+      if (usedLowerUnilateralFamilies >= 1) s -= PLANNER_TUNING.exerciseSelection.unilateralFamilyPenalty;
+      if (usedLowerUnilateralFamilies >= 2) s -= PLANNER_TUNING.exerciseSelection.repeatedUnilateralFamilyPenalty;
     }
     if (lowerBiasSlot && movement === "single_leg") {
-      if (claimedMovements.single_leg >= 1) s -= 2.5;
-      if (claimedMovements.single_leg >= 2) s -= 8;
+      if (claimedMovements.single_leg >= 1) s -= PLANNER_TUNING.exerciseSelection.repeatedSingleLegPenalty;
+      if (claimedMovements.single_leg >= 2) s -= PLANNER_TUNING.exerciseSelection.repeatedSingleLegHardPenalty;
     }
     ex.primary.forEach((m) => {
-      if (slot.focusMuscles.includes(m)) s += 1.1;
-      const target = slot.targetPrimarySets[m] ?? 0;
-      const done = coverage.muscleStats[m]?.asPrimarySets ?? 0;
+      if (slot.focusMuscles.includes(m)) s += PLANNER_TUNING.exerciseSelection.focusPrimaryBonus;
+      const target = slot.targetPrimaryStimulus[m] ?? 0;
+      const done = coverage.muscleStats[m]?.primaryStimulus ?? 0;
       if (target > 0) {
         const remainingSets = Math.max(0, target - done);
-        s += remainingSets * 0.45;
-        if (done >= target) s -= 0.5;
+        s += remainingSets * PLANNER_TUNING.exerciseSelection.targetRemainingWeight;
+        if (done >= target) s -= PLANNER_TUNING.exerciseSelection.targetReachedPenalty;
       }
     });
     ex.secondary.forEach((m) => {
-      if (slot.focusMuscles.includes(m)) s += 0.35;
+      if (slot.focusMuscles.includes(m)) s += PLANNER_TUNING.exerciseSelection.focusSecondaryBonus;
     });
-    s += rng() * 0.5;
+    s += rng() * PLANNER_TUNING.exerciseSelection.randomnessWeight;
     return s;
   };
 
-  const pickBest = (filter: (ex: Exercise) => boolean): Exercise | null => {
+  const pickBest = (
+    filter: (ex: Exercise) => boolean,
+    plannedRounds = 1,
+  ): Exercise | null => {
     let best: Exercise | null = null;
     let bestScore = -Infinity;
     for (const ex of EXERCISES) {
       if (used.has(ex.name)) continue;
       if (!filter(ex)) continue;
-      const s = scoreExercise(ex);
+      const s = scoreExercise(ex, plannedRounds);
       if (s > bestScore) {
         best = ex;
         bestScore = s;
@@ -1830,6 +2297,18 @@ export function generateNextWorkout(
     claimedFamilies[family] = (claimedFamilies[family] ?? 0) + 1;
   };
 
+  const claimWithStress = (
+    ex: Exercise,
+    rounds: number,
+    multiplier = 1,
+  ) => {
+    claim(ex);
+    addMuscleStress(
+      plannedSessionStress,
+      estimatePlannedExerciseStress(ex, rounds, multiplier),
+    );
+  };
+
   const makeDraftEx = (
     ex: Exercise,
     targets: (number | string)[],
@@ -1886,6 +2365,18 @@ export function generateNextWorkout(
     slot.preferredMovements.includes("push");
   const armBiasSlot =
     slot.focusMuscles.includes("biceps") || slot.focusMuscles.includes("triceps");
+  const baseSessionBudget =
+    activeProfile.daysPerWeek === 3
+      ? PLANNER_TUNING.fatigueBudget.baseThreeDay
+      : activeProfile.daysPerWeek === 4
+        ? PLANNER_TUNING.fatigueBudget.baseFourDay
+        : PLANNER_TUNING.fatigueBudget.baseFiveDay;
+  const sessionFatigueBudget =
+    baseSessionBudget +
+    (hardMode ? PLANNER_TUNING.fatigueBudget.hardModeBonus : 0) +
+    (lowerBiasSlot ? PLANNER_TUNING.fatigueBudget.lowerBiasBonus : 0) +
+    (activeProfile.goal === "strength" ? PLANNER_TUNING.fatigueBudget.strengthBonus : 0) -
+    (activeProfile.equipment === "home" ? PLANNER_TUNING.fatigueBudget.homePenalty : 0);
   const compoundTargets = isHomeProfile ? [12, 12, 10, 10] : [10, 8, 8, 6];
   const compoundRepScheme = isHomeProfile
     ? "12 / 12 / 10 / 10 — smooth tempo"
@@ -1951,11 +2442,13 @@ export function generateNextWorkout(
 
   const pickForMovement = (
     candidates: MovementPattern[],
+    plannedRounds: number,
     filter?: (ex: Exercise) => boolean,
   ): { movement: MovementPattern; exercise: Exercise } | null => {
     for (const movement of sortedByNeed(candidates)) {
       const exercise = pickBest(
         (ex) => movementOf(ex) === movement && (filter ? filter(ex) : true),
+        plannedRounds,
       );
       if (exercise) return { movement, exercise };
     }
@@ -1969,24 +2462,26 @@ export function generateNextWorkout(
     targets: (number | string)[],
     filter?: (ex: Exercise) => boolean,
   ): boolean => {
-    const first = pickForMovement(allowed, filter);
+    const first = pickForMovement(allowed, rounds, filter);
     if (!first) return false;
 
     let second = pickForMovement(
       allowed.filter((movement) => movement !== first.movement),
+      rounds,
       (ex) => ex.name !== first.exercise.name && (filter ? filter(ex) : true),
     );
     if (!second) {
       second = pickForMovement(
         allowed,
+        rounds,
         (ex) => ex.name !== first.exercise.name && (filter ? filter(ex) : true),
       );
     }
     if (!second) return false;
 
-    claim(first.exercise);
+    claimWithStress(first.exercise, rounds);
     pushMovement(first.movement);
-    claim(second.exercise);
+    claimWithStress(second.exercise, rounds);
     pushMovement(second.movement);
     sections.push({
       kind: "superset",
@@ -2013,6 +2508,7 @@ export function generateNextWorkout(
     for (const movement of availableMovements) {
       const pick = pickForMovement(
         [movement],
+        rounds,
         (ex) =>
           !picks.some((existing) => existing.exercise.name === ex.name) &&
           (filter ? filter(ex) : true),
@@ -2024,6 +2520,7 @@ export function generateNextWorkout(
     if (picks.length < 3) {
       const fallbackPick = pickForMovement(
         allowed,
+        rounds,
         (ex) =>
           !picks.some((existing) => existing.exercise.name === ex.name) &&
           (filter ? filter(ex) : true),
@@ -2034,7 +2531,7 @@ export function generateNextWorkout(
     if (picks.length < 3) return false;
 
     picks.forEach((pick) => {
-      claim(pick.exercise);
+      claimWithStress(pick.exercise, rounds);
       pushMovement(pick.movement);
     });
     sections.push({
@@ -2053,9 +2550,9 @@ export function generateNextWorkout(
     targets: (number | string)[],
     filter?: (ex: Exercise) => boolean,
   ): boolean => {
-    const pick = pickForMovement(allowed, filter);
+    const pick = pickForMovement(allowed, rounds, filter);
     if (!pick) return false;
-    claim(pick.exercise);
+    claimWithStress(pick.exercise, rounds);
     pushMovement(pick.movement);
     sections.push({
       kind: "accessory",
@@ -2074,6 +2571,7 @@ export function generateNextWorkout(
   const compoundPick = lowerBiasSlot
     ? pickForMovement(
         lowerAnchorMovements,
+        compoundTargets.length,
         (ex) =>
           environmentAllowsExercise(ex, activeProfile) &&
           goalAllows(ex, activeProfile.goal) &&
@@ -2082,6 +2580,7 @@ export function generateNextWorkout(
       )
     : pickForMovement(
         compoundMovements,
+        compoundTargets.length,
         (ex) =>
           environmentAllowsExercise(ex, activeProfile) &&
           isHeavyEquipment(ex) &&
@@ -2094,6 +2593,7 @@ export function generateNextWorkout(
   let secondaryPick = lowerBiasSlot
     ? pickForMovement(
       secondaryMovements,
+      secondaryTargets.length,
       (ex) =>
           environmentAllowsExercise(ex, activeProfile) &&
           goalAllows(ex, activeProfile.goal) &&
@@ -2102,6 +2602,7 @@ export function generateNextWorkout(
       )
     : pickForMovement(
       secondaryMovements,
+      secondaryTargets.length,
       (ex) =>
           environmentAllowsExercise(ex, activeProfile) &&
           goalAllows(ex, activeProfile.goal) &&
@@ -2112,6 +2613,7 @@ export function generateNextWorkout(
     secondaryPick = lowerBiasSlot
       ? pickForMovement(
           secondaryMovements,
+          secondaryTargets.length,
           (ex) =>
             environmentAllowsExercise(ex, activeProfile) &&
             goalAllows(ex, activeProfile.goal) &&
@@ -2120,6 +2622,7 @@ export function generateNextWorkout(
         )
       : pickForMovement(
           secondaryMovements,
+          secondaryTargets.length,
           (ex) =>
             environmentAllowsExercise(ex, activeProfile) &&
             goalAllows(ex, activeProfile.goal) &&
@@ -2130,6 +2633,7 @@ export function generateNextWorkout(
   if (!secondaryPick) {
     secondaryPick = pickForMovement(
       secondaryMovements,
+      secondaryTargets.length,
       (ex) =>
         environmentAllowsExercise(ex, activeProfile) &&
         goalAllows(ex, activeProfile.goal) &&
@@ -2139,9 +2643,9 @@ export function generateNextWorkout(
   }
 
   if (compoundPick && secondaryPick && hardMode) {
-    claim(compoundPick.exercise);
+    claimWithStress(compoundPick.exercise, compoundTargets.length);
     pushMovement(compoundPick.movement);
-    claim(secondaryPick.exercise);
+    claimWithStress(secondaryPick.exercise, 4);
     pushMovement(secondaryPick.movement);
     sections.push({
       kind: "superset",
@@ -2154,7 +2658,7 @@ export function generateNextWorkout(
     });
   } else {
     if (compoundPick) {
-      claim(compoundPick.exercise);
+      claimWithStress(compoundPick.exercise, compoundTargets.length);
       pushMovement(compoundPick.movement);
       sections.push({
         kind: "compound",
@@ -2164,7 +2668,7 @@ export function generateNextWorkout(
       });
     }
     if (secondaryPick) {
-      claim(secondaryPick.exercise);
+      claimWithStress(secondaryPick.exercise, secondaryTargets.length);
       pushMovement(secondaryPick.movement);
       sections.push({
         kind: "accessory",
@@ -2309,7 +2813,11 @@ export function generateNextWorkout(
       .map(findExerciseByName)
       .filter((exercise): exercise is Exercise => Boolean(exercise));
     templateExercises.forEach((exercise) => {
-      claim(exercise);
+      claimWithStress(
+        exercise,
+        chosenTemplate.rounds,
+        PLANNER_TUNING.fatigueBudget.finisherStressMultiplier,
+      );
       if (movementOf(exercise) === "carry_core") pushMovement("carry_core");
     });
     sections.push({
@@ -2335,6 +2843,13 @@ export function generateNextWorkout(
   finisherCandidates.forEach((ex) => finisherNoise.set(ex.name, rng()));
   const sortFinisherScore = (ex: Exercise, currentPicks: Exercise[]): number => {
     let s = 0;
+    const projectedStress = estimatePlannedExerciseStress(
+      ex,
+      finisherRounds,
+      PLANNER_TUNING.fatigueBudget.finisherStressMultiplier,
+    );
+    const projectedSessionTotal =
+      sumMuscleStress(plannedSessionStress) + sumMuscleStress(projectedStress);
     if (isAccessibleConditioningFinisher(ex)) s += 5;
     if (isAccessibleMetabolicFinisher(ex)) s += 4.5;
     if (movementOf(ex) === "carry_core") s += 4;
@@ -2348,6 +2863,11 @@ export function generateNextWorkout(
       workouts,
       todayISO,
     );
+    if (projectedSessionTotal > sessionFatigueBudget) {
+      s -=
+        (projectedSessionTotal - sessionFatigueBudget) *
+        PLANNER_TUNING.fatigueBudget.finisherBudgetPenaltyMultiplier;
+    }
     return s + (finisherNoise.get(ex.name) ?? 0) * 0.5;
   };
 
@@ -2396,7 +2916,11 @@ export function generateNextWorkout(
 
   if (finisherPicks.length > 0) {
     finisherPicks.forEach((fin) => {
-      claim(fin);
+      claimWithStress(
+        fin,
+        finisherRounds,
+        PLANNER_TUNING.fatigueBudget.finisherStressMultiplier,
+      );
       if (movementOf(fin) === "carry_core") pushMovement("carry_core");
     });
     sections.push({
@@ -2484,6 +3008,17 @@ export function generateNextWorkout(
   const selectedExerciseNames = new Set(
     sections.flatMap((section) => section.exercises.map((exercise) => exercise.name)),
   );
+  const plannedSessionStressTotal = sumMuscleStress(plannedSessionStress);
+  const budgetUsage = sessionFatigueBudget > 0
+    ? plannedSessionStressTotal / sessionFatigueBudget
+    : 0;
+  const recentFocusStress = slot.focusMuscles
+    .map((muscle) => ({
+      muscle,
+      stress: recentStress[muscle] ?? 0,
+    }))
+    .filter(({ stress }) => stress > PLANNER_TUNING.rationale.recentFocusStressThreshold)
+    .sort((a, b) => b.stress - a.stress);
   const rotatedOffLiftNames = [...stalledExerciseNames]
     .map((name) => EXERCISES.find((exercise) => exercise.name === name))
     .filter((exercise): exercise is Exercise => Boolean(exercise))
@@ -2517,14 +3052,33 @@ export function generateNextWorkout(
   );
   const remainingFocus = slot.focusMuscles
     .map((muscle) => {
-      const target = slot.targetPrimarySets[muscle] ?? 0;
+      const target = slot.targetPrimaryStimulus[muscle] ?? 0;
       if (target <= 0) return null;
-      const done = coverage.muscleStats[muscle]?.asPrimarySets ?? 0;
-      return done < target ? `${muscle.replace("_", " ")} ${done}/${target}` : null;
+      const done = coverage.muscleStats[muscle]?.primaryStimulus ?? 0;
+      const doneLabel = Number(done.toFixed(1));
+      const targetLabel = Number(target.toFixed(1));
+      return done < target ? `${muscle.replace("_", " ")} ${doneLabel}/${targetLabel}` : null;
     })
     .filter((value): value is string => Boolean(value));
   if (remainingFocus.length > 0) {
-    rationale.push(`Still building this slot's focus volume: ${remainingFocus.join(", ")}.`);
+    rationale.push(`Still building this slot's focus stimulus: ${remainingFocus.join(", ")}.`);
+  }
+  if (recentFocusStress.length > 0) {
+    rationale.push(
+      `Recent overlap is high for ${recentFocusStress
+        .slice(0, PLANNER_TUNING.rationale.recentFocusDisplayLimit)
+        .map(({ muscle }) => muscle.replace("_", " "))
+        .join(", ")}, so this session steers stress toward fresher work.`,
+    );
+  }
+  if (budgetUsage >= PLANNER_TUNING.rationale.budgetHighThreshold) {
+    rationale.push(
+      "Kept total session fatigue in check so this workout stays productive without overshooting recovery.",
+    );
+  } else if (budgetUsage >= PLANNER_TUNING.rationale.budgetMediumThreshold) {
+    rationale.push(
+      "Capped the total load a bit to respect recent fatigue while still moving weekly stimulus forward.",
+    );
   }
   if (activeProfile.goal === "physique") {
     rationale.push(
@@ -2591,7 +3145,8 @@ export function generateNextWorkout(
       summary: slot.summary,
       sessionIndex: sessionIndex + 1,
       totalSessions: split.length,
-      targetPrimarySets: slot.targetPrimarySets,
+      targetPrimaryStimulus: slot.targetPrimaryStimulus,
+      targetPrimarySets: slot.targetPrimaryStimulus,
     },
     sections,
     rationale,

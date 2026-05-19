@@ -16,3 +16,9 @@ Open `http://localhost:3000`.
 ```bash
 npm test
 ```
+
+## Planner tuning
+
+Planner behavior weights and thresholds live in [src/lib/planner-tuning.ts](/Users/tiffanyphan/code/workout-project/src/lib/planner-tuning.ts).
+
+For a practical guide to adjusting lower/upper balance, recovery conservatism, arm volume, and session fatigue caps, see [docs/planner-tuning-notes.md](/Users/tiffanyphan/code/workout-project/docs/planner-tuning-notes.md).

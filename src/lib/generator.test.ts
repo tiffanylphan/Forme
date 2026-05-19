@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { findExercise } from "./exercises";
 import { generateNextWorkout } from "./generator";
+import { movementOf } from "./movement";
 import type { TrainingProfile, Workout } from "./types";
 
 const profile: TrainingProfile = {
@@ -46,6 +47,10 @@ const workout = (
     })),
   })),
 });
+
+const draftExerciseNames = (
+  draft: ReturnType<typeof generateNextWorkout>,
+): string[] => draft.sections.flatMap((section) => section.exercises.map((exercise) => exercise.name));
 
 describe("generateNextWorkout", () => {
   it("starts a 4-day physique week on Lower A", () => {
@@ -267,7 +272,26 @@ describe("generateNextWorkout", () => {
     const draft = generateNextWorkout(workouts, "2026-05-06", 555, profile);
     expect(
       draft.rationale.some((line) =>
-        line.includes("Still building this slot's focus volume:"),
+        line.includes("Still building this slot's focus stimulus:"),
+      ),
+    ).toBe(true);
+  });
+
+  it("explains when recent overlap or fatigue budgeting keeps the session more restrained", () => {
+    const workouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "Barbell Romanian deadlift", sets: 4 },
+        { name: "Cable row", sets: 3 },
+      ]),
+    ];
+    const draft = generateNextWorkout(workouts, "2026-05-06", 556, profile);
+
+    expect(
+      draft.rationale.some((line) =>
+        line.includes("Recent overlap is high") ||
+        line.includes("Kept total session fatigue in check") ||
+        line.includes("Capped the total load a bit"),
       ),
     ).toBe(true);
   });
@@ -829,5 +853,248 @@ describe("generateNextWorkout", () => {
         line.includes("Rotated off stalled lift: Barbell hip thrust."),
       ),
     ).toBe(true);
+  });
+
+  it("does not fall back to naive modulo rotation once all slots are represented", () => {
+    const workouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "Barbell Romanian deadlift", sets: 3 },
+      ], {
+        slotId: "lower_glute_ham",
+        title: "Lower A",
+      }),
+      workout("w2", "2026-05-06", [
+        { name: "Cable row", sets: 4 },
+        { name: "DB lateral raise", sets: 3 },
+      ], {
+        slotId: "upper_back_shoulder",
+        title: "Upper A",
+      }),
+      workout("w3", "2026-05-07", [
+        { name: "Goblet squat", sets: 4 },
+        { name: "DB reverse lunge", sets: 3 },
+      ], {
+        slotId: "lower_glute_quad",
+        title: "Lower B",
+      }),
+      workout("w4", "2026-05-08", [
+        { name: "Lat pulldown", sets: 4 },
+        { name: "DB lateral raise", sets: 3 },
+        { name: "DB curl", sets: 2 },
+      ], {
+        slotId: "upper_back_shoulder_arms",
+        title: "Upper B",
+      }),
+      workout("w5", "2026-05-09", [
+        { name: "Cable row", sets: 4 },
+        { name: "Face pull", sets: 3 },
+        { name: "DB curl", sets: 2 },
+      ], {
+        slotId: "upper_back_shoulder_arms",
+        title: "Upper B",
+      }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-10", 2468, profile);
+
+    expect(draft.split.title).toMatch(/^Lower/);
+  });
+
+  it("does not let a hybrid manual session consume a new split slot too aggressively", () => {
+    const workouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "DB Bulgarian split squat", sets: 3 },
+      ], {
+        slotId: "lower_glute_ham",
+        title: "Lower A",
+      }),
+      workout("w2", "2026-05-06", [
+        { name: "Cable row", sets: 4 },
+        { name: "DB overhead press", sets: 3 },
+      ], {
+        slotId: "upper_back_shoulder",
+        title: "Upper A",
+      }),
+      workout("w3", "2026-05-07", [
+        { name: "Goblet squat", sets: 4 },
+        { name: "DB reverse lunge", sets: 3 },
+      ], {
+        slotId: "lower_glute_quad",
+        title: "Lower B",
+      }),
+      workout("w4", "2026-05-08", [
+        { name: "Goblet squat", sets: 3 },
+        { name: "Cable row", sets: 3 },
+        { name: "DB overhead press", sets: 2 },
+      ]),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-09", 5312, profile);
+
+    expect(draft.split.title).toBe("Upper B");
+  });
+
+  it("prefers a fresher quad or single-leg opener over another posterior-chain hinge", () => {
+    const workouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "Barbell Romanian deadlift", sets: 3 },
+      ], {
+        slotId: "lower_glute_ham",
+        title: "Lower A",
+      }),
+      workout("w2", "2026-05-06", [
+        { name: "Cable row", sets: 4 },
+        { name: "DB overhead press", sets: 3 },
+      ], {
+        slotId: "upper_back_shoulder",
+        title: "Upper A",
+      }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-07", 8642, profile);
+    const opener = draft.sections[0]?.exercises[0];
+    const openerMeta = opener ? findExercise(opener.name) : null;
+
+    expect(draft.split.title).toBe("Lower B");
+    expect(movementOf(openerMeta!)).not.toBe("hinge");
+  });
+
+  it("keeps hard-mode lower sessions from overstacking costly lower anchors", () => {
+    const hardProfile: TrainingProfile = {
+      ...profile,
+      intensity: "hard",
+    };
+    const draft = generateNextWorkout([], "2026-05-07", 97531, hardProfile);
+    const allExercises = draft.sections.flatMap((section) => section.exercises);
+    const costlyLowerAnchors = allExercises.filter((exercise) => {
+      const movement = movementOf(findExercise(exercise.name)!);
+      return movement === "hinge" || movement === "squat" || movement === "single_leg";
+    });
+
+    expect(draft.split.title).toBe("Lower A");
+    expect(costlyLowerAnchors.length).toBeLessThanOrEqual(4);
+  });
+
+  it("holds representative planner calibration scenarios", () => {
+    const scenarios: Array<{
+      name: string;
+      workouts: Workout[];
+      date: string;
+      activeProfile?: TrainingProfile;
+      assert: (draft: ReturnType<typeof generateNextWorkout>) => void;
+    }> = [
+      {
+        name: "deficit-led lower slot beats naive rotation after lower and upper work",
+        workouts: [
+          workout("s1-w1", "2026-05-05", [
+            { name: "Barbell hip thrust", sets: 4 },
+            { name: "Barbell Romanian deadlift", sets: 3 },
+          ], {
+            slotId: "lower_glute_ham",
+            title: "Lower A",
+          }),
+          workout("s1-w2", "2026-05-06", [
+            { name: "Cable row", sets: 4 },
+            { name: "DB lateral raise", sets: 3 },
+          ], {
+            slotId: "upper_back_shoulder",
+            title: "Upper A",
+          }),
+        ],
+        date: "2026-05-07",
+        assert: (draft) => {
+          expect(draft.split.title).toBe("Lower B");
+        },
+      },
+      {
+        name: "hybrid manual session does not consume the last open split slot",
+        workouts: [
+          workout("s2-w1", "2026-05-05", [
+            { name: "Barbell hip thrust", sets: 4 },
+            { name: "DB Bulgarian split squat", sets: 3 },
+          ], {
+            slotId: "lower_glute_ham",
+            title: "Lower A",
+          }),
+          workout("s2-w2", "2026-05-06", [
+            { name: "Cable row", sets: 4 },
+            { name: "DB overhead press", sets: 3 },
+          ], {
+            slotId: "upper_back_shoulder",
+            title: "Upper A",
+          }),
+          workout("s2-w3", "2026-05-07", [
+            { name: "Goblet squat", sets: 4 },
+            { name: "DB reverse lunge", sets: 3 },
+          ], {
+            slotId: "lower_glute_quad",
+            title: "Lower B",
+          }),
+          workout("s2-w4", "2026-05-08", [
+            { name: "Goblet squat", sets: 3 },
+            { name: "Cable row", sets: 3 },
+            { name: "DB overhead press", sets: 2 },
+          ]),
+        ],
+        date: "2026-05-09",
+        assert: (draft) => {
+          expect(draft.split.title).toBe("Upper B");
+        },
+      },
+      {
+        name: "recent posterior-chain overlap redirects the opener away from another hinge",
+        workouts: [
+          workout("s3-w1", "2026-05-05", [
+            { name: "Barbell hip thrust", sets: 4 },
+            { name: "Barbell Romanian deadlift", sets: 3 },
+          ], {
+            slotId: "lower_glute_ham",
+            title: "Lower A",
+          }),
+          workout("s3-w2", "2026-05-06", [
+            { name: "Cable row", sets: 4 },
+            { name: "DB overhead press", sets: 3 },
+          ], {
+            slotId: "upper_back_shoulder",
+            title: "Upper A",
+          }),
+        ],
+        date: "2026-05-07",
+        assert: (draft) => {
+          const opener = draft.sections[0]?.exercises[0];
+          const openerMeta = opener ? findExercise(opener.name) : null;
+          expect(draft.split.title).toBe("Lower B");
+          expect(movementOf(openerMeta!)).not.toBe("hinge");
+        },
+      },
+      {
+        name: "hard lower days stay within the fatigue budget instead of stacking anchors endlessly",
+        workouts: [],
+        date: "2026-05-07",
+        activeProfile: { ...profile, intensity: "hard" },
+        assert: (draft) => {
+          const costlyLowerAnchors = draftExerciseNames(draft).filter((name) => {
+            const exercise = findExercise(name);
+            const movement = exercise ? movementOf(exercise) : null;
+            return movement === "hinge" || movement === "squat" || movement === "single_leg";
+          });
+          expect(draft.split.title).toBe("Lower A");
+          expect(costlyLowerAnchors.length).toBeLessThanOrEqual(4);
+        },
+      },
+    ];
+
+    scenarios.forEach((scenario) => {
+      const draft = generateNextWorkout(
+        scenario.workouts,
+        scenario.date,
+        424242,
+        scenario.activeProfile ?? profile,
+      );
+      scenario.assert(draft);
+    });
   });
 });

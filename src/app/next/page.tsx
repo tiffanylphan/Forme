@@ -539,7 +539,7 @@ function PlanningCard({
 
       <div className="mt-3 border-t border-divider pt-3">
         <WeeklyTargetCard
-          targetPrimarySets={draft.split.targetPrimarySets}
+          targetPrimaryStimulus={draft.split.targetPrimaryStimulus ?? draft.split.targetPrimarySets}
           coverage={coverage}
           embedded
         />
@@ -606,24 +606,24 @@ function RationaleCard({
 }
 
 function WeeklyTargetCard({
-  targetPrimarySets,
+  targetPrimaryStimulus,
   coverage,
   embedded = false,
 }: {
-  targetPrimarySets: Partial<Record<MuscleGroup, number>>;
+  targetPrimaryStimulus: Partial<Record<MuscleGroup, number>>;
   coverage: ReturnType<typeof computeCoverage>;
   embedded?: boolean;
 }) {
   const rows = useMemo(
     () =>
-      Object.entries(targetPrimarySets)
+      Object.entries(targetPrimaryStimulus)
         .filter((entry): entry is [MuscleGroup, number] => {
           const [, target] = entry;
           return typeof target === "number" && target > 0;
         })
         .sort((a, b) => b[1] - a[1])
         .map(([muscle, target]) => {
-          const done = coverage.muscleStats[muscle]?.asPrimarySets ?? 0;
+          const done = coverage.muscleStats[muscle]?.primaryStimulus ?? 0;
           const pct = Math.min(100, Math.round((done / target) * 100));
           return {
             muscle,
@@ -633,7 +633,7 @@ function WeeklyTargetCard({
             remaining: Math.max(0, target - done),
           };
         }),
-    [coverage, targetPrimarySets],
+    [coverage, targetPrimaryStimulus],
   );
   const [expanded, setExpanded] = useState(false);
 
@@ -645,8 +645,8 @@ function WeeklyTargetCard({
     <section className={embedded ? "" : "rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-3"}>
       <div className="mb-2 flex items-center justify-between gap-3">
         <div>
-          <p className="label-eyebrow">Weekly target sets</p>
-          <p className="mt-0.5 text-[11px] text-text-subtle">Primary sets for this slot.</p>
+          <p className="label-eyebrow">Weekly target stimulus</p>
+          <p className="mt-0.5 text-[11px] text-text-subtle">Weighted primary stimulus for this slot.</p>
         </div>
         {rows.length > 3 && (
           <button
@@ -667,18 +667,18 @@ function WeeklyTargetCard({
                 <span className="text-[11px] text-text-subtle capitalize">
                   {row.remaining === 0
                     ? "On target"
-                    : `${row.remaining} set${row.remaining !== 1 ? "s" : ""} left`}
+                    : `${row.remaining.toFixed(1)} stimulus left`}
                 </span>
               </div>
               <span className="font-mono text-[12px] text-text">
-                {row.done}/{row.target}
+                {row.done.toFixed(1)}/{row.target.toFixed(1)}
               </span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-[#ECE8DE]">
               <div
                 className="h-full rounded-full bg-text"
                 style={{ width: `${row.pct}%` }}
-                aria-label={`${formatMuscle(row.muscle)} ${row.done} of ${row.target} sets`}
+                aria-label={`${formatMuscle(row.muscle)} ${row.done.toFixed(1)} of ${row.target.toFixed(1)} stimulus`}
               />
             </div>
           </div>
