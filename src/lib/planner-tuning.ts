@@ -78,6 +78,8 @@ export const PLANNER_TUNING = {
     leadCatchupBoost: 3,
     leadSameSidePenalty: 2.5,
     leadCap: 8,
+    crossWeekRecencyDays: 6,
+    recentFatigueSlotPenaltyWeight: 0.9,
   },
 
   // How much the latest sessions matter when scoring overlap.

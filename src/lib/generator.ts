@@ -1133,6 +1133,7 @@ const scoreSplitSlot = (
   muscleSaturation: Partial<Record<MuscleGroup, number>> = {},
   lastSessionMovements: Set<MovementPattern> = new Set(),
   weeklyBiasBalance: WeeklyBiasBalance = { lower: 0, upper: 0 },
+  recentMuscleFatigue: Partial<Record<MuscleGroup, number>> = {},
 ): number => {
   const slotPrimaryTargetTotal = Object.values(slot.targetPrimaryStimulus).reduce(
     (sum, sets) => sum + (sets ?? 0),
@@ -1200,6 +1201,17 @@ const scoreSplitSlot = (
     else if (overlapFraction >= 0.67) score -= PLANNER_TUNING.splitSelection.partialOverlapPenalty;
   }
 
+  // Penalize slots whose focus muscles were recently stressed.
+  // Coarse movement-pattern overlap doesn't capture that a trainer workout
+  // hitting heavy squats/lunges/RDLs overlaps with Lower A's glute+hamstring focus.
+  const fatiguePenalty = slot.focusMuscles.reduce(
+    (sum, muscle) => sum + (recentMuscleFatigue[muscle] ?? 0),
+    0,
+  );
+  if (fatiguePenalty > 0) {
+    score -= fatiguePenalty * PLANNER_TUNING.splitSelection.recentFatigueSlotPenaltyWeight;
+  }
+
   const lowerLead = weeklyBiasBalance.lower - weeklyBiasBalance.upper;
   if (lowerLead >= PLANNER_TUNING.splitSelection.leadThreshold) {
     if (isUpperSlot(slot)) {
@@ -1243,6 +1255,7 @@ const pickBestSplitSlotIndex = (
   muscleSaturation: Partial<Record<MuscleGroup, number>> = {},
   lastSessionMovements: Set<MovementPattern> = new Set(),
   weeklyBiasBalance: WeeklyBiasBalance = { lower: 0, upper: 0 },
+  recentMuscleFatigue: Partial<Record<MuscleGroup, number>> = {},
 ): { index: number; score: number } | null => {
   let best: { index: number; score: number } | null = null;
 
@@ -1255,6 +1268,7 @@ const pickBestSplitSlotIndex = (
       muscleSaturation,
       lastSessionMovements,
       weeklyBiasBalance,
+      recentMuscleFatigue,
     );
     if (!best || score > best.score) {
       best = { index, score };
@@ -1271,6 +1285,7 @@ const getNextSplitSlotIndex = (
   muscleDeficits: MuscleDeficitMap = {},
   muscleSaturation: Partial<Record<MuscleGroup, number>> = {},
   lastSessionMovements: Set<MovementPattern> = new Set(),
+  recentMuscleFatigue: Partial<Record<MuscleGroup, number>> = {},
 ): number => {
   const weeklyBiasBalance = summarizeWeeklyBiasBalance(split, workouts);
   const incompleteIndices = getIncompleteSplitSlotIndices(split, workouts);
@@ -1284,6 +1299,7 @@ const getNextSplitSlotIndex = (
       muscleSaturation,
       lastSessionMovements,
       weeklyBiasBalance,
+      recentMuscleFatigue,
     );
     if (bestIncomplete && bestIncomplete.score > 0) return bestIncomplete.index;
     const firstIncompleteIndex = incompleteIndices[0];
@@ -1299,6 +1315,7 @@ const getNextSplitSlotIndex = (
     muscleSaturation,
     lastSessionMovements,
     weeklyBiasBalance,
+    recentMuscleFatigue,
   );
   if (bestOverall) return bestOverall.index;
 
@@ -1313,6 +1330,7 @@ const maybeOverrideForCriticalGap = (
   muscleSaturation: Partial<Record<MuscleGroup, number>> = {},
   lastSessionMovements: Set<MovementPattern> = new Set(),
   weeklyBiasBalance: WeeklyBiasBalance = { lower: 0, upper: 0 },
+  recentMuscleFatigue: Partial<Record<MuscleGroup, number>> = {},
 ): number => {
   const baseSlot = split[baseIndex];
   const criticalMovements = MOVEMENT_PATTERNS
@@ -1335,6 +1353,7 @@ const maybeOverrideForCriticalGap = (
       muscleSaturation,
       lastSessionMovements,
       weeklyBiasBalance,
+      recentMuscleFatigue,
     );
 
     split.forEach((slot, index) => {
@@ -1347,6 +1366,7 @@ const maybeOverrideForCriticalGap = (
         muscleSaturation,
         lastSessionMovements,
         weeklyBiasBalance,
+        recentMuscleFatigue,
       );
       if (slot.preferredMovements.includes(movement)) score += 6;
       if (score > bestScore) {
@@ -1371,6 +1391,7 @@ const maybeOverrideForStalledBias = (
   lastSessionMovements: Set<MovementPattern>,
   weeklyBiasBalance: WeeklyBiasBalance,
   stalledBiasPressure: BiasPressure,
+  recentMuscleFatigue: Partial<Record<MuscleGroup, number>> = {},
 ): number => {
   const preferredBias =
     stalledBiasPressure.lower >= stalledBiasPressure.upper + 1
@@ -1396,6 +1417,7 @@ const maybeOverrideForStalledBias = (
     muscleSaturation,
     lastSessionMovements,
     weeklyBiasBalance,
+    recentMuscleFatigue,
   );
   if (!preferred) return baseIndex;
   return preferred.index;
@@ -1882,25 +1904,48 @@ export function generateNextWorkout(
       stress: summarizeWorkoutMuscleStress(workout),
     }));
 
-  const incompleteIndices = getIncompleteSplitSlotIndices(split, coverage.workouts);
-  const weeklyBiasBalance = summarizeWeeklyBiasBalance(split, coverage.workouts);
+  // Cross-week continuity: treat slots explicitly completed in the last N days
+  // as already done this cycle, even if they fall before the Monday week boundary.
+  const crossWeekDays = PLANNER_TUNING.splitSelection.crossWeekRecencyDays;
+  const crossWeekCutoff = new Date(window.startISO + "T12:00:00");
+  crossWeekCutoff.setDate(crossWeekCutoff.getDate() - crossWeekDays);
+  const crossWeekCutoffISO = crossWeekCutoff.toISOString().slice(0, 10);
+  const crossWeekRecentWorkouts = workouts.filter(
+    (w) => w.date >= crossWeekCutoffISO && w.date < window.startISO && w.planSlot?.slotId,
+  );
+  const recentWorkoutsForSlotSelection = [...coverage.workouts, ...crossWeekRecentWorkouts];
+
+  // Muscle fatigue from recent sessions — summed with decay across last 2 workouts.
+  // Used in slot scoring to avoid programming sessions that pile onto recently
+  // stressed muscle groups, independent of coarse movement-pattern overlap.
+  const recentMuscleFatigue: Partial<Record<MuscleGroup, number>> = {};
+  recentSessionStressMaps.forEach(({ stress, decay }) => {
+    (Object.entries(stress) as [MuscleGroup, number][]).forEach(([muscle, value]) => {
+      recentMuscleFatigue[muscle] = (recentMuscleFatigue[muscle] ?? 0) + value * decay;
+    });
+  });
+
+  const incompleteIndices = getIncompleteSplitSlotIndices(split, recentWorkoutsForSlotSelection);
+  const weeklyBiasBalance = summarizeWeeklyBiasBalance(split, recentWorkoutsForSlotSelection);
   const sessionIndex = maybeOverrideForStalledBias(
     split,
     maybeOverrideForCriticalGap(
       split,
       getNextSplitSlotIndex(
         split,
-        coverage.workouts,
+        recentWorkoutsForSlotSelection,
         need,
         muscleDeficits,
         muscleSaturation,
         lastSessionMovements,
+        recentMuscleFatigue,
       ),
       need,
       muscleDeficits,
       muscleSaturation,
       lastSessionMovements,
       weeklyBiasBalance,
+      recentMuscleFatigue,
     ),
     incompleteIndices,
     need,
@@ -1909,6 +1954,7 @@ export function generateNextWorkout(
     lastSessionMovements,
     weeklyBiasBalance,
     stalledBiasPressure,
+    recentMuscleFatigue,
   );
   const slot = split[sessionIndex];
   const currentWeekExerciseNames = new Set(

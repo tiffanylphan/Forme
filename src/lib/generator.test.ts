@@ -1097,4 +1097,38 @@ describe("generateNextWorkout", () => {
       scenario.assert(draft);
     });
   });
+
+  it("does not recommend a slot completed at the end of the prior week when the new week starts", () => {
+    // Lower A done Saturday, then a heavy lower trainer workout logged Monday (new week).
+    // Without cross-week continuity the selector would forget Lower A and recommend it again.
+    const workouts = [
+      workout("w1", "2026-05-16", [
+        { name: "Barbell Romanian deadlift", sets: 4 },
+        { name: "Bench single-leg hip thrust", sets: 3 },
+        { name: "Single-leg DB RDL", sets: 3 },
+      ], { slotId: "lower_glute_ham", title: "Lower A" }),
+      workout("w2", "2026-05-18", [
+        { name: "Leg press", sets: 4 },
+        { name: "DB walking lunge", sets: 4 },
+        { name: "DB flat bench press", sets: 3 },
+      ]),
+    ];
+    const draft = generateNextWorkout(workouts, "2026-05-18", 123, profile);
+    expect(draft.split.title).toBe("Upper A · Back/Shoulders");
+  });
+
+  it("does not recommend Lower A the day after a lower-heavy trainer workout with no prior history", () => {
+    // Trainer workout hits same muscles as Lower A (quads, glutes, hamstrings).
+    // The muscle fatigue penalty should outweigh the deficit advantage.
+    const workouts = [
+      workout("w1", "2026-05-18", [
+        { name: "Leg press", sets: 4 },
+        { name: "DB walking lunge", sets: 4 },
+        { name: "DB split squat to RDL", sets: 3 },
+        { name: "DB flat bench press", sets: 3 },
+      ]),
+    ];
+    const draft = generateNextWorkout(workouts, "2026-05-18", 123, profile);
+    expect(draft.split.title).toBe("Upper A · Back/Shoulders");
+  });
 });
