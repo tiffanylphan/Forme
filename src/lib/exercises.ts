@@ -19,6 +19,7 @@ export const EXERCISES: Exercise[] = [
   { name: "Lateral step-up", primary: ["quads", "glutes"], secondary: ["calves"], equipment: "dumbbell", pattern: "squat" },
   { name: "Box step-up", primary: ["quads", "glutes"], secondary: ["hamstrings"], equipment: "dumbbell", pattern: "squat" },
   { name: "Leg press", primary: ["quads", "glutes"], secondary: ["hamstrings"], equipment: "machine", pattern: "squat" },
+  { name: "Angled machine leg press", primary: ["quads", "glutes"], secondary: ["hamstrings"], equipment: "machine", pattern: "squat" },
   { name: "Hack squat", primary: ["quads"], secondary: ["glutes"], equipment: "machine", pattern: "squat" },
   { name: "Leg extension", primary: ["quads"], secondary: [], equipment: "machine", pattern: "squat" },
   { name: "Wall sit", primary: ["quads"], secondary: ["core"], equipment: "bodyweight", pattern: "squat" },
