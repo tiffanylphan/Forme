@@ -12,8 +12,8 @@ const generateNextWorkoutMock = vi.fn(
     return {
       split: {
         slotId: "upper_a",
-        title: "Upper A",
-        summary: "Back and shoulder emphasis.",
+        title: "Upper A · Back/Shoulders",
+        summary: "Upper session theme with back, shoulders, and glute support.",
         sessionIndex: 1,
         totalSessions: 4,
         targetPrimaryStimulus: {
@@ -37,11 +37,11 @@ const generateNextWorkoutMock = vi.fn(
       },
       rationale: broughtBack
         ? [
-            "This is Upper A: Back and shoulder emphasis.",
+            "This is Upper A · Back/Shoulders: Upper session theme with back, shoulders, and glute support.",
             "Still building this slot's focus stimulus: back, shoulders.",
           ]
         : [
-            "This is Upper A: Back and shoulder emphasis.",
+            "This is Upper A · Back/Shoulders: Upper session theme with back, shoulders, and glute support.",
             "Rotated off stalled lift: Barbell hip thrust.",
             "Still building this slot's focus stimulus: back, shoulders.",
             "Hit only once: pull, push.",
@@ -356,7 +356,7 @@ describe("NextPage interactions", () => {
     expect(stashDraftMock).toHaveBeenCalledTimes(1);
     const payload = stashDraftMock.mock.calls[0][0] as { source: string; draft: { split: { title: string } } };
     expect(payload.source).toBe("manual");
-    expect(payload.draft.split.title).toBe("Upper A");
+    expect(payload.draft.split.title).toBe("Upper A · Back/Shoulders");
   });
 
   it("shows only the rationale highlights until expanded", async () => {
@@ -377,7 +377,7 @@ describe("NextPage interactions", () => {
 
     expect(
       screen.getByText((content) =>
-        content.includes("This is Upper A: Back and shoulder emphasis."),
+        content.includes("This is Upper A · Back/Shoulders: Upper session theme with back, shoulders, and glute support."),
       ),
     ).toBeInTheDocument();
     expect(

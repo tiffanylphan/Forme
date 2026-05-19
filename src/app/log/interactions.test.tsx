@@ -102,8 +102,8 @@ describe("LogPage interactions", () => {
       draft: {
         split: {
           slotId: "upper_back_shoulder",
-          title: "Upper A",
-          summary: "Back and shoulder emphasis.",
+          title: "Upper A · Back/Shoulders",
+          summary: "Upper session theme with back, shoulders, and glute support.",
           sessionIndex: 2,
           totalSessions: 4,
           targetPrimarySets: { back: 8, shoulders: 5 },
@@ -175,13 +175,13 @@ describe("LogPage interactions", () => {
         ],
         planSlot: {
           slotId: "upper_back_shoulder",
-          title: "Upper A",
+          title: "Upper A · Back/Shoulders",
         },
         pendingDraft: {
           split: {
             slotId: "upper_back_shoulder",
-            title: "Upper A",
-            summary: "Back and shoulder emphasis.",
+            title: "Upper A · Back/Shoulders",
+            summary: "Upper session theme with back, shoulders, and glute support.",
             sessionIndex: 2,
             totalSessions: 4,
             targetPrimarySets: { back: 8, shoulders: 5 },
@@ -224,8 +224,8 @@ describe("LogPage interactions", () => {
       draft: {
         split: {
           slotId: "upper_back_shoulder",
-          title: "Upper A",
-          summary: "Back and shoulder emphasis.",
+          title: "Upper A · Back/Shoulders",
+          summary: "Upper session theme with back, shoulders, and glute support.",
           sessionIndex: 2,
           totalSessions: 4,
           targetPrimarySets: { back: 8, shoulders: 5 },

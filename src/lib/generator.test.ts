@@ -55,14 +55,14 @@ const draftExerciseNames = (
 describe("generateNextWorkout", () => {
   it("starts a 4-day physique week on Lower A", () => {
     const draft = generateNextWorkout([], "2026-05-06", 123, profile);
-    expect(draft.split.title).toBe("Lower A");
+    expect(draft.split.title).toBe("Lower A · Posterior");
     expect(draft.rationale.some((line) => line.includes("Lower A"))).toBe(true);
-    expect(draft.split.summary).toBe("Lower emphasis with posterior chain and upper-back support.");
+    expect(draft.split.summary).toBe("Lower session theme with posterior chain and upper-back support.");
   });
 
   it("starts a 3-day physique week on Lower A", () => {
     const draft = generateNextWorkout([], "2026-05-06", 123, threeDayProfile);
-    expect(draft.split.title).toBe("Lower A");
+    expect(draft.split.title).toBe("Lower A · Posterior");
   });
 
   it("advances the split based on logged workouts this week", () => {
@@ -73,7 +73,7 @@ describe("generateNextWorkout", () => {
       ]),
     ];
     const draft = generateNextWorkout(workouts, "2026-05-06", 123, profile);
-    expect(draft.split.title).toBe("Upper A");
+    expect(draft.split.title).toBe("Upper A · Back/Shoulders");
   });
 
   it("reacts to already logged exercises and avoids repeating the same lift", () => {
@@ -91,7 +91,7 @@ describe("generateNextWorkout", () => {
     const exerciseNames = draft.sections.flatMap((section) =>
       section.exercises.map((exercise) => exercise.name),
     );
-    expect(draft.split.title).toBe("Lower B");
+    expect(draft.split.title).toBe("Lower B · Quad/Glute");
     expect(exerciseNames).not.toContain("Barbell hip thrust");
     expect(exerciseNames).not.toContain("Barbell Romanian deadlift");
   });
@@ -262,7 +262,7 @@ describe("generateNextWorkout", () => {
       ]),
     ];
     const draft = generateNextWorkout(workouts, "2026-05-08", 999, profile);
-    expect(draft.split.title).toBe("Upper B");
+    expect(draft.split.title).toBe("Upper B · Upper/Arms");
   });
 
   it("includes weekly volume rationale for under-target slot muscles", () => {
@@ -306,7 +306,7 @@ describe("generateNextWorkout", () => {
       (count, section) => count + section.exercises.length,
       0,
     );
-    expect(draft.split.title).toBe("Upper A");
+    expect(draft.split.title).toBe("Upper A · Back/Shoulders");
     expect(totalExercises).toBeGreaterThanOrEqual(5);
   });
 
@@ -318,8 +318,8 @@ describe("generateNextWorkout", () => {
     const draft = generateNextWorkout(workouts, "2026-05-06", 777, profile);
     const allExercises = draft.sections.flatMap((section) => section.exercises);
 
-    expect(draft.split.title).toBe("Upper A");
-    expect(draft.split.summary).toBe("Upper emphasis with back, shoulders, and glute support.");
+    expect(draft.split.title).toBe("Upper A · Back/Shoulders");
+    expect(draft.split.summary).toBe("Upper session theme with back, shoulders, and glute support.");
     expect(
       allExercises.some((exercise) =>
         exercise.primary.includes("glutes") ||
@@ -354,7 +354,7 @@ describe("generateNextWorkout", () => {
     ];
 
     const draft = generateNextWorkout(workouts, "2026-05-08", 4242, profile);
-    expect(draft.split.title).toBe("Lower B");
+    expect(draft.split.title).toBe("Lower B · Quad/Glute");
   });
 
   it("infers split progression from manual workouts without planSlot metadata", () => {
@@ -375,7 +375,7 @@ describe("generateNextWorkout", () => {
     ];
 
     const draft = generateNextWorkout(workouts, "2026-05-14", 123, profile);
-    expect(draft.split.title).not.toBe("Lower B");
+    expect(draft.split.title).not.toBe("Lower B · Quad/Glute");
     expect(draft.split.title.startsWith("Upper")).toBe(true);
   });
 
@@ -442,7 +442,7 @@ describe("generateNextWorkout", () => {
     ];
 
     const draft = generateNextWorkout(workouts, "2026-05-14", 456, profile);
-    expect(draft.split.title).not.toBe("Upper A");
+    expect(draft.split.title).not.toBe("Upper A · Back/Shoulders");
   });
 
   it("does not duplicate an exercise inside a generated workout", () => {
@@ -506,7 +506,7 @@ describe("generateNextWorkout", () => {
     ];
 
     const draft = generateNextWorkout(workouts, "2026-05-07", 5150, profile);
-    expect(draft.split.title).toBe("Upper B");
+    expect(draft.split.title).toBe("Upper B · Upper/Arms");
   });
 
   it("alternates the 3-day upper slot to include direct arms across weeks", () => {
@@ -521,7 +521,7 @@ describe("generateNextWorkout", () => {
     ];
 
     const draft = generateNextWorkout(workouts, "2026-05-06", 8080, threeDayProfile);
-    expect(draft.split.title).toBe("Lower A");
+    expect(draft.split.title).toBe("Lower A · Posterior");
 
     const secondDraft = generateNextWorkout([
       ...workouts,
@@ -533,7 +533,7 @@ describe("generateNextWorkout", () => {
         title: "Lower A",
       }),
     ], "2026-05-06", 8081, threeDayProfile);
-    expect(secondDraft.split.title).toBe("Upper B");
+    expect(secondDraft.split.title).toBe("Upper B · Upper/Arms");
   });
 
   it("allows a short conditioning finisher on 3-day lower sessions", () => {
@@ -670,7 +670,7 @@ describe("generateNextWorkout", () => {
     ];
 
     const draft = generateNextWorkout(workouts, "2026-05-07", 9191, threeDayProfile);
-    expect(draft.split.title).toBe("Upper B");
+    expect(draft.split.title).toBe("Upper B · Upper/Arms");
   });
 
   it("keeps lower physique days glute-biased across the session", () => {
@@ -679,7 +679,7 @@ describe("generateNextWorkout", () => {
       .flatMap((section) => section.exercises)
       .filter((exercise) => exercise.primary.includes("glutes"));
 
-    expect(draft.split.title).toBe("Lower A");
+    expect(draft.split.title).toBe("Lower A · Posterior");
     expect(glutePrimaryExercises.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -713,7 +713,7 @@ describe("generateNextWorkout", () => {
           name.includes("step-up"),
       );
 
-    expect(draft.split.title).toBe("Lower B");
+    expect(draft.split.title).toBe("Lower B · Quad/Glute");
     expect(lowerUnilateralFamilies.length).toBeLessThanOrEqual(1);
   });
 
@@ -738,7 +738,7 @@ describe("generateNextWorkout", () => {
     const draft = generateNextWorkout(workouts, "2026-05-07", 123, profile);
     const opener = draft.sections[0]?.exercises[0]?.name;
 
-    expect(draft.split.title).toBe("Lower B");
+    expect(draft.split.title).toBe("Lower B · Quad/Glute");
     expect(opener).toBeDefined();
     expect(["Leg extension", "Leg curl", "Banded clamshell"]).not.toContain(opener);
   });
@@ -766,7 +766,7 @@ describe("generateNextWorkout", () => {
       section.exercises.map((exercise) => exercise.name),
     );
 
-    expect(draft.split.title).toBe("Lower B");
+    expect(draft.split.title).toBe("Lower B · Quad/Glute");
     expect(exerciseNames).not.toContain("Banded clamshell");
     expect(exerciseNames).not.toContain("Banded fire hydrant");
     expect(exerciseNames).not.toContain("Banded walkout");
@@ -805,7 +805,7 @@ describe("generateNextWorkout", () => {
           exercise.primary.includes("biceps") || exercise.primary.includes("triceps"),
       );
 
-    expect(draft.split.title).toBe("Upper B");
+    expect(draft.split.title).toBe("Upper B · Upper/Arms");
     expect(directArmExercises.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -845,7 +845,7 @@ describe("generateNextWorkout", () => {
           (exercise?.pattern === "hinge" || exercise?.pattern === "squat"),
       );
 
-    expect(draft.split.title).toBe("Lower B");
+    expect(draft.split.title).toBe("Lower B · Quad/Glute");
     expect(exerciseNames).not.toContain("Barbell hip thrust");
     expect(rotatedLowerReplacement).toBe(true);
     expect(
@@ -933,7 +933,7 @@ describe("generateNextWorkout", () => {
 
     const draft = generateNextWorkout(workouts, "2026-05-09", 5312, profile);
 
-    expect(draft.split.title).toBe("Upper B");
+    expect(draft.split.title).toBe("Upper B · Upper/Arms");
   });
 
   it("prefers a fresher quad or single-leg opener over another posterior-chain hinge", () => {
@@ -958,7 +958,7 @@ describe("generateNextWorkout", () => {
     const opener = draft.sections[0]?.exercises[0];
     const openerMeta = opener ? findExercise(opener.name) : null;
 
-    expect(draft.split.title).toBe("Lower B");
+    expect(draft.split.title).toBe("Lower B · Quad/Glute");
     expect(movementOf(openerMeta!)).not.toBe("hinge");
   });
 
@@ -974,7 +974,7 @@ describe("generateNextWorkout", () => {
       return movement === "hinge" || movement === "squat" || movement === "single_leg";
     });
 
-    expect(draft.split.title).toBe("Lower A");
+    expect(draft.split.title).toBe("Lower A · Posterior");
     expect(costlyLowerAnchors.length).toBeLessThanOrEqual(4);
   });
 
@@ -1006,7 +1006,7 @@ describe("generateNextWorkout", () => {
         ],
         date: "2026-05-07",
         assert: (draft) => {
-          expect(draft.split.title).toBe("Lower B");
+          expect(draft.split.title).toBe("Lower B · Quad/Glute");
         },
       },
       {
@@ -1041,7 +1041,7 @@ describe("generateNextWorkout", () => {
         ],
         date: "2026-05-09",
         assert: (draft) => {
-          expect(draft.split.title).toBe("Upper B");
+          expect(draft.split.title).toBe("Upper B · Upper/Arms");
         },
       },
       {
@@ -1066,7 +1066,7 @@ describe("generateNextWorkout", () => {
         assert: (draft) => {
           const opener = draft.sections[0]?.exercises[0];
           const openerMeta = opener ? findExercise(opener.name) : null;
-          expect(draft.split.title).toBe("Lower B");
+          expect(draft.split.title).toBe("Lower B · Quad/Glute");
           expect(movementOf(openerMeta!)).not.toBe("hinge");
         },
       },
@@ -1081,7 +1081,7 @@ describe("generateNextWorkout", () => {
             const movement = exercise ? movementOf(exercise) : null;
             return movement === "hinge" || movement === "squat" || movement === "single_leg";
           });
-          expect(draft.split.title).toBe("Lower A");
+          expect(draft.split.title).toBe("Lower A · Posterior");
           expect(costlyLowerAnchors.length).toBeLessThanOrEqual(4);
         },
       },

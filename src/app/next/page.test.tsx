@@ -37,7 +37,7 @@ describe("NextPage", () => {
     render(<NextPage />);
 
     expect(screen.getByText("This week's slot")).toBeInTheDocument();
-    expect(screen.getByText("Lower A")).toBeInTheDocument();
+    expect(screen.getByText("Lower A · Posterior")).toBeInTheDocument();
     expect(screen.getByText("Training profile")).toBeInTheDocument();
     expect(screen.getByText("Physique")).toBeInTheDocument();
     expect(screen.getByText("Why this routine")).toBeInTheDocument();

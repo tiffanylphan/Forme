@@ -106,8 +106,8 @@ type FinisherTemplate = {
 
 const PHYSIQUE_UPPER_A_SLOT: SplitSlot = {
   id: "upper_back_shoulder",
-  title: "Upper A",
-  summary: "Upper emphasis with back, shoulders, and glute support.",
+  title: "Upper A · Back/Shoulders",
+  summary: "Upper session theme with back, shoulders, and glute support.",
   focusMuscles: ["back", "shoulders", "rear_delts", "glutes", "core"],
   preferredMovements: ["pull", "push"],
   allowedMovements: ["pull", "push", "hinge", "carry_core"],
@@ -116,8 +116,8 @@ const PHYSIQUE_UPPER_A_SLOT: SplitSlot = {
 
 const PHYSIQUE_UPPER_B_SLOT: SplitSlot = {
   id: "upper_back_shoulder_arms",
-  title: "Upper B",
-  summary: "Upper emphasis with shoulders, arms, and lower-body support.",
+  title: "Upper B · Upper/Arms",
+  summary: "Upper session theme with shoulders, arms, and lower-body support.",
   focusMuscles: ["back", "shoulders", "rear_delts", "biceps", "triceps", "glutes", "core"],
   preferredMovements: ["pull", "push"],
   allowedMovements: ["pull", "push", "single_leg", "carry_core"],
@@ -1533,8 +1533,8 @@ const getSplitTemplate = (
       return [
         {
           id: "lower_glute_ham",
-          title: "Lower A",
-          summary: "Glute and hamstring emphasis.",
+          title: "Lower A · Posterior",
+          summary: "Lower session theme with glute and hamstring emphasis.",
           focusMuscles: ["glutes", "hamstrings", "core"],
           preferredMovements: ["hinge", "single_leg", "squat"],
           allowedMovements: ["hinge", "single_leg", "squat", "carry_core"],
@@ -1543,8 +1543,8 @@ const getSplitTemplate = (
         PHYSIQUE_UPPER_A_SLOT,
         {
           id: "lower_glute_quad",
-          title: "Lower B",
-          summary: "Glute and quad emphasis.",
+          title: "Lower B · Quad/Glute",
+          summary: "Lower session theme with glute and quad emphasis.",
           focusMuscles: ["glutes", "quads", "hamstrings", "adductors", "core"],
           preferredMovements: ["single_leg", "squat", "hinge"],
           allowedMovements: ["single_leg", "squat", "hinge", "carry_core"],
@@ -1556,8 +1556,8 @@ const getSplitTemplate = (
       return [
         {
           id: "lower_glute_ham",
-          title: "Lower A",
-          summary: "Lower emphasis with posterior chain and upper-back support.",
+          title: "Lower A · Posterior",
+          summary: "Lower session theme with posterior chain and upper-back support.",
           focusMuscles: ["glutes", "hamstrings", "back", "core"],
           preferredMovements: ["hinge", "single_leg", "squat"],
           allowedMovements: ["hinge", "single_leg", "squat", "pull", "carry_core"],
@@ -1566,8 +1566,8 @@ const getSplitTemplate = (
         PHYSIQUE_UPPER_A_SLOT,
         {
           id: "lower_glute_quad",
-          title: "Lower B",
-          summary: "Lower emphasis with quads, glutes, and shoulder support.",
+          title: "Lower B · Quad/Glute",
+          summary: "Lower session theme with quads, glutes, and shoulder support.",
           focusMuscles: ["glutes", "quads", "hamstrings", "adductors", "shoulders", "core"],
           preferredMovements: ["single_leg", "squat", "hinge"],
           allowedMovements: ["single_leg", "squat", "hinge", "push", "carry_core"],
@@ -1579,8 +1579,8 @@ const getSplitTemplate = (
     return [
       {
         id: "lower_glute_ham",
-        title: "Lower A",
-        summary: "Glute and hamstring emphasis.",
+        title: "Lower A · Posterior",
+        summary: "Lower session theme with glute and hamstring emphasis.",
         focusMuscles: ["glutes", "hamstrings", "core"],
         preferredMovements: ["hinge", "single_leg", "squat"],
         allowedMovements: ["hinge", "single_leg", "squat", "carry_core"],
@@ -1589,8 +1589,8 @@ const getSplitTemplate = (
       PHYSIQUE_UPPER_A_SLOT,
       {
         id: "lower_glute_quad",
-        title: "Lower B",
-        summary: "Glute and quad emphasis.",
+        title: "Lower B · Quad/Glute",
+        summary: "Lower session theme with glute and quad emphasis.",
         focusMuscles: ["glutes", "quads", "hamstrings", "adductors", "core"],
         preferredMovements: ["single_leg", "squat", "hinge"],
         allowedMovements: ["single_leg", "squat", "hinge", "carry_core"],
