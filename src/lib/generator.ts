@@ -564,9 +564,9 @@ const isPhysiqueFriendly = (ex: Exercise): boolean => {
 const familyOf = (ex: Exercise): string => {
   const name = ex.name.toLowerCase();
   if (name.includes("hip thrust") || name.includes("glute bridge")) return "hip_thrust";
+  if (name.includes("split squat") || name.includes("bulgarian")) return "split_squat";
   if (name.includes("romanian deadlift") || name.includes("rdl")) return "rdl";
   if (name.includes("deadlift")) return "deadlift";
-  if (name.includes("split squat") || name.includes("bulgarian")) return "split_squat";
   if (name.includes("lunge")) return "lunge";
   if (name.includes("step-up")) return "step_up";
   if (name.includes("row")) return "row";
