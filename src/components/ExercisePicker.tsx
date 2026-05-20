@@ -39,7 +39,9 @@ export function ExercisePicker({
     const q = normalizeSearch(search);
     return EXERCISES.filter((ex) => {
       if (q) {
-        const nameMatch = normalizeSearch(ex.name).includes(q);
+        const nameMatch =
+          normalizeSearch(ex.name).includes(q) ||
+          (ex.aliases ?? []).some((alias) => normalizeSearch(alias).includes(q));
         const muscleMatch = ex.primary.concat(ex.secondary).some(
           (m) => normalizeSearch(formatMuscle(m)).includes(q),
         );

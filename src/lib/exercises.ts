@@ -1,4 +1,5 @@
 import type { Exercise } from "./types";
+import { normalizeSearch } from "./format";
 
 export const EXERCISES: Exercise[] = [
   // === SQUAT PATTERN ===
@@ -17,7 +18,15 @@ export const EXERCISES: Exercise[] = [
   { name: "DB walking lunge", primary: ["quads", "glutes"], secondary: ["hamstrings", "core"], equipment: "dumbbell", pattern: "squat" },
   { name: "Barbell walking lunge", primary: ["quads", "glutes"], secondary: ["hamstrings", "core"], equipment: "barbell", pattern: "squat" },
   { name: "Lateral step-up", primary: ["quads", "glutes"], secondary: ["calves"], equipment: "dumbbell", pattern: "squat" },
-  { name: "Box step-up", primary: ["quads", "glutes"], secondary: ["hamstrings"], equipment: "dumbbell", pattern: "squat" },
+  {
+    name: "Box step-up",
+    aliases: ["DB box step-up", "DB box step ups", "DB box step-up"],
+    primary: ["quads", "glutes"],
+    secondary: ["hamstrings"],
+    equipment: "dumbbell",
+    pattern: "squat",
+  },
+  { name: "DB squat to reverse lunge", primary: ["quads", "glutes"], secondary: ["hamstrings", "core"], equipment: "dumbbell", pattern: "squat" },
   { name: "Leg press", primary: ["quads", "glutes"], secondary: ["hamstrings"], equipment: "machine", pattern: "squat" },
   { name: "Angled machine leg press", primary: ["quads", "glutes"], secondary: ["hamstrings"], equipment: "machine", pattern: "squat" },
   { name: "Hack squat", primary: ["quads"], secondary: ["glutes"], equipment: "machine", pattern: "squat" },
@@ -30,7 +39,14 @@ export const EXERCISES: Exercise[] = [
 
   // === HINGE PATTERN ===
   { name: "Barbell deadlift", primary: ["hamstrings", "glutes", "back"], secondary: ["core", "quads"], equipment: "barbell", pattern: "hinge" },
-  { name: "Barbell Romanian deadlift", primary: ["hamstrings", "glutes"], secondary: ["back", "core"], equipment: "barbell", pattern: "hinge" },
+  {
+    name: "Barbell Romanian deadlift",
+    aliases: ["Barbell RDL", "BB RDL", "Barbell rdls"],
+    primary: ["hamstrings", "glutes"],
+    secondary: ["back", "core"],
+    equipment: "barbell",
+    pattern: "hinge",
+  },
   { name: "DB Romanian deadlift", primary: ["hamstrings", "glutes"], secondary: ["back", "core"], equipment: "dumbbell", pattern: "hinge" },
   { name: "Single-leg DB RDL", primary: ["hamstrings", "glutes"], secondary: ["core"], equipment: "dumbbell", pattern: "hinge" },
   { name: "Sumo deadlift", primary: ["glutes", "hamstrings", "quads"], secondary: ["back", "core"], equipment: "barbell", pattern: "hinge" },
@@ -55,7 +71,14 @@ export const EXERCISES: Exercise[] = [
   { name: "DB incline bench press", primary: ["chest", "shoulders"], secondary: ["triceps"], equipment: "dumbbell", pattern: "push" },
   { name: "DB flat bench press", primary: ["chest"], secondary: ["shoulders", "triceps"], equipment: "dumbbell", pattern: "push" },
   { name: "Barbell bench press", primary: ["chest"], secondary: ["shoulders", "triceps"], equipment: "barbell", pattern: "push" },
-  { name: "Barbell incline bench press", primary: ["chest", "shoulders"], secondary: ["triceps"], equipment: "barbell", pattern: "push" },
+  {
+    name: "Barbell incline bench press",
+    aliases: ["Barbell incline bench"],
+    primary: ["chest", "shoulders"],
+    secondary: ["triceps"],
+    equipment: "barbell",
+    pattern: "push",
+  },
   { name: "DB overhead press", primary: ["shoulders"], secondary: ["triceps", "core"], equipment: "dumbbell", pattern: "push" },
   { name: "Barbell overhead press", primary: ["shoulders"], secondary: ["triceps", "core"], equipment: "barbell", pattern: "push" },
   { name: "DB Arnold press", primary: ["shoulders"], secondary: ["triceps"], equipment: "dumbbell", pattern: "push" },
@@ -77,6 +100,14 @@ export const EXERCISES: Exercise[] = [
   { name: "Tricep pushdown", primary: ["triceps"], secondary: [], equipment: "cable", pattern: "push" },
   { name: "Overhead tricep extension", primary: ["triceps"], secondary: [], equipment: "dumbbell", pattern: "push" },
   { name: "Skull crusher", primary: ["triceps"], secondary: [], equipment: "barbell", pattern: "push" },
+  {
+    name: "DB skull crusher",
+    aliases: ["DB skullcrushers", "DB skull crushers", "DB skullcrusher"],
+    primary: ["triceps"],
+    secondary: [],
+    equipment: "dumbbell",
+    pattern: "push",
+  },
   { name: "DB thruster", primary: ["quads", "shoulders"], secondary: ["glutes", "triceps", "core"], equipment: "dumbbell", pattern: "push" },
   { name: "Landmine press", primary: ["chest", "shoulders"], secondary: ["core", "triceps"], equipment: "barbell", pattern: "push" },
   { name: "Cable chest fly", primary: ["chest"], secondary: [], equipment: "cable", pattern: "push" },
@@ -139,6 +170,22 @@ export const EXERCISES: Exercise[] = [
   { name: "Shoulder tap", primary: ["core", "shoulders"], secondary: ["chest"], equipment: "bodyweight", pattern: "core" },
   { name: "Plank jack", primary: ["core"], secondary: ["shoulders", "glutes"], equipment: "bodyweight", pattern: "core" },
   { name: "Bird dog", primary: ["core"], secondary: ["glutes"], equipment: "bodyweight", pattern: "core" },
+  {
+    name: "Butterfly sit-up",
+    aliases: ["Butterfly situps", "Butterfly sit-up", "Butterfly sit up"],
+    primary: ["core"],
+    secondary: ["hip_flexors"],
+    equipment: "bodyweight",
+    pattern: "core",
+  },
+  {
+    name: "DB overhead march",
+    aliases: ["DB overhead marches", "Dumbbell overhead march", "Dumbbell overhead marches"],
+    primary: ["core", "shoulders"],
+    secondary: ["hip_flexors", "glutes"],
+    equipment: "dumbbell",
+    pattern: "carry",
+  },
 
   // === PLYO & CONDITIONING ===
   { name: "Broad jump", primary: ["quads", "glutes"], secondary: ["calves", "hamstrings"], equipment: "bodyweight", pattern: "plyo" },
@@ -154,6 +201,21 @@ export const EXERCISES: Exercise[] = [
   { name: "Wall ball shot", primary: ["quads", "shoulders"], secondary: ["glutes", "core"], equipment: "other", pattern: "conditioning" },
   { name: "Medicine ball slam", primary: ["core", "shoulders"], secondary: ["back", "glutes"], equipment: "other", pattern: "conditioning" },
   { name: "Tall-kneeling rotational medicine ball slam", primary: ["core", "shoulders"], secondary: ["back", "glutes"], equipment: "other", pattern: "conditioning" },
+  {
+    name: "DB side lunge to high pull",
+    primary: ["glutes", "quads", "shoulders"],
+    secondary: ["back", "core", "hamstrings"],
+    equipment: "dumbbell",
+    pattern: "conditioning",
+  },
+  {
+    name: "Woman maker",
+    aliases: ["Woman makers"],
+    primary: ["shoulders", "chest", "core"],
+    secondary: ["back", "triceps", "quads", "glutes"],
+    equipment: "dumbbell",
+    pattern: "conditioning",
+  },
   { name: "Ski erg", primary: ["back", "shoulders"], secondary: ["core", "triceps"], equipment: "other", pattern: "conditioning" },
   { name: "Rowing machine", primary: ["back", "quads"], secondary: ["hamstrings", "biceps", "core"], equipment: "other", pattern: "conditioning" },
   { name: "Assault bike", primary: ["quads"], secondary: ["shoulders", "core"], equipment: "other", pattern: "conditioning" },
@@ -174,9 +236,16 @@ export const EXERCISES: Exercise[] = [
   { name: "Single-leg calf raise", primary: ["calves"], secondary: [], equipment: "bodyweight", pattern: "squat" },
 ];
 
+const exerciseSearchKey = (value: string): string => normalizeSearch(value);
+
 const EXERCISE_INDEX: Map<string, Exercise> = new Map(
-  EXERCISES.map((ex) => [ex.name, ex])
+  EXERCISES.flatMap((ex) =>
+    [ex.name, ...(ex.aliases ?? [])].map((name) => [exerciseSearchKey(name), ex] as const),
+  )
 );
 
 export const findExercise = (name: string): Exercise | undefined =>
-  EXERCISE_INDEX.get(name);
+  EXERCISE_INDEX.get(exerciseSearchKey(name));
+
+export const canonicalExerciseName = (name: string): string =>
+  findExercise(name)?.name ?? name.trim();

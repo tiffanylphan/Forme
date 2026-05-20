@@ -61,6 +61,7 @@ export type Equipment = (typeof EQUIPMENT)[number];
 
 export type Exercise = {
   name: string;
+  aliases?: string[];
   primary: MuscleGroup[];
   secondary: MuscleGroup[];
   equipment: Equipment;

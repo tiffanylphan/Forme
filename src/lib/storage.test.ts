@@ -77,7 +77,7 @@ describe("storage", () => {
         date: "2026-05-06",
         exercises: [
           {
-            exerciseName: "Cable row",
+            exerciseName: "Barbell RDL",
             sets: [{ reps: 12, weight: 70 }],
           },
         ],
@@ -87,6 +87,7 @@ describe("storage", () => {
     expect(normalized).toHaveLength(1);
     expect(normalized[0]?.source).toBe("manual");
     expect(normalized[0]?.exercises[0]?.supersetGroup).toBeNull();
+    expect(normalized[0]?.exercises[0]?.exerciseName).toBe("Barbell Romanian deadlift");
     expect(normalized[0]?.exercises[0]?.sets[0]?.unit).toBe("lb");
     expect(typeof normalized[0]?.createdAt).toBe("number");
     expect(typeof normalized[0]?.updatedAt).toBe("number");
@@ -115,7 +116,7 @@ describe("storage", () => {
         date: "2026-05-16",
         source: "manual",
         plan_slot: "Lower A",
-        exercise: "Leg press",
+        exercise: "DB box step ups",
         set_number: 2,
         reps: 10,
         weight: 140,
@@ -130,7 +131,7 @@ describe("storage", () => {
         date: "2026-05-16",
         source: "manual",
         plan_slot: "Lower A",
-        exercise: "Leg press",
+        exercise: "DB box step ups",
         set_number: 1,
         reps: 8,
         weight: 130,
@@ -164,7 +165,7 @@ describe("storage", () => {
       title: "Lower A",
     });
     expect(normalized[0]?.exercises).toHaveLength(2);
-    expect(normalized[0]?.exercises[0]?.exerciseName).toBe("Leg press");
+    expect(normalized[0]?.exercises[0]?.exerciseName).toBe("Box step-up");
     expect(normalized[0]?.exercises[0]?.sets.map((set) => set.reps)).toEqual([8, 10]);
     expect(normalized[0]?.exercises[1]?.exerciseName).toBe("Bear crawl");
     expect(normalized[0]?.exercises[1]?.sets[0]?.weight).toBeNull();

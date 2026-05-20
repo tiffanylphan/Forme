@@ -64,8 +64,8 @@ describe("LibraryPage", () => {
 
     await user.click(screen.getByRole("button", { name: /hamstrings/i }));
 
-    expect(screen.getByText("37 results")).toBeInTheDocument();
-    expect(screen.getAllByText(/37 exercises/i).length).toBeGreaterThan(0);
+    expect(screen.getByText("39 results")).toBeInTheDocument();
+    expect(screen.getAllByText(/39 exercises/i).length).toBeGreaterThan(0);
   });
 
   it("matches search terms even when punctuation differs", async () => {

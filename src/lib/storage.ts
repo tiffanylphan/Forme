@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { canonicalExerciseName } from "./exercises";
 import type { Workout } from "./types";
 
 const STORAGE_KEY = "workout.workouts.v1";
@@ -102,7 +103,7 @@ const normalizeExercises = (
               : `${workoutId}-ex-${index + 1}`;
           return {
             id,
-            exerciseName: entry.exerciseName.trim(),
+            exerciseName: canonicalExerciseName(entry.exerciseName),
             sets: normalizeSets(entry.sets, id),
             supersetGroup: typeof entry.supersetGroup === "string" ? entry.supersetGroup : null,
             routineGroup:
@@ -203,7 +204,7 @@ const normalizeFlattenedWorkouts = (
     workoutRows.forEach((row) => {
       const exerciseName =
         typeof row.exercise === "string" && row.exercise.trim()
-          ? row.exercise.trim()
+          ? canonicalExerciseName(row.exercise)
           : null;
       if (!exerciseName) return;
       const bucket = groupedExercises.get(exerciseName) ?? [];
