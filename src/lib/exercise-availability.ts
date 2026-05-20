@@ -4,7 +4,8 @@ export const environmentAllowsExercise = (
   ex: Exercise,
   profileOrEnvironment:
     | TrainingEnvironment
-    | Pick<TrainingProfile, "equipment" | "blockedExercises" | "allowedExercises">,
+    | Pick<TrainingProfile, "equipment"> &
+        Partial<Pick<TrainingProfile, "blockedExercises" | "allowedExercises">>,
 ): boolean => {
   const environment =
     typeof profileOrEnvironment === "string"
