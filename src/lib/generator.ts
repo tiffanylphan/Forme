@@ -2,6 +2,7 @@ import { EXERCISES } from "./exercises";
 import { environmentAllowsExercise } from "./exercise-availability";
 import { movementOf } from "./movement";
 import { PLANNER_TUNING } from "./planner-tuning";
+import { DEFAULT_PROFILE } from "./profile";
 import { MOVEMENT_PATTERNS, MUSCLE_GROUPS } from "./types";
 import {
   computeCoverage,
@@ -1826,14 +1827,7 @@ export function generateNextWorkout(
   profile?: TrainingProfile | null,
   overrides?: GeneratorOverrides,
 ): WorkoutDraft {
-  const activeProfile: TrainingProfile = profile ?? {
-    goal: "physique",
-    daysPerWeek: 4,
-    equipment: "full_gym",
-    experience: "beginner",
-    intensity: "standard",
-    blockedExercises: [],
-  };
+  const activeProfile: TrainingProfile = profile ?? DEFAULT_PROFILE;
   const preferredExerciseNames = new Set(overrides?.preferredExercises ?? []);
   const window = weekContaining(todayISO);
   const coverage = computeCoverage(workouts, window);
