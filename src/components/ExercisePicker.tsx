@@ -12,6 +12,7 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onPick: (exerciseName: string) => void;
+  onRemove?: (exerciseName: string) => void;
   // Names already added — surface a count badge on those rows.
   alreadyAddedCounts?: Record<string, number>;
 };
@@ -20,6 +21,7 @@ export function ExercisePicker({
   open,
   onClose,
   onPick,
+  onRemove,
   alreadyAddedCounts = {},
 }: Props) {
   const [search, setSearch] = useState("");
@@ -181,33 +183,44 @@ export function ExercisePicker({
           {filtered.map((ex) => {
             const count = alreadyAddedCounts[ex.name] ?? 0;
             return (
-              <button
-                key={ex.name}
-                onClick={() => onPick(ex.name)}
-                className="block w-full border-b border-divider py-3 text-left active:bg-[#FAFAF7]"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[14px] font-medium text-text">
-                    {ex.name}
-                  </span>
-                  <div className="flex items-center gap-2">
+              <div key={ex.name} className="border-b border-divider py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <button
+                    onClick={() => onPick(ex.name)}
+                    className="min-w-0 flex-1 text-left active:bg-[#FAFAF7]"
+                  >
+                    <div className="text-[14px] font-medium text-text">
+                      {ex.name}
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {ex.primary.map((m) => (
+                        <MuscleTag key={m} muscle={m} />
+                      ))}
+                    </div>
+                  </button>
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 pt-0.5">
                     {count > 0 && (
                       <span
-                        className="rounded-full bg-[#1a1a18] px-2 py-0.5 text-[10px] font-medium text-white"
+                        className="inline-flex h-6 items-center rounded-full bg-[#1a1a18] px-2.5 text-[10px] font-medium text-white"
                         title={`Added ${count}×`}
                       >
                         {count}×
                       </span>
                     )}
                     <PatternBadge pattern={ex.pattern} />
+                    {count > 0 && onRemove && (
+                      <button
+                        type="button"
+                        onClick={() => onRemove(ex.name)}
+                        className="inline-flex h-6 items-center rounded-full border border-[#E6E3D8] bg-white px-2.5 text-[10px] font-medium text-text-muted"
+                        aria-label={`Remove one ${ex.name}`}
+                      >
+                        Remove
+                      </button>
+                    )}
                   </div>
                 </div>
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {ex.primary.map((m) => (
-                    <MuscleTag key={m} muscle={m} />
-                  ))}
-                </div>
-              </button>
+              </div>
             );
           })}
           {filtered.length === 0 && (

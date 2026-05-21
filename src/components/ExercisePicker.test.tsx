@@ -34,4 +34,25 @@ describe("ExercisePicker", () => {
     await user.type(screen.getByPlaceholderText("Search exercises…"), "not-a-real-exercise");
     expect(screen.getByText("No exercises match your filters")).toBeInTheDocument();
   });
+
+  it("can remove one already-added exercise from the picker list", async () => {
+    const user = userEvent.setup();
+    const onRemove = vi.fn();
+
+    render(
+      <ExercisePicker
+        open
+        onClose={() => {}}
+        onPick={() => {}}
+        onRemove={onRemove}
+        alreadyAddedCounts={{ "Cable row": 2 }}
+      />,
+    );
+
+    await user.type(screen.getByPlaceholderText("Search exercises…"), "cable row");
+    await user.click(screen.getByRole("button", { name: "Remove one Cable row" }));
+
+    expect(onRemove).toHaveBeenCalledWith("Cable row");
+  });
+
 });

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { ExercisePicker } from "@/components/ExercisePicker";
+import { InputClearButton } from "@/components/InputClearButton";
 import { MuscleTag } from "@/components/MuscleTag";
 import { formatExerciseEquipment, getExerciseCoaching } from "@/lib/exerciseCoaching";
 import { findExercise } from "@/lib/exercises";
@@ -393,6 +394,15 @@ export default function LogPage() {
     setExercises((prev) => prev.filter((e) => e.id !== id));
   };
 
+  const removeExerciseByName = (exerciseName: string) => {
+    setSaveError(null);
+    setExercises((prev) => {
+      const idx = prev.map((exercise) => exercise.exerciseName).lastIndexOf(exerciseName);
+      if (idx < 0) return prev;
+      return prev.filter((_, exerciseIdx) => exerciseIdx !== idx);
+    });
+  };
+
   const moveExercise = (id: string, dir: -1 | 1) => {
     setSaveError(null);
     setExercises((prev) => {
@@ -623,15 +633,26 @@ export default function LogPage() {
         )}
 
         <div className="mt-3 flex items-center gap-2">
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => {
-              setSaveError(null);
-              setDate(e.target.value);
-            }}
-            className="rounded-[10px] border border-[#D3D1C7] bg-white px-3 py-1.5 text-[13px] text-text outline-none"
-          />
+          <div className="relative">
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => {
+                setSaveError(null);
+                setDate(e.target.value);
+              }}
+              className="rounded-[10px] border border-[#D3D1C7] bg-white px-3 py-1.5 pr-10 text-[13px] text-text outline-none"
+            />
+            {date && (
+              <InputClearButton
+                onClear={() => {
+                  setSaveError(null);
+                  setDate("");
+                }}
+                label="Clear workout date"
+              />
+            )}
+          </div>
         </div>
 
         {muscleSummary.length > 0 && (
@@ -728,16 +749,28 @@ export default function LogPage() {
         {exercises.length > 0 && (
           <div className="mt-4">
             <label className="label-eyebrow mb-1.5 block">Notes</label>
-            <textarea
-              value={notes}
-              onChange={(e) => {
-                setSaveError(null);
-                setNotes(e.target.value);
-              }}
-              placeholder="How did it feel?"
-              rows={3}
-              className="w-full resize-none rounded-[12px] border border-[#E6E3D8] bg-white px-3 py-2 text-[14px] outline-none focus:border-[#888780]"
-            />
+            <div className="relative">
+              <textarea
+                value={notes}
+                onChange={(e) => {
+                  setSaveError(null);
+                  setNotes(e.target.value);
+                }}
+                placeholder="How did it feel?"
+                rows={3}
+                className="w-full resize-none rounded-[12px] border border-[#E6E3D8] bg-white px-3 py-2 pr-12 text-[14px] outline-none focus:border-[#888780]"
+              />
+              {notes && (
+                <InputClearButton
+                  onClear={() => {
+                    setSaveError(null);
+                    setNotes("");
+                  }}
+                  label="Clear workout notes"
+                  className="right-3 top-3 -translate-y-0"
+                />
+              )}
+            </div>
           </div>
         )}
       </main>
@@ -765,6 +798,7 @@ export default function LogPage() {
           }
           addExercise(exerciseName);
         }}
+        onRemove={swapExerciseId ? undefined : removeExerciseByName}
         alreadyAddedCounts={addedCounts}
       />
 
@@ -933,31 +967,49 @@ function ExerciseEditor({
             <span className="font-mono text-[12px] text-text-subtle">
               {setIdx + 1}
             </span>
-            <input
-              type="number"
-              inputMode="numeric"
-              placeholder="—"
-              value={s.reps ?? ""}
-              onChange={(e) =>
-                onUpdateSet(ex.id, s.id, {
-                  reps: e.target.value === "" ? null : Number(e.target.value),
-                })
-              }
-              className="w-full rounded-md border border-[#E6E3D8] bg-white px-2 py-1.5 text-center text-[14px] outline-none focus:border-[#888780]"
-            />
-            <input
-              type="number"
-              inputMode="decimal"
-              step="0.5"
-              placeholder="—"
-              value={s.weight ?? ""}
-              onChange={(e) =>
-                onUpdateSet(ex.id, s.id, {
-                  weight: e.target.value === "" ? null : Number(e.target.value),
-                })
-              }
-              className="w-full rounded-md border border-[#E6E3D8] bg-white px-2 py-1.5 text-center text-[14px] outline-none focus:border-[#888780]"
-            />
+            <div className="relative">
+              <input
+                type="number"
+                inputMode="numeric"
+                placeholder="—"
+                value={s.reps ?? ""}
+                onChange={(e) =>
+                  onUpdateSet(ex.id, s.id, {
+                    reps: e.target.value === "" ? null : Number(e.target.value),
+                  })
+                }
+                className="w-full rounded-md border border-[#E6E3D8] bg-white px-2 py-1.5 pr-7 text-center text-[14px] outline-none focus:border-[#888780]"
+              />
+              {s.reps !== null && (
+                <InputClearButton
+                  onClear={() => onUpdateSet(ex.id, s.id, { reps: null })}
+                  label={`Clear reps for set ${setIdx + 1}`}
+                  className="right-1 h-5 w-5 text-[12px]"
+                />
+              )}
+            </div>
+            <div className="relative">
+              <input
+                type="number"
+                inputMode="decimal"
+                step="0.5"
+                placeholder="—"
+                value={s.weight ?? ""}
+                onChange={(e) =>
+                  onUpdateSet(ex.id, s.id, {
+                    weight: e.target.value === "" ? null : Number(e.target.value),
+                  })
+                }
+                className="w-full rounded-md border border-[#E6E3D8] bg-white px-2 py-1.5 pr-7 text-center text-[14px] outline-none focus:border-[#888780]"
+              />
+              {s.weight !== null && (
+                <InputClearButton
+                  onClear={() => onUpdateSet(ex.id, s.id, { weight: null })}
+                  label={`Clear weight for set ${setIdx + 1}`}
+                  className="right-1 h-5 w-5 text-[12px]"
+                />
+              )}
+            </div>
             <select
               value={s.unit}
               onChange={(e) => {
@@ -1170,37 +1222,55 @@ function SupersetBlockView({
                     >
                       {String.fromCharCode(65 + i)}
                     </span>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      placeholder="reps"
-                      value={set.reps ?? ""}
-                      onChange={(e) =>
-                        onUpdateSet(ex.id, set.id, {
-                          reps:
-                            e.target.value === ""
-                              ? null
-                              : Number(e.target.value),
-                        })
-                      }
-                      className="w-full rounded-md border border-[#E6E3D8] bg-white px-2 py-1.5 text-center text-[14px] outline-none focus:border-[#888780]"
-                    />
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      step="0.5"
-                      placeholder="weight"
-                      value={set.weight ?? ""}
-                      onChange={(e) =>
-                        onUpdateSet(ex.id, set.id, {
-                          weight:
-                            e.target.value === ""
-                              ? null
-                              : Number(e.target.value),
-                        })
-                      }
-                      className="w-full rounded-md border border-[#E6E3D8] bg-white px-2 py-1.5 text-center text-[14px] outline-none focus:border-[#888780]"
-                    />
+                    <div className="relative">
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        placeholder="reps"
+                        value={set.reps ?? ""}
+                        onChange={(e) =>
+                          onUpdateSet(ex.id, set.id, {
+                            reps:
+                              e.target.value === ""
+                                ? null
+                                : Number(e.target.value),
+                          })
+                        }
+                        className="w-full rounded-md border border-[#E6E3D8] bg-white px-2 py-1.5 pr-7 text-center text-[14px] outline-none focus:border-[#888780]"
+                      />
+                      {set.reps !== null && (
+                        <InputClearButton
+                          onClear={() => onUpdateSet(ex.id, set.id, { reps: null })}
+                          label={`Clear reps for round ${roundIdx + 1}, ${ex.exerciseName}`}
+                          className="right-1 h-5 w-5 text-[12px]"
+                        />
+                      )}
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.5"
+                        placeholder="weight"
+                        value={set.weight ?? ""}
+                        onChange={(e) =>
+                          onUpdateSet(ex.id, set.id, {
+                            weight:
+                              e.target.value === ""
+                                ? null
+                                : Number(e.target.value),
+                          })
+                        }
+                        className="w-full rounded-md border border-[#E6E3D8] bg-white px-2 py-1.5 pr-7 text-center text-[14px] outline-none focus:border-[#888780]"
+                      />
+                      {set.weight !== null && (
+                        <InputClearButton
+                          onClear={() => onUpdateSet(ex.id, set.id, { weight: null })}
+                          label={`Clear weight for round ${roundIdx + 1}, ${ex.exerciseName}`}
+                          className="right-1 h-5 w-5 text-[12px]"
+                        />
+                      )}
+                    </div>
                     <select
                       value={set.unit}
                       onChange={(e) => {

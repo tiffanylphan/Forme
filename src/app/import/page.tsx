@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { InputClearButton } from "@/components/InputClearButton";
 import { normalizeWorkouts, saveWorkouts } from "@/lib/storage";
 
 export default function ImportPage() {
@@ -50,12 +51,21 @@ export default function ImportPage() {
         Paste your exported JSON below. This will replace all current data.
       </p>
 
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder='[{"id":"w_..."}]'
-        className="mb-3 h-48 w-full rounded-2xl border border-[#D3D1C7] bg-surface px-4 py-3 font-mono text-[12px] text-text outline-none focus:border-text"
-      />
+      <div className="relative mb-3">
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder='[{"id":"w_..."}]'
+          className="h-48 w-full rounded-2xl border border-[#D3D1C7] bg-surface px-4 py-3 pr-12 font-mono text-[12px] text-text outline-none focus:border-text"
+        />
+        {text && (
+          <InputClearButton
+            onClear={() => setText("")}
+            label="Clear import text"
+            className="right-3 top-3 -translate-y-0"
+          />
+        )}
+      </div>
 
       {error && (
         <p className="mb-3 text-[12px] text-[#C4441F]">{error}</p>
