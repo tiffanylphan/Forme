@@ -7,26 +7,80 @@ const useWorkoutsMock = vi.fn();
 const useTrainingProfileMock = vi.fn();
 const stashDraftMock = vi.fn();
 const generateNextWorkoutMock = vi.fn(
-  (_workouts?: unknown, _today?: unknown, _seed?: unknown, _profile?: unknown, overrides?: { preferredExercises?: string[] }) => {
+  (
+    _workouts?: unknown,
+    _today?: unknown,
+    _seed?: unknown,
+    _profile?: unknown,
+    overrides?: { preferredExercises?: string[]; forcedSlotId?: string },
+  ) => {
     const broughtBack = overrides?.preferredExercises?.includes("Barbell hip thrust");
+    const forcedUpperB = overrides?.forcedSlotId === "upper_back_shoulder_arms";
+    const split = forcedUpperB
+      ? {
+          slotId: "upper_back_shoulder_arms",
+          title: "Upper B · Upper/Arms",
+          summary: "Upper session theme with more direct arm and upper support work.",
+          sessionIndex: 2,
+          totalSessions: 4,
+          targetPrimaryStimulus: {
+            shoulders: 5,
+            triceps: 4,
+            biceps: 3,
+          },
+          targetPrimarySets: {
+            shoulders: 5,
+            triceps: 4,
+            biceps: 3,
+          },
+        }
+      : {
+          slotId: "upper_a",
+          title: "Upper A · Back/Shoulders",
+          summary: "Upper session theme with back, shoulders, and glute support.",
+          sessionIndex: 1,
+          totalSessions: 4,
+          targetPrimaryStimulus: {
+            back: 8,
+            shoulders: 5,
+            rear_delts: 4,
+          },
+          targetPrimarySets: {
+            back: 8,
+            shoulders: 5,
+            rear_delts: 4,
+          },
+        };
     return {
-      split: {
-        slotId: "upper_a",
-        title: "Upper A · Back/Shoulders",
-        summary: "Upper session theme with back, shoulders, and glute support.",
-        sessionIndex: 1,
-        totalSessions: 4,
-        targetPrimaryStimulus: {
-          back: 8,
-          shoulders: 5,
-          rear_delts: 4,
+      split,
+      slotRecommendations: [
+        {
+          slotId: "upper_a",
+          title: "Upper A · Back/Shoulders",
+          summary: "Upper session theme with back, shoulders, and glute support.",
+          rank: 1,
+          score: 42,
+          isRecommended: true,
+          targetPrimaryStimulus: { back: 8, shoulders: 5, rear_delts: 4 },
+          targetPrimarySets: { back: 8, shoulders: 5, rear_delts: 4 },
+          topMuscles: ["back", "shoulders"],
+          note: "Targets the biggest remaining gaps in back, shoulders.",
+          caution: null,
         },
-        targetPrimarySets: {
-          back: 8,
-          shoulders: 5,
-          rear_delts: 4,
+        {
+          slotId: "upper_back_shoulder_arms",
+          title: "Upper B · Upper/Arms",
+          summary: "Upper session theme with more direct arm and upper support work.",
+          rank: 2,
+          score: 35,
+          isRecommended: false,
+          targetPrimaryStimulus: { shoulders: 5, triceps: 4, biceps: 3 },
+          targetPrimarySets: { shoulders: 5, triceps: 4, biceps: 3 },
+          topMuscles: ["shoulders", "triceps", "biceps"],
+          note: "Targets the biggest remaining gaps in shoulders, triceps, biceps.",
+          caution: "More overlap with recent shoulders / triceps fatigue.",
         },
-      },
+      ],
       mobility: {
         title: "5-minute warm-up",
         items: ["Band row x 15", "Arm circles x 20s each way"],
@@ -37,11 +91,11 @@ const generateNextWorkoutMock = vi.fn(
       },
       rationale: broughtBack
         ? [
-            "This is Upper A · Back/Shoulders: Upper session theme with back, shoulders, and glute support.",
+            `This is ${split.title}: ${split.summary}`,
             "Still building this slot's focus stimulus: back, shoulders.",
           ]
         : [
-            "This is Upper A · Back/Shoulders: Upper session theme with back, shoulders, and glute support.",
+            `This is ${split.title}: ${split.summary}`,
             "Rotated off stalled lift: Barbell hip thrust.",
             "Still building this slot's focus stimulus: back, shoulders.",
             "Hit only once: pull, push.",

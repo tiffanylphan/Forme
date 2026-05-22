@@ -27,6 +27,8 @@ describe("NextPage", () => {
         equipment: "full_gym",
         experience: "beginner",
         intensity: "standard",
+        blockedExercises: [],
+        allowedExercises: [],
       },
     });
     useWorkoutsMock.mockReturnValue({

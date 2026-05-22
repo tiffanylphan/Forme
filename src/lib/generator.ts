@@ -66,6 +66,19 @@ export type WorkoutDraft = {
     targetPrimaryStimulus: Partial<Record<MuscleGroup, number>>;
     targetPrimarySets: Partial<Record<MuscleGroup, number>>;
   };
+  slotRecommendations: Array<{
+    slotId: string;
+    title: string;
+    summary: string;
+    rank: number;
+    score: number;
+    isRecommended: boolean;
+    targetPrimaryStimulus: Partial<Record<MuscleGroup, number>>;
+    targetPrimarySets: Partial<Record<MuscleGroup, number>>;
+    topMuscles: MuscleGroup[];
+    note: string;
+    caution: string | null;
+  }>;
   rationale: string[];
   rotatedOffLifts: string[];
   mobility: {
@@ -83,6 +96,7 @@ export type WorkoutDraft = {
 
 type GeneratorOverrides = {
   preferredExercises?: string[];
+  forcedSlotId?: string;
 };
 
 type SplitSlot = {
@@ -480,6 +494,15 @@ const isPreferredAccessibleFinisher = (ex: Exercise): boolean =>
   isAccessibleConditioningFinisher(ex) ||
   isAccessibleMetabolicFinisher(ex);
 
+const isPushLeaningFinisher = (ex: Exercise): boolean =>
+  ex.pattern === "push" ||
+  ex.name === "Push-up to renegade row";
+
+const isLowerFatiguingFinisher = (ex: Exercise): boolean => {
+  const movement = movementOf(ex);
+  return movement === "hinge" || movement === "squat" || movement === "single_leg";
+};
+
 const formatMovement = (m: MovementPattern): string =>
   m === "carry_core"
     ? "carry/core"
@@ -516,6 +539,13 @@ const isBackOrShoulderFocused = (ex: Exercise): boolean =>
 
 const isDirectArmFocus = (ex: Exercise): boolean =>
   hasPrimary(ex, "biceps") || hasPrimary(ex, "triceps");
+
+const isBackPullAnchor = (ex: Exercise): boolean =>
+  movementOf(ex) === "pull" &&
+  hasPrimary(ex, "back") &&
+  ex.name !== "DB renegade row" &&
+  ex.name !== "Push-up to renegade row" &&
+  (familyOf(ex) === "row" || familyOf(ex) === "vertical_pull");
 
 const isDirectGluteFocus = (ex: Exercise): boolean =>
   hasPrimary(ex, "glutes") &&
@@ -575,6 +605,15 @@ const familyOf = (ex: Exercise): string => {
     return "vertical_pull";
   if (name.includes("face pull") || name.includes("reverse fly") || name.includes("pull-apart"))
     return "rear_delt";
+  if (name.includes("curl") && !name.includes("leg curl")) return "biceps_isolation";
+  if (
+    name.includes("tricep pushdown") ||
+    name.includes("tricep extension") ||
+    name.includes("skull crusher") ||
+    name.includes("skullcrusher")
+  ) {
+    return "triceps_isolation";
+  }
   if (name.includes("lateral raise") || name.includes("front raise") || name.includes("arnold"))
     return "shoulder_isolation";
   if (name.includes("overhead press") || name.includes("landmine press"))
@@ -1126,6 +1165,67 @@ const computeMuscleDeficits = (
   return deficits;
 };
 
+const sumDeficits = (
+  deficits: Partial<Record<MuscleGroup, number>>,
+  muscles: MuscleGroup[],
+): number => muscles.reduce((sum, muscle) => sum + (deficits[muscle] ?? 0), 0);
+
+const adaptSelectedSlot = (
+  slot: SplitSlot,
+  profile: TrainingProfile,
+  muscleDeficits: MuscleDeficitMap,
+  recentMuscleFatigue: Partial<Record<MuscleGroup, number>>,
+): SplitSlot => {
+  if (!(profile.goal === "physique" && isUpperSlot(slot))) return slot;
+
+  const lowerFatigue = sumDeficits(recentMuscleFatigue, [
+    "glutes",
+    "quads",
+    "hamstrings",
+    "adductors",
+    "core",
+  ]);
+  const pushFatigue = sumDeficits(recentMuscleFatigue, [
+    "chest",
+    "shoulders",
+    "triceps",
+  ]);
+  const pullDeficit = sumDeficits(muscleDeficits, ["back", "rear_delts", "biceps"]);
+  const pressDeficit = sumDeficits(muscleDeficits, ["chest", "shoulders", "triceps"]);
+
+  if (
+    lowerFatigue <
+      PLANNER_TUNING.splitSelection.adaptiveUpperPullLowerFatigueThreshold ||
+    pullDeficit <
+      pressDeficit + PLANNER_TUNING.splitSelection.adaptiveUpperPullDeficitGap
+  ) {
+    return slot;
+  }
+
+  const strictPullBias =
+    pushFatigue >= PLANNER_TUNING.splitSelection.adaptiveUpperPullPushFatigueThreshold;
+
+  return {
+    ...slot,
+    summary: strictPullBias
+      ? "Upper session biased hard toward back and rear-delt catch-up with minimal pressing."
+      : "Upper session biased toward back and rear-delt catch-up with controlled pressing.",
+    focusMuscles: strictPullBias
+      ? ["back", "rear_delts", "biceps", "core"]
+      : ["back", "rear_delts", "shoulders", "biceps", "core"],
+    preferredMovements: ["pull"],
+    allowedMovements: strictPullBias ? ["pull", "carry_core"] : ["pull", "push", "carry_core"],
+    targetPrimaryStimulus:
+      slot.id === PHYSIQUE_UPPER_B_SLOT.id
+        ? strictPullBias
+          ? { back: 8, rear_delts: 4, biceps: 3, core: 3 }
+          : { back: 7, rear_delts: 4, shoulders: 3, biceps: 3, core: 3 }
+        : strictPullBias
+          ? { back: 8, rear_delts: 4, biceps: 2, core: 3 }
+          : { back: 8, rear_delts: 4, shoulders: 3, core: 3 },
+  };
+};
+
 const scoreSplitSlot = (
   slot: SplitSlot,
   index: number,
@@ -1213,6 +1313,45 @@ const scoreSplitSlot = (
     score -= fatiguePenalty * PLANNER_TUNING.splitSelection.recentFatigueSlotPenaltyWeight;
   }
 
+  const lowerBiasFatigue = sumDeficits(recentMuscleFatigue, [
+    "glutes",
+    "quads",
+    "hamstrings",
+    "adductors",
+    "core",
+  ]);
+  const upperPullDeficit = sumDeficits(muscleDeficits, [
+    "back",
+    "rear_delts",
+    "biceps",
+  ]);
+  const lowerPrimaryDeficit = sumDeficits(muscleDeficits, [
+    "glutes",
+    "quads",
+    "hamstrings",
+    "adductors",
+  ]);
+  const lowerSlotBackSupportOnly =
+    isLowerSlot(slot) &&
+    (slot.targetPrimaryStimulus.back ?? 0) > 0 &&
+    (slot.targetPrimaryStimulus.back ?? 0) <= 2 &&
+    (slot.targetPrimaryStimulus.glutes ?? 0) + (slot.targetPrimaryStimulus.hamstrings ?? 0) + (slot.targetPrimaryStimulus.quads ?? 0) >= 8;
+
+  if (
+    lowerBiasFatigue >= PLANNER_TUNING.splitSelection.lowerBiasFatigueThreshold &&
+    upperPullDeficit >= lowerPrimaryDeficit + PLANNER_TUNING.splitSelection.upperPullPivotGapThreshold
+  ) {
+    if (isUpperSlot(slot) && slot.focusMuscles.some((muscle) => muscle === "back" || muscle === "rear_delts")) {
+      score += PLANNER_TUNING.splitSelection.upperPullPivotBonus;
+    }
+    if (isLowerSlot(slot)) {
+      score -= lowerBiasFatigue * PLANNER_TUNING.splitSelection.lowerBiasFatiguePenaltyWeight;
+      if (lowerSlotBackSupportOnly) {
+        score -= PLANNER_TUNING.splitSelection.lowerBackSupportMisreadPenalty;
+      }
+    }
+  }
+
   const lowerLead = weeklyBiasBalance.lower - weeklyBiasBalance.upper;
   if (lowerLead >= PLANNER_TUNING.splitSelection.leadThreshold) {
     if (isUpperSlot(slot)) {
@@ -1279,6 +1418,96 @@ const pickBestSplitSlotIndex = (
   return best;
 };
 
+const rankSplitSlotIndices = (
+  split: SplitSlot[],
+  need: Record<MovementPattern, number>,
+  muscleDeficits: MuscleDeficitMap = {},
+  muscleSaturation: Partial<Record<MuscleGroup, number>> = {},
+  lastSessionMovements: Set<MovementPattern> = new Set(),
+  weeklyBiasBalance: WeeklyBiasBalance = { lower: 0, upper: 0 },
+  recentMuscleFatigue: Partial<Record<MuscleGroup, number>> = {},
+): Array<{ index: number; score: number }> =>
+  split
+    .map((slot, index) => ({
+      index,
+      score: scoreSplitSlot(
+        slot,
+        index,
+        need,
+        muscleDeficits,
+        muscleSaturation,
+        lastSessionMovements,
+        weeklyBiasBalance,
+        recentMuscleFatigue,
+      ),
+    }))
+    .sort((a, b) => b.score - a.score);
+
+const buildSlotRecommendations = (
+  split: SplitSlot[],
+  rankedSlots: Array<{ index: number; score: number }>,
+  recommendedIndex: number,
+  muscleDeficits: MuscleDeficitMap,
+  recentMuscleFatigue: Partial<Record<MuscleGroup, number>>,
+): WorkoutDraft["slotRecommendations"] => {
+  const recommendedEntry =
+    rankedSlots.find((entry) => entry.index === recommendedIndex) ?? {
+      index: recommendedIndex,
+      score: 0,
+    };
+  const ordered = [
+    recommendedEntry,
+    ...rankedSlots.filter((entry) => entry.index !== recommendedIndex),
+  ];
+
+  return ordered.map(({ index, score }, rank) => {
+    const slot = split[index];
+    const topMuscles = (Object.entries(slot.targetPrimaryStimulus) as [MuscleGroup, number][])
+      .filter(([, target]) => target > 0)
+      .map(([muscle, target]) => ({
+        muscle,
+        value: Math.min(target, muscleDeficits[muscle] ?? 0) * (PRIMARY_MUSCLE_PRIORITY[muscle] ?? 1),
+      }))
+      .sort((a, b) => b.value - a.value)
+      .filter((entry) => entry.value > 0)
+      .map((entry) => entry.muscle)
+      .slice(0, 3);
+    const reasonMuscles = topMuscles.length > 0 ? topMuscles : slot.focusMuscles.slice(0, 3);
+    const note =
+      topMuscles.length > 0
+        ? `Targets the biggest remaining gaps in ${reasonMuscles.join(", ")}.`
+        : `Valid option to keep ${reasonMuscles.join(", ")} moving this week.`;
+
+    const fatigueHotspots = slot.focusMuscles
+      .map((muscle) => ({
+        muscle,
+        value: recentMuscleFatigue[muscle] ?? 0,
+      }))
+      .filter((entry) => entry.value >= PLANNER_TUNING.rationale.recentFocusStressThreshold)
+      .sort((a, b) => b.value - a.value)
+      .map((entry) => entry.muscle)
+      .slice(0, 2);
+    const caution =
+      fatigueHotspots.length > 0
+        ? `More overlap with recent ${fatigueHotspots.join(" / ")} fatigue.`
+        : null;
+
+    return {
+      slotId: slot.id,
+      title: slot.title,
+      summary: slot.summary,
+      rank: rank + 1,
+      score,
+      isRecommended: index === recommendedIndex,
+      targetPrimaryStimulus: slot.targetPrimaryStimulus,
+      targetPrimarySets: slot.targetPrimaryStimulus,
+      topMuscles,
+      note,
+      caution,
+    };
+  });
+};
+
 const getNextSplitSlotIndex = (
   split: SplitSlot[],
   workouts: Workout[],
@@ -1302,7 +1531,7 @@ const getNextSplitSlotIndex = (
       weeklyBiasBalance,
       recentMuscleFatigue,
     );
-    if (bestIncomplete && bestIncomplete.score > 0) return bestIncomplete.index;
+    if (bestIncomplete) return bestIncomplete.index;
     const firstIncompleteIndex = incompleteIndices[0];
     if (firstIncompleteIndex >= 0) return firstIncompleteIndex;
   }
@@ -1950,7 +2179,33 @@ export function generateNextWorkout(
     stalledBiasPressure,
     recentMuscleFatigue,
   );
-  const slot = split[sessionIndex];
+  const rankedSlots = rankSplitSlotIndices(
+    split,
+    need,
+    muscleDeficits,
+    muscleSaturation,
+    lastSessionMovements,
+    weeklyBiasBalance,
+    recentMuscleFatigue,
+  );
+  const slotRecommendations = buildSlotRecommendations(
+    split,
+    rankedSlots,
+    sessionIndex,
+    muscleDeficits,
+    recentMuscleFatigue,
+  );
+  const forcedSlotIndex =
+    overrides?.forcedSlotId
+      ? split.findIndex((candidate) => candidate.id === overrides.forcedSlotId)
+      : -1;
+  const selectedSlotIndex = forcedSlotIndex >= 0 ? forcedSlotIndex : sessionIndex;
+  const slot = adaptSelectedSlot(
+    split[selectedSlotIndex],
+    activeProfile,
+    muscleDeficits,
+    recentMuscleFatigue,
+  );
   const currentWeekExerciseNames = new Set(
     coverage.workouts.flatMap((workout) =>
       workout.exercises.map((exercise) => exercise.exerciseName),
@@ -1997,6 +2252,13 @@ export function generateNextWorkout(
     if (!environmentAllowsExercise(ex, activeProfile)) return -10;
     if (!goalAllows(ex, activeProfile.goal)) return -10;
     if (!slot.allowedMovements.includes(movement)) return -10;
+    const family = familyOf(ex);
+    if (
+      (family === "biceps_isolation" || family === "triceps_isolation") &&
+      (claimedFamilies[family] ?? 0) > 0
+    ) {
+      return -10;
+    }
     const stimulus = estimateExerciseStimulus(ex);
     const projectedStress = estimatePlannedExerciseStress(ex, plannedRounds);
     const projectedSessionTotal =
@@ -2128,6 +2390,15 @@ export function generateNextWorkout(
     if (activeProfile.equipment === "dumbbells") {
       if (ex.equipment === "dumbbell") s += PLANNER_TUNING.exerciseSelection.dumbbellEnvDumbbellBonus;
       if (ex.equipment === "kettlebell") s += PLANNER_TUNING.exerciseSelection.dumbbellEnvKettlebellBonus;
+      if (movement === "pull" && ex.equipment === "cable") {
+        s += PLANNER_TUNING.exerciseSelection.dumbbellEnvCablePullBonus;
+        if (slot.focusMuscles.includes("back") && ex.primary.includes("back")) {
+          s += PLANNER_TUNING.exerciseSelection.dumbbellEnvBackFocusedCablePullBonus;
+        }
+        if (familyOf(ex) === "vertical_pull") {
+          s += PLANNER_TUNING.exerciseSelection.dumbbellEnvCableVerticalPullBonus;
+        }
+      }
     }
     if (activeProfile.equipment === "home") {
       if (isHomeConditioningFriendly(ex)) s += PLANNER_TUNING.exerciseSelection.homeConditioningBonus;
@@ -2153,6 +2424,17 @@ export function generateNextWorkout(
     }
 
     if (known.has(ex.name)) s += PLANNER_TUNING.exerciseSelection.knownExerciseBonus;
+    if (
+      movement === "pull" &&
+      claimedMovements.pull === 0 &&
+      slot.focusMuscles.includes("back")
+    ) {
+      if (isBackPullAnchor(ex)) {
+        s += PLANNER_TUNING.exerciseSelection.earlyBackAnchorBonus;
+      } else if (hasPrimary(ex, "rear_delts") || isDirectArmFocus(ex)) {
+        s -= PLANNER_TUNING.exerciseSelection.earlyBackSupportPenalty;
+      }
+    }
     if (slot.preferredMovements.includes(movement)) s += PLANNER_TUNING.exerciseSelection.preferredMovementBonus;
     if (currentWeekExerciseNames.has(ex.name)) {
       s -=
@@ -2166,13 +2448,37 @@ export function generateNextWorkout(
           ? PLANNER_TUNING.exerciseSelection.repeatFamilyStrengthPenalty
           : PLANNER_TUNING.exerciseSelection.repeatFamilyPenalty;
     }
-    const family = familyOf(ex);
     const familyCount = claimedFamilies[family] ?? 0;
     if (familyCount > 0) {
       s -=
         activeProfile.goal === "strength"
           ? familyCount * PLANNER_TUNING.exerciseSelection.repeatClaimedFamilyStrengthPenalty
           : familyCount * PLANNER_TUNING.exerciseSelection.repeatClaimedFamilyPenalty;
+    }
+    if (
+      familyCount > 0 &&
+      (family === "biceps_isolation" || family === "triceps_isolation")
+    ) {
+      s -= PLANNER_TUNING.exerciseSelection.repeatDirectArmIsolationPenalty;
+    }
+    if (upperBiasSlot && movement === "pull" && slot.focusMuscles.includes("back")) {
+      const verticalPullCount = claimedFamilies.vertical_pull ?? 0;
+      const rowCount = claimedFamilies.row ?? 0;
+      if (family === "vertical_pull") {
+        if (verticalPullCount >= 1) {
+          s -= PLANNER_TUNING.exerciseSelection.upperPullRepeatVerticalPenalty;
+        }
+        if (claimedMovements.pull >= 1 && rowCount === 0) {
+          s -= PLANNER_TUNING.exerciseSelection.upperPullNeedsRowPenalty;
+        }
+      }
+      if (verticalPullCount >= 1 && rowCount === 0) {
+        if (family === "row") {
+          s += PLANNER_TUNING.exerciseSelection.upperPullRowBalanceBonus;
+        } else if (family !== "vertical_pull") {
+          s -= PLANNER_TUNING.exerciseSelection.upperPullSupportBeforeRowPenalty;
+        }
+      }
     }
     const lowerUnilateralFamily = lowerUnilateralKneeFamilyOf(ex);
     if (lowerBiasSlot && lowerUnilateralFamily) {
@@ -2405,6 +2711,13 @@ export function generateNextWorkout(
     slot.preferredMovements.includes("push");
   const armBiasSlot =
     slot.focusMuscles.includes("biceps") || slot.focusMuscles.includes("triceps");
+  const pullCatchUpUpperSlot =
+    upperBiasSlot &&
+    slot.preferredMovements.length === 1 &&
+    slot.preferredMovements[0] === "pull";
+  const strictPullCatchUpUpperSlot =
+    pullCatchUpUpperSlot &&
+    !slot.allowedMovements.includes("push");
   const baseSessionBudget =
     activeProfile.daysPerWeek === 3
       ? PLANNER_TUNING.fatigueBudget.baseThreeDay
@@ -2495,6 +2808,23 @@ export function generateNextWorkout(
     return null;
   };
 
+  const isCompatibleWithPicks = (
+    ex: Exercise,
+    picks: Exercise[],
+  ): boolean => {
+    const family = familyOf(ex);
+    if (picks.some((pick) => pick.name === ex.name)) return false;
+    if (
+      (family === "biceps_isolation" ||
+        family === "triceps_isolation" ||
+        family === "vertical_pull") &&
+      picks.some((pick) => familyOf(pick) === family)
+    ) {
+      return false;
+    }
+    return true;
+  };
+
   const addSuperset = (
     allowed: MovementPattern[],
     rounds: number,
@@ -2508,13 +2838,17 @@ export function generateNextWorkout(
     let second = pickForMovement(
       allowed.filter((movement) => movement !== first.movement),
       rounds,
-      (ex) => ex.name !== first.exercise.name && (filter ? filter(ex) : true),
+      (ex) =>
+        isCompatibleWithPicks(ex, [first.exercise]) &&
+        (filter ? filter(ex) : true),
     );
     if (!second) {
       second = pickForMovement(
         allowed,
         rounds,
-        (ex) => ex.name !== first.exercise.name && (filter ? filter(ex) : true),
+        (ex) =>
+          isCompatibleWithPicks(ex, [first.exercise]) &&
+          (filter ? filter(ex) : true),
       );
     }
     if (!second) return false;
@@ -2550,7 +2884,10 @@ export function generateNextWorkout(
         [movement],
         rounds,
         (ex) =>
-          !picks.some((existing) => existing.exercise.name === ex.name) &&
+          isCompatibleWithPicks(
+            ex,
+            picks.map((existing) => existing.exercise),
+          ) &&
           (filter ? filter(ex) : true),
       );
       if (pick) picks.push(pick);
@@ -2562,7 +2899,10 @@ export function generateNextWorkout(
         allowed,
         rounds,
         (ex) =>
-          !picks.some((existing) => existing.exercise.name === ex.name) &&
+          isCompatibleWithPicks(
+            ex,
+            picks.map((existing) => existing.exercise),
+          ) &&
           (filter ? filter(ex) : true),
       );
       if (fallbackPick) picks.push(fallbackPick);
@@ -2621,10 +2961,14 @@ export function generateNextWorkout(
     : pickForMovement(
         compoundMovements,
         compoundTargets.length,
-        (ex) =>
-          environmentAllowsExercise(ex, activeProfile) &&
-          isHeavyEquipment(ex) &&
-          goalAllows(ex, activeProfile.goal),
+        (ex) => {
+          const movement = movementOf(ex);
+          if (!environmentAllowsExercise(ex, activeProfile)) return false;
+          if (!goalAllows(ex, activeProfile.goal)) return false;
+          if (!(isHeavyEquipment(ex) || (movement === "pull" && ex.equipment === "cable"))) return false;
+          if (movement === "pull") return isBackPullAnchor(ex);
+          return true;
+        },
       );
   // 2. Secondary lift — add another focused block before accessories.
   const secondaryMovements = accessoryMovements.filter(
@@ -2790,6 +3134,15 @@ export function generateNextWorkout(
       .map(findExerciseByName)
       .filter((exercise): exercise is Exercise => Boolean(exercise));
     if (exercises.length !== template.exercises.length) return false;
+    if (
+      strictPullCatchUpUpperSlot &&
+      (template.tags.includes("lower") ||
+        exercises.some((exercise) =>
+          isPushLeaningFinisher(exercise) || isLowerFatiguingFinisher(exercise),
+        ))
+    ) {
+      return false;
+    }
     return exercises.every(
       (exercise) =>
         !used.has(exercise.name) &&
@@ -2813,6 +3166,15 @@ export function generateNextWorkout(
     }
     if (template.tags.includes("upper") && lowerBiasSlot) score -= 0.5;
     if (template.tags.includes("lower") && upperBiasSlot) score -= 0.5;
+    const templateExercises = template.exercises
+      .map(findExerciseByName)
+      .filter((exercise): exercise is Exercise => Boolean(exercise));
+    if (pullCatchUpUpperSlot) {
+      score -= templateExercises.filter((exercise) => isPushLeaningFinisher(exercise)).length * 4;
+      score -= templateExercises.filter((exercise) => isLowerFatiguingFinisher(exercise)).length * 2.5;
+      if (template.tags.includes("core")) score += 2.5;
+      if (templateExercises.some((exercise) => movementOf(exercise) === "carry_core")) score += 2;
+    }
     score -= finisherRepeatPenalty(template.exercises, workouts, todayISO);
     return score;
   };
@@ -2872,6 +3234,9 @@ export function generateNextWorkout(
     const finisherCandidates = EXERCISES.filter((ex) => {
       if (used.has(ex.name)) return false;
       if (!environmentAllowsExercise(ex, activeProfile)) return false;
+      if (strictPullCatchUpUpperSlot) {
+        if (isPushLeaningFinisher(ex) || isLowerFatiguingFinisher(ex)) return false;
+      }
       if (allowConditioningFinisher) return isPreferredAccessibleFinisher(ex);
       return movementOf(ex) === "carry_core" || isAccessibleMetabolicFinisher(ex);
     });
@@ -2893,6 +3258,11 @@ export function generateNextWorkout(
     if (isAccessibleConditioningFinisher(ex)) s += 5;
     if (isAccessibleMetabolicFinisher(ex)) s += 4.5;
     if (movementOf(ex) === "carry_core") s += 4;
+    if (pullCatchUpUpperSlot) {
+      if (isPushLeaningFinisher(ex)) s -= 8;
+      if (isLowerFatiguingFinisher(ex)) s -= 5;
+      if (ex.primary.includes("core") || ex.secondary.includes("core")) s += 2;
+    }
     if (["bodyweight", "dumbbell", "band"].includes(ex.equipment)) s += 1.5;
     if (known.has(ex.name)) s += 0.4;
     ex.primary.forEach((m) => {
@@ -2948,6 +3318,9 @@ export function generateNextWorkout(
   if (finisherPicks.length === 0) {
     const fin = pickBestFinisher((ex) => {
       if (!environmentAllowsExercise(ex, activeProfile)) return false;
+      if (strictPullCatchUpUpperSlot) {
+        if (isPushLeaningFinisher(ex) || isLowerFatiguingFinisher(ex)) return false;
+      }
       if (allowConditioningFinisher) return isPreferredAccessibleFinisher(ex);
       return movementOf(ex) === "carry_core" || isAccessibleMetabolicFinisher(ex);
     });
@@ -3183,11 +3556,12 @@ export function generateNextWorkout(
       slotId: slot.id,
       title: slot.title,
       summary: slot.summary,
-      sessionIndex: sessionIndex + 1,
+      sessionIndex: selectedSlotIndex + 1,
       totalSessions: split.length,
       targetPrimaryStimulus: slot.targetPrimaryStimulus,
       targetPrimarySets: slot.targetPrimaryStimulus,
     },
+    slotRecommendations,
     sections,
     rationale,
     rotatedOffLifts: rotatedOffLiftNames,

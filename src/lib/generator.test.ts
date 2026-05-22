@@ -11,6 +11,7 @@ const profile: TrainingProfile = {
   experience: "beginner",
   intensity: "standard",
   blockedExercises: [],
+  allowedExercises: [],
 };
 
 const threeDayProfile: TrainingProfile = {
@@ -20,6 +21,7 @@ const threeDayProfile: TrainingProfile = {
   experience: "beginner",
   intensity: "standard",
   blockedExercises: [],
+  allowedExercises: [],
 };
 
 const workout = (
@@ -76,6 +78,19 @@ describe("generateNextWorkout", () => {
     expect(draft.split.title).toBe("Upper A · Back/Shoulders");
   });
 
+  it("returns ranked slot recommendations and can force a non-default slot", () => {
+    const recommended = generateNextWorkout([], "2026-05-06", 123, profile);
+    const forced = generateNextWorkout([], "2026-05-06", 123, profile, {
+      forcedSlotId: "upper_back_shoulder",
+    });
+
+    expect(recommended.slotRecommendations[0]?.slotId).toBe("lower_glute_ham");
+    expect(recommended.slotRecommendations[0]?.isRecommended).toBe(true);
+    expect(forced.split.slotId).toBe("upper_back_shoulder");
+    expect(forced.slotRecommendations[0]?.slotId).toBe("lower_glute_ham");
+    expect(forced.slotRecommendations.some((slot) => slot.slotId === "upper_back_shoulder")).toBe(true);
+  });
+
   it("reacts to already logged exercises and avoids repeating the same lift", () => {
     const workouts = [
       workout("w1", "2026-05-05", [
@@ -94,6 +109,174 @@ describe("generateNextWorkout", () => {
     expect(draft.split.title).toBe("Lower B · Quad/Glute");
     expect(exerciseNames).not.toContain("Barbell hip thrust");
     expect(exerciseNames).not.toContain("Barbell Romanian deadlift");
+  });
+
+  it("prefers an upper pull day when recent lower fatigue is high but back work still lags", () => {
+    const workouts = [
+      workout("w1", "2026-05-15", [
+        { name: "DB reverse fly", sets: 3 },
+        { name: "DB single-arm row", sets: 3 },
+        { name: "Concentration curl", sets: 3 },
+        { name: "Lateral step-up", sets: 3 },
+        { name: "Plank", sets: 3 },
+      ]),
+      workout("w2", "2026-05-18", [
+        { name: "Angled machine leg press", sets: 3 },
+        { name: "DB walking lunge", sets: 3 },
+        { name: "DB flat bench press", sets: 3 },
+        { name: "DB split squat to RDL", sets: 3 },
+        { name: "Ski erg", sets: 3 },
+      ]),
+      workout("w3", "2026-05-20", [
+        { name: "DB side lunge to high pull", sets: 3 },
+        { name: "DB squat to reverse lunge", sets: 3 },
+        { name: "DB overhead march", sets: 3 },
+        { name: "Barbell Romanian deadlift", sets: 3 },
+        { name: "Barbell incline bench press", sets: 3 },
+        { name: "Box step-up", sets: 3 },
+        { name: "DB skull crusher", sets: 3 },
+        { name: "Butterfly sit-up", sets: 3 },
+      ]),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-22", 123, profile);
+
+    expect(draft.split.title).toBe("Upper A · Back/Shoulders");
+    expect(draft.slotRecommendations[0]?.slotId).toBe("upper_back_shoulder");
+  });
+
+  it("re-biases Upper A toward pull-first work when lower and pressing fatigue are already high", () => {
+    const workouts = [
+      workout("w1", "2026-05-18", [
+        { name: "Angled machine leg press", sets: 3 },
+        { name: "DB walking lunge", sets: 3 },
+        { name: "DB flat bench press", sets: 3 },
+        { name: "DB split squat to RDL", sets: 3 },
+        { name: "Ski erg", sets: 3 },
+        { name: "Hand raise push-up", sets: 3 },
+      ]),
+      workout("w2", "2026-05-20", [
+        { name: "DB side lunge to high pull", sets: 3 },
+        { name: "Woman maker", sets: 3 },
+        { name: "DB squat to reverse lunge", sets: 3 },
+        { name: "DB overhead march", sets: 3 },
+        { name: "Barbell Romanian deadlift", sets: 3 },
+        { name: "Barbell incline bench press", sets: 3 },
+        { name: "Box step-up", sets: 3 },
+        { name: "DB skull crusher", sets: 3 },
+        { name: "Butterfly sit-up", sets: 3 },
+      ]),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-22", 123, profile);
+    const names = draft.sections.flatMap((section) =>
+      section.exercises.map((exercise) => exercise.name),
+    );
+    const finisherSection = draft.sections.find((section) => section.kind === "finisher");
+    const finisherNames = finisherSection?.exercises.map((exercise) => exercise.name) ?? [];
+
+    expect(draft.split.title).toBe("Upper A · Back/Shoulders");
+    expect(names).not.toContain("DB prone press");
+    expect(names).not.toContain("Hyperextension");
+    expect(
+      names.some((name) =>
+        ["Chin-up", "Band-assisted pull-up", "Cable row", "T-bar row", "DB single-arm row"].includes(name),
+      ),
+    ).toBe(true);
+    expect(findExercise(draft.sections[0]?.exercises[0]?.name ?? "")?.pattern).toBe("pull");
+    expect(finisherNames.length).toBeGreaterThan(0);
+    expect(
+      finisherNames.some((name) => {
+        const exercise = findExercise(name);
+        return exercise?.pattern === "push" || name === "Push-up to renegade row";
+      }),
+    ).toBe(false);
+  });
+
+  it("does not stack multiple vertical pulls in the same upper pull session", () => {
+    const workouts = [
+      workout("w1", "2026-05-18", [
+        { name: "Angled machine leg press", sets: 3 },
+        { name: "DB walking lunge", sets: 3 },
+        { name: "DB flat bench press", sets: 3 },
+        { name: "DB split squat to RDL", sets: 3 },
+        { name: "Ski erg", sets: 3 },
+        { name: "Hand raise push-up", sets: 3 },
+      ]),
+      workout("w2", "2026-05-20", [
+        { name: "DB side lunge to high pull", sets: 3 },
+        { name: "Woman maker", sets: 3 },
+        { name: "DB squat to reverse lunge", sets: 3 },
+        { name: "DB overhead march", sets: 3 },
+        { name: "Barbell Romanian deadlift", sets: 3 },
+        { name: "Barbell incline bench press", sets: 3 },
+        { name: "Box step-up", sets: 3 },
+        { name: "DB skull crusher", sets: 3 },
+        { name: "Butterfly sit-up", sets: 3 },
+      ]),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-22", 321, profile);
+    const exerciseNames = draft.sections.flatMap((section) =>
+      section.exercises.map((exercise) => exercise.name),
+    );
+    const verticalPullNames = [
+      "Pull-up",
+      "Chin-up",
+      "Band-assisted pull-up",
+      "Lat pulldown",
+    ];
+    const rowNames = [
+      "Cable row",
+      "DB single-arm row",
+      "Chest-supported DB row",
+      "Barbell bent-over row",
+      "T-bar row",
+      "DB bent-over row",
+    ];
+
+    expect(draft.split.title).toBe("Upper A · Back/Shoulders");
+    expect(exerciseNames.filter((name) => verticalPullNames.includes(name)).length).toBeLessThanOrEqual(1);
+    expect(exerciseNames.some((name) => rowNames.includes(name))).toBe(true);
+  });
+
+  it("does not stack multiple direct curl variations in the same upper session", () => {
+    const workouts = [
+      workout("w1", "2026-05-18", [
+        { name: "Angled machine leg press", sets: 3 },
+        { name: "DB walking lunge", sets: 3 },
+        { name: "DB flat bench press", sets: 3 },
+        { name: "DB split squat to RDL", sets: 3 },
+        { name: "Ski erg", sets: 3 },
+        { name: "Hand raise push-up", sets: 3 },
+      ]),
+      workout("w2", "2026-05-20", [
+        { name: "DB side lunge to high pull", sets: 3 },
+        { name: "Woman maker", sets: 3 },
+        { name: "DB squat to reverse lunge", sets: 3 },
+        { name: "DB overhead march", sets: 3 },
+        { name: "Barbell Romanian deadlift", sets: 3 },
+        { name: "Barbell incline bench press", sets: 3 },
+        { name: "Box step-up", sets: 3 },
+        { name: "DB skull crusher", sets: 3 },
+        { name: "Butterfly sit-up", sets: 3 },
+      ]),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-22", 654, profile);
+    const exerciseNames = draft.sections.flatMap((section) =>
+      section.exercises.map((exercise) => exercise.name),
+    );
+    const curlNames = [
+      "DB hammer curl",
+      "Barbell curl",
+      "Concentration curl",
+      "Cable curl",
+      "Preacher curl",
+      "Incline DB curl",
+    ];
+
+    expect(exerciseNames.filter((name) => curlNames.includes(name)).length).toBeLessThanOrEqual(1);
   });
 
   it("builds progression guidance from the last logged performance", () => {
@@ -164,6 +347,44 @@ describe("generateNextWorkout", () => {
     expect(allExercises.some((exercise) => exercise.name === "Hanging knee raise")).toBe(false);
     expect(allExercises.some((exercise) => exercise.name === "Hanging leg raise")).toBe(false);
     expect(allExercises.some((exercise) => exercise.name === "Hyperextension")).toBe(false);
+  });
+
+  it("treats cable pulls as core back options in the dumbbells profile", () => {
+    const dumbbellProfile: TrainingProfile = {
+      ...profile,
+      equipment: "dumbbells",
+    };
+    const workouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Angled machine leg press", sets: 3 },
+        { name: "DB walking lunge", sets: 3 },
+        { name: "DB flat bench press", sets: 3 },
+        { name: "DB split squat to RDL", sets: 3 },
+        { name: "Ski erg", sets: 3 },
+        { name: "Hand raise push-up", sets: 3 },
+      ]),
+      workout("w2", "2026-05-20", [
+        { name: "DB side lunge to high pull", sets: 3 },
+        { name: "Woman maker", sets: 3 },
+        { name: "DB squat to reverse lunge", sets: 3 },
+        { name: "DB overhead march", sets: 3 },
+        { name: "DB Romanian deadlift", sets: 3 },
+        { name: "DB incline bench press", sets: 3 },
+        { name: "Box step-up", sets: 3 },
+        { name: "DB skull crusher", sets: 3 },
+        { name: "Butterfly sit-up", sets: 3 },
+      ]),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-22", 654, dumbbellProfile);
+    const exerciseNames = draft.sections.flatMap((section) =>
+      section.exercises.map((exercise) => exercise.name),
+    );
+
+    expect(draft.split.title).toBe("Upper A · Back/Shoulders");
+    expect(
+      exerciseNames.some((name) => name === "Cable row" || name === "Lat pulldown"),
+    ).toBe(true);
   });
 
   it("respects blocked exercises from the training profile", () => {
@@ -319,7 +540,7 @@ describe("generateNextWorkout", () => {
     const allExercises = draft.sections.flatMap((section) => section.exercises);
 
     expect(draft.split.title).toBe("Upper A · Back/Shoulders");
-    expect(draft.split.summary).toBe("Upper session theme with back, shoulders, and glute support.");
+    expect(draft.split.summary.toLowerCase()).toContain("upper session");
     expect(
       allExercises.some((exercise) =>
         exercise.primary.includes("glutes") ||

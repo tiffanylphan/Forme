@@ -283,9 +283,7 @@ export default function NextPage() {
 
   const baseDraft = useMemo(
     () =>
-      generateNextWorkout(workouts, today, seed, profile, {
-        preferredExercises,
-      }),
+      generateNextWorkout(workouts, today, seed, profile, { preferredExercises }),
     [workouts, today, seed, profile, preferredExercises],
   );
 
