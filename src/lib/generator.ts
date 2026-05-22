@@ -2220,6 +2220,23 @@ export function generateNextWorkout(
     ),
   );
 
+  // Lower families present in the last 2 sessions — stronger inter-session signal
+  // than the week-level currentWeekFamilies penalty for unilateral/hinge patterns.
+  const recentLowerFamilies = new Set<string>();
+  [...workouts]
+    .sort(compareWorkoutsDesc)
+    .slice(0, 2)
+    .forEach((w) => {
+      w.exercises.forEach((logEx) => {
+        const ex = EXERCISES.find((e) => e.name === logEx.exerciseName);
+        if (!ex) return;
+        const movement = movementOf(ex);
+        if (movement === "hinge" || movement === "squat" || movement === "single_leg") {
+          recentLowerFamilies.add(familyOf(ex));
+        }
+      });
+    });
+
   const known = new Set<string>();
   workouts.forEach((w) =>
     w.exercises.forEach((e) => known.add(e.exerciseName)),
@@ -2254,7 +2271,7 @@ export function generateNextWorkout(
     if (!slot.allowedMovements.includes(movement)) return -10;
     const family = familyOf(ex);
     if (
-      (family === "biceps_isolation" || family === "triceps_isolation") &&
+      (family === "biceps_isolation" || family === "triceps_isolation" || family === "hip_thrust") &&
       (claimedFamilies[family] ?? 0) > 0
     ) {
       return -10;
@@ -2479,6 +2496,11 @@ export function generateNextWorkout(
           s -= PLANNER_TUNING.exerciseSelection.upperPullSupportBeforeRowPenalty;
         }
       }
+      if (rowCount >= 1 && verticalPullCount === 0) {
+        if (family === "vertical_pull") {
+          s += PLANNER_TUNING.exerciseSelection.upperPullRowBalanceBonus;
+        }
+      }
     }
     const lowerUnilateralFamily = lowerUnilateralKneeFamilyOf(ex);
     if (lowerBiasSlot && lowerUnilateralFamily) {
@@ -2492,6 +2514,24 @@ export function generateNextWorkout(
     if (lowerBiasSlot && movement === "single_leg") {
       if (claimedMovements.single_leg >= 1) s -= PLANNER_TUNING.exerciseSelection.repeatedSingleLegPenalty;
       if (claimedMovements.single_leg >= 2) s -= PLANNER_TUNING.exerciseSelection.repeatedSingleLegHardPenalty;
+    }
+    // Limit hinge stacking in non-strength lower sessions — two compound hinges
+    // (e.g., deadlift + RDL) is fine in strength, but trainer-like physique/balanced
+    // programming would rotate to a different lower pattern after one hinge.
+    if (lowerBiasSlot && movement === "hinge" && activeProfile.goal !== "strength") {
+      if (claimedMovements.hinge >= 1) s -= PLANNER_TUNING.exerciseSelection.repeatedHingePenalty;
+      if (claimedMovements.hinge >= 2) s -= PLANNER_TUNING.exerciseSelection.repeatedHingeHardPenalty;
+    }
+    // Extra penalty for a second rdl-family exercise in lower sessions — two RDL
+    // variants (e.g., DB RDL + Single-leg DB RDL) are trainer-equivalent and redundant.
+    if (lowerBiasSlot && family === "rdl" && (claimedFamilies.rdl ?? 0) > 0) {
+      s -= PLANNER_TUNING.exerciseSelection.repeatedRdlFamilyPenalty;
+    }
+    // Penalize repeating a lower family that appeared in either of the last 2 sessions.
+    // The currentWeekFamilies penalty (1.2) is too weak to capture "you just did lunges
+    // yesterday"; this provides a stronger but still soft inter-session signal.
+    if (lowerBiasSlot && recentLowerFamilies.has(family)) {
+      s -= PLANNER_TUNING.exerciseSelection.recentLowerFamilyRepeatPenalty;
     }
     ex.primary.forEach((m) => {
       if (slot.focusMuscles.includes(m)) s += PLANNER_TUNING.exerciseSelection.focusPrimaryBonus;
@@ -2817,7 +2857,8 @@ export function generateNextWorkout(
     if (
       (family === "biceps_isolation" ||
         family === "triceps_isolation" ||
-        family === "vertical_pull") &&
+        family === "vertical_pull" ||
+        family === "hip_thrust") &&
       picks.some((pick) => familyOf(pick) === family)
     ) {
       return false;
@@ -3117,6 +3158,79 @@ export function generateNextWorkout(
     );
   }
 
+  // Fill-in blocks run before the finisher so the finisher is always last in the
+  // sections array and renders at the bottom of the UI, not mid-workout.
+  const totalExercises = (): number =>
+    sections.reduce((count, section) => count + section.exercises.length, 0);
+
+  const hasDirectArmWork = (): boolean =>
+    sections.some((section) =>
+      section.exercises.some((exercise) =>
+        exercise.primary.includes("biceps") || exercise.primary.includes("triceps"),
+      ),
+    );
+
+  const hasLowerSupportWork = (): boolean =>
+    sections.some((section) =>
+      section.exercises.some((exercise) =>
+        exercise.primary.includes("glutes") ||
+        exercise.primary.includes("quads") ||
+        exercise.primary.includes("hamstrings"),
+      ),
+    );
+
+  if (totalExercises() < 5) {
+    addAccessoryBlock(
+      accessoryMovements,
+      accessoryRounds,
+      "12–15 reps — finishing volume",
+      accessoryRounds === 5
+        ? [15, 12, 12, 10, 10]
+        : accessoryRounds === 4
+          ? [15, 12, 12, 10]
+          : [15, 12, 12],
+      (ex) =>
+        environmentAllowsExercise(ex, activeProfile) &&
+        goalAllows(ex, activeProfile.goal) &&
+        avoidSoftLowerAccessory(ex) &&
+        slot.focusMuscles.some(
+          (muscle) => ex.primary.includes(muscle) || ex.secondary.includes(muscle),
+        ),
+    );
+  }
+
+  if (activeProfile.goal === "physique" && armBiasSlot && !hasDirectArmWork()) {
+    addAccessoryBlock(
+      accessoryMovements,
+      2,
+      "12–15 reps — direct arm finish",
+      [15, 12],
+      (ex) =>
+        environmentAllowsExercise(ex, activeProfile) &&
+        goalAllows(ex, activeProfile.goal) &&
+        isDirectArmFocus(ex),
+    );
+  }
+
+  if (
+    activeProfile.goal === "physique" &&
+    activeProfile.daysPerWeek === 4 &&
+    upperBiasSlot &&
+    !hasLowerSupportWork()
+  ) {
+    addAccessoryBlock(
+      accessoryMovements,
+      2,
+      "10–12 reps — lower support",
+      [12, 10],
+      (ex) =>
+        environmentAllowsExercise(ex, activeProfile) &&
+        goalAllows(ex, activeProfile.goal) &&
+        avoidSoftLowerAccessory(ex) &&
+        isGluteBiasedLower(ex),
+    );
+  }
+
   // 5. Finisher — 3-day plans bias harder toward conditioning so the session
   // still has a noticeable end-of-workout push.
   const allowConditioningFinisher =
@@ -3343,77 +3457,6 @@ export function generateNextWorkout(
       exercises: finisherPicks.map((fin) => makeDraftEx(fin, finisherTargetSet(fin, finisherRounds))),
     });
   }
-  }
-
-  const totalExercises = (): number =>
-    sections.reduce((count, section) => count + section.exercises.length, 0);
-
-  const hasDirectArmWork = (): boolean =>
-    sections.some((section) =>
-      section.exercises.some((exercise) =>
-        exercise.primary.includes("biceps") || exercise.primary.includes("triceps"),
-      ),
-    );
-
-  const hasLowerSupportWork = (): boolean =>
-    sections.some((section) =>
-      section.exercises.some((exercise) =>
-        exercise.primary.includes("glutes") ||
-        exercise.primary.includes("quads") ||
-        exercise.primary.includes("hamstrings"),
-      ),
-    );
-
-  if (totalExercises() < 5) {
-    addAccessoryBlock(
-      accessoryMovements,
-      accessoryRounds,
-      "12–15 reps — finishing volume",
-      accessoryRounds === 5
-        ? [15, 12, 12, 10, 10]
-        : accessoryRounds === 4
-          ? [15, 12, 12, 10]
-          : [15, 12, 12],
-      (ex) =>
-        environmentAllowsExercise(ex, activeProfile) &&
-        goalAllows(ex, activeProfile.goal) &&
-        avoidSoftLowerAccessory(ex) &&
-        slot.focusMuscles.some(
-          (muscle) => ex.primary.includes(muscle) || ex.secondary.includes(muscle),
-        ),
-    );
-  }
-
-  if (activeProfile.goal === "physique" && armBiasSlot && !hasDirectArmWork()) {
-    addAccessoryBlock(
-      accessoryMovements,
-      2,
-      "12–15 reps — direct arm finish",
-      [15, 12],
-      (ex) =>
-        environmentAllowsExercise(ex, activeProfile) &&
-        goalAllows(ex, activeProfile.goal) &&
-        isDirectArmFocus(ex),
-    );
-  }
-
-  if (
-    activeProfile.goal === "physique" &&
-    activeProfile.daysPerWeek === 4 &&
-    upperBiasSlot &&
-    !hasLowerSupportWork()
-  ) {
-    addAccessoryBlock(
-      accessoryMovements,
-      2,
-      "10–12 reps — lower support",
-      [12, 10],
-      (ex) =>
-        environmentAllowsExercise(ex, activeProfile) &&
-        goalAllows(ex, activeProfile.goal) &&
-        avoidSoftLowerAccessory(ex) &&
-        isGluteBiasedLower(ex),
-    );
   }
 
   // ---- Rationale ----

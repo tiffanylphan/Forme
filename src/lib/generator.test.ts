@@ -757,6 +757,32 @@ describe("generateNextWorkout", () => {
     expect(secondDraft.split.title).toBe("Upper B · Upper/Arms");
   });
 
+  it("includes a vertical pull in 3-day upper sessions when a row is the compound", () => {
+    const workouts = [
+      workout("w1", "2026-05-18", [
+        { name: "Angled machine leg press", sets: 3 },
+        { name: "DB walking lunge", sets: 3 },
+        { name: "DB flat bench press", sets: 3 },
+        { name: "DB split squat to RDL", sets: 3 },
+      ]),
+      workout("w2", "2026-05-20", [
+        { name: "DB side lunge to high pull", sets: 3 },
+        { name: "DB squat to reverse lunge", sets: 3 },
+        { name: "Barbell Romanian deadlift", sets: 3 },
+        { name: "Barbell incline bench press", sets: 3 },
+        { name: "Box step-up", sets: 3 },
+      ]),
+    ];
+    const verticalPullNames = ["Pull-up", "Chin-up", "Band-assisted pull-up", "Lat pulldown"];
+    const seeds = [100, 200, 300, 400, 500];
+    const anyHasVerticalPull = seeds.some((seed) => {
+      const draft = generateNextWorkout(workouts, "2026-05-22", seed, threeDayProfile);
+      const names = draft.sections.flatMap((s) => s.exercises.map((e) => e.name));
+      return names.some((name) => verticalPullNames.includes(name));
+    });
+    expect(anyHasVerticalPull).toBe(true);
+  });
+
   it("allows a short conditioning finisher on 3-day lower sessions", () => {
     const draft = generateNextWorkout([], "2026-05-06", 9090, threeDayProfile);
     const finisherSection = draft.sections.find((section) => section.kind === "finisher");
@@ -1351,5 +1377,92 @@ describe("generateNextWorkout", () => {
     ];
     const draft = generateNextWorkout(workouts, "2026-05-18", 123, profile);
     expect(draft.split.title).toBe("Upper A · Back/Shoulders");
+  });
+
+  it("does not include two hip-thrust family exercises in the same lower session", () => {
+    // Hip thrust variants (Barbell hip thrust, Bench single-leg hip thrust, Glute bridge)
+    // are trainer-equivalent. Only one should appear per session.
+    const seeds = [1111, 2222, 3333, 4444, 5555, 6666];
+    for (const seed of seeds) {
+      const draft = generateNextWorkout([], "2026-05-06", seed, profile);
+      if (draft.split.title !== "Lower A · Posterior") continue;
+      const names = draftExerciseNames(draft);
+      const hipThrustFamilyNames = names.filter((name) => {
+        const lower = name.toLowerCase();
+        return lower.includes("hip thrust") || lower.includes("glute bridge");
+      });
+      expect(hipThrustFamilyNames.length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("does not stack two compound hinge families in the same physique lower session", () => {
+    // A trainer would not program deadlift + RDL as back-to-back heavy compound hinges.
+    // Only hinge-movement exercises are counted — "DB split squat to RDL" is squat-pattern
+    // and excluded despite having "rdl" in its name.
+    const seeds = [1111, 2222, 3333, 4444, 5555, 6666, 7777, 8888];
+    for (const seed of seeds) {
+      const draft = generateNextWorkout([], "2026-05-06", seed, profile);
+      if (!["Lower A · Posterior", "Lower B · Quad/Glute"].includes(draft.split.title)) continue;
+      const hingeExercises = draft.sections
+        .filter((section) => section.kind !== "finisher")
+        .flatMap((section) => section.exercises)
+        .filter((ex) => ex.movement === "hinge");
+      // Map each hinge exercise to its heavy-compound family (deadlift or rdl).
+      // Light accessories (hyperextension, cable pull-through) map to "other" and are allowed.
+      const heavyFamilies = hingeExercises
+        .map((ex) => {
+          const lower = ex.name.toLowerCase();
+          if (lower.includes("romanian deadlift") || (lower.includes("rdl") && !lower.includes("split squat"))) return "rdl";
+          if (lower.includes("deadlift") && !lower.includes("romanian")) return "deadlift";
+          return "other";
+        })
+        .filter((f) => f !== "other");
+      const uniqueHeavyFamilies = new Set(heavyFamilies);
+      expect(uniqueHeavyFamilies.size).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("strength lower sessions still allow two hinge exercises (deadlift + RDL)", () => {
+    const strengthProfile: TrainingProfile = {
+      ...profile,
+      goal: "strength",
+      daysPerWeek: 3,
+    };
+    const seeds = [9001, 9002, 9003, 9004, 9005];
+    let foundTwoHinges = false;
+    for (const seed of seeds) {
+      const draft = generateNextWorkout([], "2026-05-06", seed, strengthProfile);
+      const hingeExercises = draft.sections
+        .flatMap((section) => section.exercises)
+        .filter((ex) => ex.movement === "hinge");
+      if (hingeExercises.length >= 2) {
+        foundTwoHinges = true;
+        break;
+      }
+    }
+    expect(foundTwoHinges).toBe(true);
+  });
+
+  it("does not repeat a unilateral lower knee family that appeared in the last session", () => {
+    // If the prior session had lunges, the next lower session should avoid lunges/step-ups/split-squats.
+    const recentLungeSession = workout("w-lunge", "2026-05-04", [
+      { name: "DB walking lunge", sets: 4 },
+      { name: "DB reverse lunge", sets: 3 },
+      { name: "DB Romanian deadlift", sets: 3 },
+    ]);
+    // Force a lower slot so we land on a lower session
+    const draft = generateNextWorkout(
+      [recentLungeSession],
+      "2026-05-06",
+      1234,
+      profile,
+      { forcedSlotId: "lower_glute_quad" },
+    );
+    const lowerUnilateralNames = draftExerciseNames(draft).filter((name) => {
+      const lower = name.toLowerCase();
+      return lower.includes("lunge") || lower.includes("split squat") || lower.includes("step-up");
+    });
+    // Recent lunge session should suppress another lunge-dominant unilateral lower day
+    expect(lowerUnilateralNames.length).toBeLessThanOrEqual(1);
   });
 });
