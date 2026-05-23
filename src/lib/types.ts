@@ -75,6 +75,14 @@ export type ExperienceLevel = "beginner" | "intermediate";
 export type TrainingEnvironment = "full_gym" | "dumbbells" | "home";
 export type TrainingDaysPerWeek = 3 | 4 | 5;
 export type SessionIntensity = "standard" | "hard";
+export type HomeGymEquipmentType = "barbell" | "cable" | "machine" | "pullup_bar";
+
+export const HOME_GYM_EQUIPMENT_OPTIONS: HomeGymEquipmentType[] = [
+  "cable",
+  "barbell",
+  "machine",
+  "pullup_bar",
+];
 
 export type TrainingProfile = {
   goal: GoalMode;
@@ -84,6 +92,7 @@ export type TrainingProfile = {
   intensity: SessionIntensity;
   blockedExercises: string[];
   allowedExercises: string[];
+  homeGymEquipment: HomeGymEquipmentType[];
 };
 
 export type SetEntry = {

@@ -4,11 +4,13 @@ import { useSyncExternalStore } from "react";
 import type {
   ExperienceLevel,
   GoalMode,
+  HomeGymEquipmentType,
   SessionIntensity,
   TrainingDaysPerWeek,
   TrainingEnvironment,
   TrainingProfile,
 } from "./types";
+import { HOME_GYM_EQUIPMENT_OPTIONS } from "./types";
 
 const STORAGE_KEY = "workout.training-profile.v1";
 const CHANGE_EVENT = "training-profile:changed";
@@ -34,6 +36,7 @@ export const DEFAULT_PROFILE: TrainingProfile = {
   intensity: "standard",
   blockedExercises: [],
   allowedExercises: [],
+  homeGymEquipment: [],
 };
 
 const EMPTY_SNAPSHOT = { profile: null, ready: false } as const;
@@ -87,6 +90,12 @@ const normalizeProfile = (raw: unknown): TrainingProfile | null => {
           (value): value is string => typeof value === "string",
         )
       : DEFAULT_PROFILE.allowedExercises,
+    homeGymEquipment: Array.isArray(candidate.homeGymEquipment)
+      ? candidate.homeGymEquipment.filter(
+          (value): value is HomeGymEquipmentType =>
+            HOME_GYM_EQUIPMENT_OPTIONS.includes(value as HomeGymEquipmentType),
+        )
+      : DEFAULT_PROFILE.homeGymEquipment,
   };
 };
 
@@ -163,8 +172,17 @@ export const formatEnvironment = (environment: TrainingEnvironment): string =>
   environment === "full_gym"
     ? "Full gym"
     : environment === "dumbbells"
-      ? "Dumbbells"
-      : "Home";
+      ? "Home gym"
+      : "Minimal";
+
+export const formatHomeGymEquipment = (type: HomeGymEquipmentType): string =>
+  type === "cable"
+    ? "Cable machine"
+    : type === "barbell"
+      ? "Barbell + rack"
+      : type === "machine"
+        ? "Leg press / machines"
+        : "Pull-up bar";
 
 export const formatIntensity = (intensity: SessionIntensity): string =>
   intensity === "hard" ? "Hard" : "Standard";

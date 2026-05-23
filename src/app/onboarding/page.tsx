@@ -13,12 +13,14 @@ import {
   formatEnvironment,
   formatExperience,
   formatGoal,
+  formatHomeGymEquipment,
   formatIntensity,
   loadTrainingProfile,
   saveTrainingProfile,
   useTrainingProfile,
 } from "@/lib/profile";
-import type { TrainingProfile } from "@/lib/types";
+import type { HomeGymEquipmentType, TrainingProfile } from "@/lib/types";
+import { HOME_GYM_EQUIPMENT_OPTIONS } from "@/lib/types";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -94,6 +96,28 @@ export default function OnboardingPage() {
               }
             />
 
+            {draft.equipment !== "full_gym" && (
+              <MultiToggle
+                label="Also available at home"
+                options={HOME_GYM_EQUIPMENT_OPTIONS.map((value) => ({
+                  value,
+                  text: formatHomeGymEquipment(value),
+                }))}
+                selected={draft.homeGymEquipment ?? []}
+                onToggle={(value) =>
+                  setDraft((prev) => {
+                    const current = prev.homeGymEquipment ?? [];
+                    return {
+                      ...prev,
+                      homeGymEquipment: current.includes(value)
+                        ? current.filter((v) => v !== value)
+                        : [...current, value],
+                    };
+                  })
+                }
+              />
+            )}
+
             <Question
               label="Experience"
               options={EXPERIENCE_OPTIONS.map((value) => ({
@@ -165,6 +189,42 @@ function Question<T extends string | number>({
             <button
               key={String(option.value)}
               onClick={() => onSelect(option.value)}
+              className={`rounded-xl border px-3 py-3 text-left text-[13px] font-medium ${
+                active
+                  ? "border-text bg-text text-white"
+                  : "border-[#E6E3D8] bg-white text-text"
+              }`}
+            >
+              {option.text}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MultiToggle<T extends string>({
+  label,
+  options,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  options: { value: T; text: string }[];
+  selected: T[];
+  onToggle: (value: T) => void;
+}) {
+  return (
+    <div>
+      <p className="label-eyebrow mb-2">{label}</p>
+      <div className="grid grid-cols-2 gap-2">
+        {options.map((option) => {
+          const active = selected.includes(option.value);
+          return (
+            <button
+              key={option.value}
+              onClick={() => onToggle(option.value)}
               className={`rounded-xl border px-3 py-3 text-left text-[13px] font-medium ${
                 active
                   ? "border-text bg-text text-white"

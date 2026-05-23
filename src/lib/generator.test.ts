@@ -349,10 +349,11 @@ describe("generateNextWorkout", () => {
     expect(allExercises.some((exercise) => exercise.name === "Hyperextension")).toBe(false);
   });
 
-  it("treats cable pulls as core back options in the dumbbells profile", () => {
+  it("treats cable pulls as core back options when cable is in homeGymEquipment", () => {
     const dumbbellProfile: TrainingProfile = {
       ...profile,
       equipment: "dumbbells",
+      homeGymEquipment: ["cable"],
     };
     const workouts = [
       workout("w1", "2026-05-05", [
@@ -1464,5 +1465,42 @@ describe("generateNextWorkout", () => {
     });
     // Recent lunge session should suppress another lunge-dominant unilateral lower day
     expect(lowerUnilateralNames.length).toBeLessThanOrEqual(1);
+  });
+
+  it("includes a carry/core exercise in every physique upper session", () => {
+    const cableProfile: TrainingProfile = {
+      ...profile,
+      equipment: "dumbbells",
+      homeGymEquipment: ["cable"],
+    };
+    const seeds = [111, 222, 333, 444, 555];
+    for (const seed of seeds) {
+      const draft = generateNextWorkout([], "2026-05-22", seed, cableProfile, {
+        forcedSlotId: "upper_back_shoulder",
+      });
+      const hasCarryCore = draft.sections.some((section) =>
+        section.exercises.some((ex) => ex.movement === "carry_core"),
+      );
+      expect(hasCarryCore).toBe(true);
+    }
+  });
+
+  it("does not add a second carry/core block when the session already has one", () => {
+    const workouts = [
+      workout("w1", "2026-05-20", [
+        { name: "Leg press", sets: 4 },
+        { name: "DB Romanian deadlift", sets: 3 },
+      ], { slotId: "lower_glute_ham", title: "Lower A" }),
+    ];
+    const seeds = [111, 222, 333, 444, 555];
+    for (const seed of seeds) {
+      const draft = generateNextWorkout(workouts, "2026-05-22", seed, profile, {
+        forcedSlotId: "lower_glute_quad",
+      });
+      const carryCoreSections = draft.sections.filter((section) =>
+        section.exercises.some((ex) => ex.movement === "carry_core"),
+      );
+      expect(carryCoreSections.length).toBeLessThanOrEqual(2);
+    }
   });
 });

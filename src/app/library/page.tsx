@@ -76,7 +76,7 @@ export default function LibraryPage() {
     const blocked = activeProfile.blockedExercises.includes(name);
     const ex = EXERCISES.find((e) => e.name === name);
     // Check equipment compatibility ignoring blocked/allowed lists
-    const equipmentAllows = !ex || environmentAllowsExercise(ex, activeProfile.equipment);
+    const equipmentAllows = !ex || environmentAllowsExercise(ex, activeProfile);
 
     if (blocked || !equipmentAllows) {
       // Allowing: remove from blocked. If equipment doesn't support this exercise,

@@ -2404,20 +2404,30 @@ export function generateNextWorkout(
         s += PLANNER_TUNING.exerciseSelection.fullGymMachineCableBonus;
       }
     }
-    if (activeProfile.equipment === "dumbbells") {
+    if (activeProfile.equipment === "dumbbells" || activeProfile.equipment === "home") {
       if (ex.equipment === "dumbbell") s += PLANNER_TUNING.exerciseSelection.dumbbellEnvDumbbellBonus;
       if (ex.equipment === "kettlebell") s += PLANNER_TUNING.exerciseSelection.dumbbellEnvKettlebellBonus;
-      if (movement === "pull" && ex.equipment === "cable") {
-        s += PLANNER_TUNING.exerciseSelection.dumbbellEnvCablePullBonus;
-        if (slot.focusMuscles.includes("back") && ex.primary.includes("back")) {
-          s += PLANNER_TUNING.exerciseSelection.dumbbellEnvBackFocusedCablePullBonus;
-        }
-        if (familyOf(ex) === "vertical_pull") {
-          s += PLANNER_TUNING.exerciseSelection.dumbbellEnvCableVerticalPullBonus;
+      // Give unlocked cable/barbell/machine the same scoring bonuses as full_gym equivalents.
+      if (homeGymEquipment.includes("cable") && ex.equipment === "cable") {
+        s += PLANNER_TUNING.exerciseSelection.fullGymMachineCableBonus;
+        if (movement === "pull") {
+          s += PLANNER_TUNING.exerciseSelection.dumbbellEnvCablePullBonus;
+          if (slot.focusMuscles.includes("back") && ex.primary.includes("back")) {
+            s += PLANNER_TUNING.exerciseSelection.dumbbellEnvBackFocusedCablePullBonus;
+          }
+          if (familyOf(ex) === "vertical_pull") {
+            s += PLANNER_TUNING.exerciseSelection.dumbbellEnvCableVerticalPullBonus;
+          }
         }
       }
+      if (homeGymEquipment.includes("barbell") && ex.equipment === "barbell") {
+        s += PLANNER_TUNING.exerciseSelection.fullGymBarbellBonus;
+      }
+      if (homeGymEquipment.includes("machine") && ex.equipment === "machine") {
+        s += PLANNER_TUNING.exerciseSelection.fullGymMachineCableBonus;
+      }
     }
-    if (activeProfile.equipment === "home") {
+    if (activeProfile.equipment === "home" && homeGymEquipment.length === 0) {
       if (isHomeConditioningFriendly(ex)) s += PLANNER_TUNING.exerciseSelection.homeConditioningBonus;
       if (ex.equipment === "dumbbell") s += PLANNER_TUNING.exerciseSelection.homeDumbbellBonus;
       if (ex.pattern === "hinge" && ex.equipment === "dumbbell") {
@@ -2716,7 +2726,10 @@ export function generateNextWorkout(
 
   const sections: DraftSection[] = [];
   const movementsHit: MovementPattern[] = [];
-  const isHomeProfile = activeProfile.equipment === "home";
+  const homeGymEquipment = activeProfile.homeGymEquipment ?? [];
+  const isHomeProfile =
+    (activeProfile.equipment === "home" || activeProfile.equipment === "dumbbells") &&
+    homeGymEquipment.length === 0;
   const hardMode = activeProfile.intensity === "hard";
   const secondaryRounds: number = activeProfile.daysPerWeek === 5 ? 3 : hardMode ? 4 : 4;
   const accessoryRounds: number = activeProfile.daysPerWeek === 5 ? (hardMode ? 4 : 3) : hardMode ? 4 : 4;
@@ -3179,6 +3192,11 @@ export function generateNextWorkout(
       ),
     );
 
+  const hasCarryCore = (): boolean =>
+    sections.some((section) =>
+      section.exercises.some((exercise) => exercise.movement === "carry_core"),
+    );
+
   if (totalExercises() < 5) {
     addAccessoryBlock(
       accessoryMovements,
@@ -3228,6 +3246,21 @@ export function generateNextWorkout(
         goalAllows(ex, activeProfile.goal) &&
         avoidSoftLowerAccessory(ex) &&
         isGluteBiasedLower(ex),
+    );
+  }
+
+  if (!hasCarryCore()) {
+    addAccessoryBlock(
+      ["carry_core"],
+      2,
+      "2–3 sets · core/carry",
+      [12, 12],
+      (ex) =>
+        environmentAllowsExercise(ex, activeProfile) &&
+        goalAllows(ex, activeProfile.goal) &&
+        slot.focusMuscles.some(
+          (muscle) => ex.primary.includes(muscle) || ex.secondary.includes(muscle),
+        ),
     );
   }
 

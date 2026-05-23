@@ -21,6 +21,7 @@ describe("profile storage", () => {
       intensity: "hard",
       blockedExercises: ["Hack squat"],
       allowedExercises: [],
+      homeGymEquipment: ["cable", "barbell"],
     });
 
     expect(loadTrainingProfile()).toEqual({
@@ -31,6 +32,7 @@ describe("profile storage", () => {
       intensity: "hard",
       blockedExercises: ["Hack squat"],
       allowedExercises: [],
+      homeGymEquipment: ["cable", "barbell"],
     });
   });
 

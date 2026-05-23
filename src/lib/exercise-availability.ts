@@ -1,11 +1,22 @@
-import type { Exercise, TrainingEnvironment, TrainingProfile } from "./types";
+import type { Exercise, HomeGymEquipmentType, TrainingEnvironment, TrainingProfile } from "./types";
+
+const PULLUP_BAR_EXERCISES = ["Pull-up", "Chin-up", "Band-assisted pull-up"];
+
+const BODYWEIGHT_ONLY_BLOCKS = [
+  "Nordic hamstring curl",
+  "Dip",
+  "Inverted row",
+  "Hanging knee raise",
+  "Hanging leg raise",
+  "Hyperextension",
+];
 
 export const environmentAllowsExercise = (
   ex: Exercise,
   profileOrEnvironment:
     | TrainingEnvironment
     | Pick<TrainingProfile, "equipment"> &
-        Partial<Pick<TrainingProfile, "blockedExercises" | "allowedExercises">>,
+        Partial<Pick<TrainingProfile, "blockedExercises" | "allowedExercises" | "homeGymEquipment">>,
 ): boolean => {
   const environment =
     typeof profileOrEnvironment === "string"
@@ -19,32 +30,31 @@ export const environmentAllowsExercise = (
     typeof profileOrEnvironment === "string"
       ? []
       : profileOrEnvironment.allowedExercises ?? [];
+  const homeGymEquipment: HomeGymEquipmentType[] =
+    typeof profileOrEnvironment === "string"
+      ? []
+      : profileOrEnvironment.homeGymEquipment ?? [];
 
   if (blockedExercises.includes(ex.name)) return false;
   if (allowedExercises.includes(ex.name)) return true;
   if (environment === "full_gym") return true;
-  if (environment === "dumbbells") {
-    if (
-      [
-        "Nordic hamstring curl",
-        "Pull-up",
-        "Chin-up",
-        "Band-assisted pull-up",
-        "Dip",
-        "Inverted row",
-        "Hanging knee raise",
-        "Hanging leg raise",
-        "Hyperextension",
-      ].includes(ex.name)
-    ) {
-      return false;
-    }
-    if (["dumbbell", "kettlebell", "bodyweight", "band"].includes(ex.equipment)) {
-      return true;
-    }
-    if (ex.equipment === "cable") return true;
-    if (ex.equipment === "machine" && ex.name === "Leg press") return true;
-    return false;
-  }
-  return ["dumbbell", "bodyweight", "band"].includes(ex.equipment);
+
+  // Base equipment available in all non-full-gym environments.
+  const baseEquipment = ["dumbbell", "kettlebell", "bodyweight", "band"];
+
+  // Exercises that require gym infrastructure (pull-up bar, rack, etc.)
+  // and are only unlocked via homeGymEquipment.
+  const hasPullupBar = homeGymEquipment.includes("pullup_bar");
+  const hasCable = homeGymEquipment.includes("cable");
+  const hasBarbell = homeGymEquipment.includes("barbell");
+  const hasMachine = homeGymEquipment.includes("machine");
+
+  if (BODYWEIGHT_ONLY_BLOCKS.includes(ex.name)) return false;
+  if (PULLUP_BAR_EXERCISES.includes(ex.name)) return hasPullupBar;
+
+  if (baseEquipment.includes(ex.equipment)) return true;
+  if (ex.equipment === "cable") return hasCable;
+  if (ex.equipment === "barbell") return hasBarbell;
+  if (ex.equipment === "machine") return hasMachine;
+  return false;
 };

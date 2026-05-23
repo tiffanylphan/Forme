@@ -28,6 +28,8 @@ describe("OnboardingPage", () => {
       experience: "beginner",
       intensity: "standard",
       blockedExercises: [],
+      allowedExercises: [],
+      homeGymEquipment: [],
     });
     useTrainingProfileMock.mockReturnValue({
       ready: true,
@@ -38,6 +40,8 @@ describe("OnboardingPage", () => {
         experience: "beginner",
         intensity: "standard",
         blockedExercises: [],
+        allowedExercises: [],
+        homeGymEquipment: [],
       },
     });
 
@@ -45,7 +49,7 @@ describe("OnboardingPage", () => {
 
     await user.click(screen.getByText("Strength"));
     await user.click(screen.getByText("3 days / week"));
-    await user.click(screen.getByText("Home"));
+    await user.click(screen.getByText("Minimal"));
     await user.click(screen.getByText("Intermediate"));
     await user.click(screen.getByText("Hard"));
     await user.click(screen.getByText("Save profile"));
@@ -57,6 +61,8 @@ describe("OnboardingPage", () => {
       experience: "intermediate",
       intensity: "hard",
       blockedExercises: [],
+      allowedExercises: [],
+      homeGymEquipment: [],
     });
     expect(routerPushMock).toHaveBeenCalledWith("/next");
   });
@@ -77,6 +83,8 @@ describe("OnboardingPage", () => {
       experience: "beginner",
       intensity: "standard",
       blockedExercises: ["Hack squat"],
+      allowedExercises: [],
+      homeGymEquipment: [],
     });
     useTrainingProfileMock.mockReturnValue({
       ready: true,
@@ -87,6 +95,8 @@ describe("OnboardingPage", () => {
         experience: "beginner",
         intensity: "standard",
         blockedExercises: ["Hack squat"],
+        allowedExercises: [],
+        homeGymEquipment: [],
       },
     });
 
