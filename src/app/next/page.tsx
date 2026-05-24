@@ -256,7 +256,12 @@ const buildDisplaySections = (sections: DraftSection[]): DisplaySection[] => {
 
   const flushSetGroup = () => {
     if (currentSetGroup.length === 0) return;
-    display.push({ kind: "set_group", entries: currentSetGroup });
+    if (currentSetGroup.length === 1) {
+      const [{ section, sectionIdx }] = currentSetGroup;
+      display.push({ kind: "single", section, sectionIdx });
+    } else {
+      display.push({ kind: "set_group", entries: currentSetGroup });
+    }
     currentSetGroup = [];
   };
 
