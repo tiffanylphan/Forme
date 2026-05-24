@@ -162,6 +162,8 @@ const isLowerIsolation = (exercise: Exercise): boolean =>
     "Glute bridge",
     "Bench single-leg hip thrust",
     "Wall sit",
+    "Wall sit with adductor squeeze",
+    "Banded wall sit",
     "Sissy squat",
   ].includes(exercise.name);
 
