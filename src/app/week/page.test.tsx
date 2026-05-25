@@ -17,6 +17,16 @@ vi.mock("@/lib/profile", async () => {
   };
 });
 
+vi.mock("@/lib/format", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/format")>("@/lib/format");
+  return {
+    ...actual,
+    // Pin "today" so workout date 2026-05-18 is always within the current week
+    // (week of Mon 2026-05-13 → Sun 2026-05-19).
+    todayISO: () => "2026-05-18",
+  };
+});
+
 describe("WeekPage", () => {
   it("renders coverage information for logged workouts", () => {
     useTrainingProfileMock.mockReturnValue({

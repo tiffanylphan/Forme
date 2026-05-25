@@ -193,7 +193,7 @@ const FINISHER_TEMPLATES: FinisherTemplate[] = [
   {
     id: "wall_ball_sprint",
     label: "wall-ball sprint",
-    exercises: ["Wall ball shot", "High knees", "Wall ball shot"],
+    exercises: ["Wall ball shot", "High knees"],
     rounds: 3,
     repScheme: "15 wall ball shots + 20 high knees + 15 wall ball shots",
     tags: ["lower", "upper", "conditioning"],
@@ -210,7 +210,7 @@ const FINISHER_TEMPLATES: FinisherTemplate[] = [
   {
     id: "wall_sit_burnout",
     label: "wall-sit burnout",
-    exercises: ["Banded wall sit abduction pulses", "Lateral lunge", "Banded wall sit abduction pulses"],
+    exercises: ["Banded wall sit abduction pulses", "Lateral lunge"],
     rounds: 3,
     repScheme: "12 pulses + 8/side lunges + 12 pulses",
     tags: ["lower", "conditioning"],
