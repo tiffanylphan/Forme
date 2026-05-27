@@ -2694,11 +2694,12 @@ export function generateNextWorkout(
     if (m) claimedMovements[m] = claimedMovements[m] + 1;
     const family = familyOf(ex);
     claimedFamilies[family] = (claimedFamilies[family] ?? 0) + 1;
-    // Hybrid exercises like "DB split squat to RDL" are rdl family but also
-    // knee-dominant unilateral (squat pattern + single_leg). Track them in
-    // split_squat too so the unilateral-stacking guard still fires.
-    if (family === "rdl" && ex.pattern === "squat" && m === "single_leg") {
-      claimedFamilies["split_squat"] = (claimedFamilies["split_squat"] ?? 0) + 1;
+    // If the exercise also has a secondary knee-dominant-unilateral family (e.g.,
+    // "DB split squat to RDL" is rdl-primary but also knee-dominant/single-leg),
+    // track that family too so the unilateral-stacking guard fires correctly.
+    const kneeFamily = lowerUnilateralKneeFamilyOf(ex);
+    if (kneeFamily && kneeFamily !== family) {
+      claimedFamilies[kneeFamily] = (claimedFamilies[kneeFamily] ?? 0) + 1;
     }
   };
 
