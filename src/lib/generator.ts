@@ -597,7 +597,9 @@ const isPhysiqueFriendly = (ex: Exercise): boolean => {
 const familyOf = (ex: Exercise): string => {
   const name = ex.name.toLowerCase();
   if (name.includes("hip thrust") || name.includes("glute bridge")) return "hip_thrust";
-  if (name.includes("split squat") || name.includes("bulgarian")) return "split_squat";
+  // "DB split squat to RDL" has "rdl" in its name — treat it as rdl family so it
+  // is hard-blocked from coexisting with DB Romanian deadlift / Single-leg DB RDL.
+  if ((name.includes("split squat") || name.includes("bulgarian")) && !name.includes("rdl")) return "split_squat";
   if (name.includes("romanian deadlift") || name.includes("rdl")) return "rdl";
   if (name.includes("deadlift")) return "deadlift";
   if (name.includes("lunge")) return "lunge";
@@ -634,6 +636,10 @@ const lowerUnilateralKneeFamilyOf = (ex: Exercise): string | null => {
   if (family === "split_squat" || family === "lunge" || family === "step_up") {
     return family;
   }
+  // Hybrid exercises like "DB split squat to RDL" are rdl family (hard-blocked from
+  // stacking with other RDLs) but have squat pattern and single-leg movement — they
+  // are still knee-dominant and should participate in the unilateral-stacking guard.
+  if (family === "rdl" && ex.pattern === "squat") return "split_squat";
   return null;
 };
 
@@ -2273,7 +2279,7 @@ export function generateNextWorkout(
     if (!slot.allowedMovements.includes(movement)) return -10;
     const family = familyOf(ex);
     if (
-      (family === "biceps_isolation" || family === "triceps_isolation" || family === "hip_thrust") &&
+      (family === "biceps_isolation" || family === "triceps_isolation" || family === "hip_thrust" || family === "rdl") &&
       (claimedFamilies[family] ?? 0) > 0
     ) {
       return -10;
@@ -2534,11 +2540,6 @@ export function generateNextWorkout(
       if (claimedMovements.hinge >= 1) s -= PLANNER_TUNING.exerciseSelection.repeatedHingePenalty;
       if (claimedMovements.hinge >= 2) s -= PLANNER_TUNING.exerciseSelection.repeatedHingeHardPenalty;
     }
-    // Extra penalty for a second rdl-family exercise in lower sessions — two RDL
-    // variants (e.g., DB RDL + Single-leg DB RDL) are trainer-equivalent and redundant.
-    if (lowerBiasSlot && family === "rdl" && (claimedFamilies.rdl ?? 0) > 0) {
-      s -= PLANNER_TUNING.exerciseSelection.repeatedRdlFamilyPenalty;
-    }
     // Penalize repeating a lower family that appeared in either of the last 2 sessions.
     // The currentWeekFamilies penalty (1.2) is too weak to capture "you just did lunges
     // yesterday"; this provides a stronger but still soft inter-session signal.
@@ -2693,6 +2694,12 @@ export function generateNextWorkout(
     if (m) claimedMovements[m] = claimedMovements[m] + 1;
     const family = familyOf(ex);
     claimedFamilies[family] = (claimedFamilies[family] ?? 0) + 1;
+    // Hybrid exercises like "DB split squat to RDL" are rdl family but also
+    // knee-dominant unilateral (squat pattern + single_leg). Track them in
+    // split_squat too so the unilateral-stacking guard still fires.
+    if (family === "rdl" && ex.pattern === "squat" && m === "single_leg") {
+      claimedFamilies["split_squat"] = (claimedFamilies["split_squat"] ?? 0) + 1;
+    }
   };
 
   const claimWithStress = (
