@@ -68,6 +68,7 @@ export const EXERCISES: Exercise[] = [
   { name: "Trap bar deadlift", primary: ["quads", "glutes", "hamstrings"], secondary: ["back", "core"], equipment: "barbell", pattern: "hinge" },
   { name: "Kettlebell swing", primary: ["glutes", "hamstrings"], secondary: ["core", "shoulders"], equipment: "kettlebell", pattern: "hinge" },
   { name: "Good morning", primary: ["hamstrings", "back"], secondary: ["glutes", "core"], equipment: "barbell", pattern: "hinge" },
+  { name: "DB good morning", primary: ["hamstrings", "back"], secondary: ["glutes", "core"], equipment: "dumbbell", pattern: "hinge" },
   { name: "Cable pull-through", primary: ["glutes", "hamstrings"], secondary: ["core"], equipment: "cable", pattern: "hinge" },
   { name: "Cable kickback", primary: ["glutes"], secondary: ["hamstrings"], equipment: "cable", pattern: "hinge" },
   { name: "Donkey kick", primary: ["glutes"], secondary: ["hamstrings"], equipment: "bodyweight", pattern: "hinge" },
@@ -75,6 +76,7 @@ export const EXERCISES: Exercise[] = [
   { name: "Bench single-leg hip thrust", primary: ["glutes"], secondary: ["hamstrings", "core"], equipment: "bodyweight", pattern: "hinge" },
   { name: "Barbell hip thrust", primary: ["glutes"], secondary: ["hamstrings", "core"], equipment: "barbell", pattern: "hinge" },
   { name: "Glute bridge", primary: ["glutes"], secondary: ["hamstrings"], equipment: "bodyweight", pattern: "hinge" },
+  { name: "Feet-elevated glute bridge", primary: ["glutes"], secondary: ["hamstrings", "core"], equipment: "bodyweight", pattern: "hinge" },
   { name: "Banded walkout", primary: ["glutes"], secondary: ["core", "hip_flexors"], equipment: "band", pattern: "hinge" },
   { name: "Banded fire hydrant", primary: ["glutes"], secondary: ["hip_flexors"], equipment: "band", pattern: "hinge" },
   { name: "Banded clamshell", primary: ["glutes"], secondary: [], equipment: "band", pattern: "hinge" },
@@ -85,6 +87,7 @@ export const EXERCISES: Exercise[] = [
   // === PUSH PATTERN ===
   { name: "DB incline bench press", primary: ["chest", "shoulders"], secondary: ["triceps"], equipment: "dumbbell", pattern: "push" },
   { name: "DB flat bench press", primary: ["chest"], secondary: ["shoulders", "triceps"], equipment: "dumbbell", pattern: "push" },
+  { name: "DB floor press", primary: ["chest", "triceps"], secondary: ["shoulders"], equipment: "dumbbell", pattern: "push" },
   { name: "Barbell bench press", primary: ["chest"], secondary: ["shoulders", "triceps"], equipment: "barbell", pattern: "push" },
   {
     name: "Barbell incline bench press",
@@ -157,6 +160,7 @@ export const EXERCISES: Exercise[] = [
   { name: "DB hammer curl", primary: ["biceps"], secondary: [], equipment: "dumbbell", pattern: "pull" },
   { name: "Barbell curl", primary: ["biceps"], secondary: [], equipment: "barbell", pattern: "pull" },
   { name: "Concentration curl", primary: ["biceps"], secondary: [], equipment: "dumbbell", pattern: "pull" },
+  { name: "Kneeling bicep curl", primary: ["biceps"], secondary: [], equipment: "dumbbell", pattern: "pull" },
   { name: "Cable curl", primary: ["biceps"], secondary: [], equipment: "cable", pattern: "pull" },
   { name: "Inverted row", primary: ["back"], secondary: ["biceps", "core"], equipment: "bodyweight", pattern: "pull" },
   { name: "T-bar row", primary: ["back"], secondary: ["biceps", "rear_delts"], equipment: "barbell", pattern: "pull" },
@@ -173,6 +177,7 @@ export const EXERCISES: Exercise[] = [
   // === CORE ===
   { name: "V-up", primary: ["core", "hip_flexors"], secondary: [], equipment: "bodyweight", pattern: "core" },
   { name: "Alternating V-up", primary: ["core", "hip_flexors"], secondary: [], equipment: "bodyweight", pattern: "core" },
+  { name: "Single-side V-up", primary: ["core", "hip_flexors"], secondary: [], equipment: "bodyweight", pattern: "core" },
   { name: "Tuck-up", primary: ["core", "hip_flexors"], secondary: [], equipment: "bodyweight", pattern: "core" },
   { name: "Dead bug", primary: ["core"], secondary: ["hip_flexors"], equipment: "bodyweight", pattern: "core" },
   { name: "Hanging knee raise", primary: ["core", "hip_flexors"], secondary: [], equipment: "bodyweight", pattern: "core" },
@@ -182,6 +187,7 @@ export const EXERCISES: Exercise[] = [
   { name: "Plank drag", primary: ["core"], secondary: ["shoulders", "back"], equipment: "dumbbell", pattern: "core" },
   { name: "Side plank", primary: ["core"], secondary: [], equipment: "bodyweight", pattern: "core" },
   { name: "Side plank dip", primary: ["core"], secondary: [], equipment: "bodyweight", pattern: "core" },
+  { name: "DB side plank rotation", primary: ["core"], secondary: ["shoulders"], equipment: "dumbbell", pattern: "core" },
   { name: "Pallof press", primary: ["core"], secondary: [], equipment: "cable", pattern: "core" },
   { name: "Cable woodchop", primary: ["core"], secondary: [], equipment: "cable", pattern: "core" },
   { name: "Oblique twist", primary: ["core"], secondary: ["hip_flexors"], equipment: "bodyweight", pattern: "core" },
