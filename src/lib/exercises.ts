@@ -98,7 +98,7 @@ export const EXERCISES: Exercise[] = [
     pattern: "push",
   },
   { name: "DB overhead press", primary: ["shoulders"], secondary: ["triceps", "core"], equipment: "dumbbell", pattern: "push" },
-  { name: "Barbell overhead press", primary: ["shoulders"], secondary: ["triceps", "core"], equipment: "barbell", pattern: "push" },
+  { name: "Barbell strict press", primary: ["shoulders"], secondary: ["triceps", "core"], equipment: "barbell", pattern: "push", aliases: ["Barbell overhead press", "Strict press", "Military press"] },
   { name: "Barbell push press", primary: ["shoulders"], secondary: ["triceps", "core", "quads"], equipment: "barbell", pattern: "push", aliases: ["Barbell overhead push press", "Push press"] },
   { name: "DB Arnold press", primary: ["shoulders"], secondary: ["triceps"], equipment: "dumbbell", pattern: "push" },
   { name: "SA press to windmill", primary: ["shoulders", "core"], secondary: ["glutes", "triceps"], equipment: "dumbbell", pattern: "push" },
