@@ -18,7 +18,7 @@ import {
   formatIntensity,
   useTrainingProfile,
 } from "@/lib/profile";
-import { useWorkouts } from "@/lib/storage";
+import { loadWorkouts, useWorkouts } from "@/lib/storage";
 import { MOVEMENT_PATTERNS } from "@/lib/types";
 import type { CoverageScore } from "@/lib/coverage";
 import type { MuscleGroup, Workout } from "@/lib/types";
@@ -59,6 +59,17 @@ export default function Home() {
     () => [...workouts].sort((a, b) => (a.date < b.date ? 1 : -1)),
     [workouts],
   );
+
+  const exportJSON = () => {
+    const data = JSON.stringify(loadWorkouts(), null, 2);
+    const blob = new Blob([data], { type: "application/json;charset=utf-8;" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `forme-workout-history-${today}.json`;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  };
 
   const exportHistory = () => {
     const rows = [
@@ -247,6 +258,13 @@ export default function Home() {
                 <span className="text-[12px] text-text-subtle">
                   {workouts.length} total
                 </span>
+                <button
+                  type="button"
+                  onClick={exportJSON}
+                  className="rounded-full border border-[#D3D1C7] bg-white px-3 py-1 text-[11px] font-medium text-text-muted"
+                >
+                  Export JSON
+                </button>
                 <button
                   type="button"
                   onClick={exportHistory}
