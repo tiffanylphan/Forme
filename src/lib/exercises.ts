@@ -114,7 +114,7 @@ export const EXERCISES: Exercise[] = [
   { name: "DB sunrise raise", primary: ["shoulders", "rear_delts"], secondary: [], equipment: "dumbbell", pattern: "push" },
   { name: "Cable lateral raise", primary: ["shoulders"], secondary: [], equipment: "cable", pattern: "push" },
   { name: "DB prone press", primary: ["shoulders", "rear_delts"], secondary: [], equipment: "dumbbell", pattern: "push" },
-  { name: "Plank to push-up", primary: ["core", "chest"], secondary: ["shoulders", "triceps"], equipment: "bodyweight", pattern: "push" },
+  { name: "Plank to push-up", primary: ["core", "chest"], secondary: ["shoulders", "triceps"], equipment: "bodyweight", pattern: "push", aliases: ["Plank up-down", "Plank up downs"] },
   { name: "Push-up to renegade row", primary: ["back", "core"], secondary: ["chest", "shoulders", "triceps"], equipment: "dumbbell", pattern: "pull" },
   { name: "Tricep pushdown", primary: ["triceps"], secondary: [], equipment: "cable", pattern: "push" },
   { name: "Overhead tricep extension", primary: ["triceps"], secondary: [], equipment: "dumbbell", pattern: "push" },
