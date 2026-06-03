@@ -18,7 +18,7 @@ import {
   formatIntensity,
   useTrainingProfile,
 } from "@/lib/profile";
-import { loadWorkouts, useWorkouts } from "@/lib/storage";
+import { useWorkouts } from "@/lib/storage";
 import { MOVEMENT_PATTERNS } from "@/lib/types";
 import type { CoverageScore } from "@/lib/coverage";
 import type { MuscleGroup, Workout } from "@/lib/types";
@@ -41,11 +41,6 @@ const musclesForWorkout = (w: Workout): MuscleGroup[] => {
 const setCount = (w: Workout): number =>
   w.exercises.reduce((acc, e) => acc + e.sets.length, 0);
 
-const csvEscape = (value: string | number | null | undefined): string => {
-  const raw = value == null ? "" : String(value);
-  return `"${raw.replace(/"/g, '""')}"`;
-};
-
 export default function Home() {
   const { workouts, ready } = useWorkouts();
   const { profile, ready: profileReady } = useTrainingProfile();
@@ -59,67 +54,6 @@ export default function Home() {
     () => [...workouts].sort((a, b) => (a.date < b.date ? 1 : -1)),
     [workouts],
   );
-
-  const exportJSON = () => {
-    const data = JSON.stringify(loadWorkouts(), null, 2);
-    const blob = new Blob([data], { type: "application/json;charset=utf-8;" });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `forme-workout-history-${today}.json`;
-    link.click();
-    window.URL.revokeObjectURL(url);
-  };
-
-  const exportHistory = () => {
-    const rows = [
-      [
-        "workout_id",
-        "date",
-        "source",
-        "plan_slot",
-        "exercise",
-        "set_number",
-        "reps",
-        "weight",
-        "unit",
-        "duration_sec",
-        "distance_m",
-        "progression_status",
-        "workout_notes",
-      ],
-      ...sortedWorkouts.flatMap((workout) =>
-        workout.exercises.flatMap((exercise) =>
-          exercise.sets.map((set, index) => [
-            workout.id,
-            workout.date,
-            workout.source,
-            workout.planSlot?.title ?? "",
-            exercise.exerciseName,
-            index + 1,
-            set.reps ?? "",
-            set.weight ?? "",
-            set.unit,
-            set.durationSec ?? "",
-            set.distanceM ?? "",
-            exercise.progressionStatus ?? "",
-            workout.notes ?? "",
-          ]),
-        ),
-      ),
-    ];
-
-    const csv = rows
-      .map((row) => row.map((cell) => csvEscape(cell)).join(","))
-      .join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `forme-workout-history-${today}.csv`;
-    link.click();
-    window.URL.revokeObjectURL(url);
-  };
 
   const hasWeekData = coverage.workouts.length > 0;
 
@@ -247,33 +181,17 @@ export default function Home() {
         <div className="mb-3 flex items-baseline justify-between">
           <p className="label-eyebrow">Recent workouts</p>
           <div className="flex items-center gap-2">
+            {ready && workouts.length > 0 && (
+              <span className="text-[12px] text-text-subtle">
+                {workouts.length} total
+              </span>
+            )}
             <Link
-              href="/import"
+              href="/data"
               className="rounded-full border border-[#D3D1C7] bg-white px-3 py-1 text-[11px] font-medium text-text-muted"
             >
-              Import Data
+              Import / Export
             </Link>
-            {ready && workouts.length > 0 && (
-              <>
-                <span className="text-[12px] text-text-subtle">
-                  {workouts.length} total
-                </span>
-                <button
-                  type="button"
-                  onClick={exportJSON}
-                  className="rounded-full border border-[#D3D1C7] bg-white px-3 py-1 text-[11px] font-medium text-text-muted"
-                >
-                  Export JSON
-                </button>
-                <button
-                  type="button"
-                  onClick={exportHistory}
-                  className="rounded-full border border-[#D3D1C7] bg-white px-3 py-1 text-[11px] font-medium text-text-muted"
-                >
-                  Export CSV
-                </button>
-              </>
-            )}
           </div>
         </div>
 
