@@ -746,6 +746,15 @@ export default function LogPage() {
           })}
         </div>
 
+        {pendingDraft?.cooldown && (
+          <PrepCard
+            title={pendingDraft.cooldown.title}
+            eyebrow="After you finish"
+            items={pendingDraft.cooldown.items}
+            complementary={pendingDraft.cooldown.complementary ?? []}
+          />
+        )}
+
         {exercises.length > 0 && (
           <div className="mt-4">
             <label className="label-eyebrow mb-1.5 block">Notes</label>
@@ -772,15 +781,6 @@ export default function LogPage() {
               )}
             </div>
           </div>
-        )}
-
-        {pendingDraft?.cooldown && (
-          <PrepCard
-            title={pendingDraft.cooldown.title}
-            eyebrow="After you finish"
-            items={pendingDraft.cooldown.items}
-            complementary={pendingDraft.cooldown.complementary ?? []}
-          />
         )}
       </main>
 
