@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+
+echo "Running tests before push…"
+npm test
+
+echo "Running build before push…"
+npm run build --webpack
+
+echo "All checks passed."
