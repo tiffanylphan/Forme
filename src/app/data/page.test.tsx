@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import DataPage, { parseImportText } from "./page";
+import { parseImportText } from "@/lib/import";
+import DataPage from "./page";
 
 const useWorkoutsMock = vi.fn();
 const loadWorkoutsMock = vi.fn();

@@ -5,58 +5,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { InputClearButton } from "@/components/InputClearButton";
 import { todayISO } from "@/lib/format";
-import { loadWorkouts, normalizeWorkouts, saveWorkouts } from "@/lib/storage";
-import { useWorkouts } from "@/lib/storage";
+import { parseImportText } from "@/lib/import";
+import { loadWorkouts, normalizeWorkouts, saveWorkouts, useWorkouts } from "@/lib/storage";
 import type { Workout } from "@/lib/types";
-
-// ---- CSV parsing ----
 
 const csvEscape = (value: string | number | null | undefined): string => {
   const raw = value == null ? "" : String(value);
   return `"${raw.replace(/"/g, '""')}"`;
-};
-
-const parseCSVRows = (text: string): Record<string, unknown>[] => {
-  const lines = text.trim().split("\n");
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(",").map((h) => h.trim());
-  return lines.slice(1).map((line) => {
-    const values: string[] = [];
-    let cur = "", inQuote = false;
-    for (const ch of line) {
-      if (ch === '"') { inQuote = !inQuote; }
-      else if (ch === "," && !inQuote) { values.push(cur); cur = ""; }
-      else { cur += ch; }
-    }
-    values.push(cur);
-    const obj: Record<string, unknown> = {};
-    headers.forEach((h, i) => {
-      const v = values[i]?.trim() ?? "";
-      obj[h] = v === "" ? null : v;
-    });
-    return obj;
-  });
-};
-
-export const parseImportText = (text: string): unknown[] | null => {
-  const trimmed = text.trim();
-
-  // Try JSON first
-  try {
-    const parsed = JSON.parse(trimmed);
-    if (Array.isArray(parsed)) return parsed;
-  } catch {
-    // not JSON, fall through
-  }
-
-  // Try CSV — must have the workout_id header
-  const firstLine = trimmed.split("\n")[0] ?? "";
-  if (firstLine.includes("workout_id") && firstLine.includes("exercise")) {
-    const rows = parseCSVRows(trimmed);
-    if (rows.length > 0) return rows;
-  }
-
-  return null;
 };
 
 // ---- CSV export ----
