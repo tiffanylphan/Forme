@@ -773,6 +773,15 @@ export default function LogPage() {
             </div>
           </div>
         )}
+
+        {pendingDraft?.cooldown && (
+          <PrepCard
+            title={pendingDraft.cooldown.title}
+            eyebrow="After you finish"
+            items={pendingDraft.cooldown.items}
+            complementary={pendingDraft.cooldown.complementary ?? []}
+          />
+        )}
       </main>
 
       <div className="fixed bottom-0 left-0 right-0 z-10 mx-auto max-w-[480px] border-t border-divider bg-bg/95 px-4 py-3 backdrop-blur">
