@@ -11,12 +11,20 @@ export type ExerciseHistoryEntry = {
 const compareWorkoutsDesc = (a: Workout, b: Workout): number =>
   a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt;
 
-const lastWeightedLoad = (sets: SetEntry[]): number | null => {
-  const weighted = sets.filter(
-    (set): set is SetEntry & { weight: number } => typeof set.weight === "number",
-  );
-  return weighted.length > 0 ? weighted[weighted.length - 1].weight : null;
+const maxWeightedLoad = (sets: SetEntry[]): number | null => {
+  const weights = sets
+    .map((s) => s.weight)
+    .filter((w): w is number => typeof w === "number");
+  return weights.length > 0 ? Math.max(...weights) : null;
 };
+
+const totalVolume = (sets: SetEntry[]): number =>
+  sets.reduce(
+    (sum, s) =>
+      sum +
+      (typeof s.weight === "number" && typeof s.reps === "number" ? s.weight * s.reps : 0),
+    0,
+  );
 
 const totalNumericReps = (sets: SetEntry[]): number =>
   sets.reduce((sum, set) => sum + (typeof set.reps === "number" ? set.reps : 0), 0);
@@ -34,7 +42,7 @@ const totalDistance = (sets: SetEntry[]): number =>
   );
 
 export const summarizeExerciseLog = (exercise: ExerciseLog): string => {
-  const load = lastWeightedLoad(exercise.sets);
+  const load = maxWeightedLoad(exercise.sets);
   const reps = exercise.sets
     .map((set) => (typeof set.reps === "number" ? set.reps.toString() : null))
     .filter((value): value is string => Boolean(value));
@@ -71,8 +79,8 @@ export const evaluateProgressionStatus = (
   const previous = findPreviousExercise(exerciseName, workouts, currentWorkoutId);
   if (!previous) return "baseline";
 
-  const currentLoad = lastWeightedLoad(currentSets);
-  const previousLoad = lastWeightedLoad(previous.sets);
+  const currentLoad = maxWeightedLoad(currentSets);
+  const previousLoad = maxWeightedLoad(previous.sets);
   const currentReps = totalNumericReps(currentSets);
   const previousReps = totalNumericReps(previous.sets);
   const currentDuration = totalDuration(currentSets);
@@ -81,16 +89,21 @@ export const evaluateProgressionStatus = (
   const previousDistance = totalDistance(previous.sets);
 
   if (currentLoad != null && previousLoad != null) {
-    if (currentLoad > previousLoad && currentReps >= Math.max(previousReps - 2, 1)) {
-      return "progressed";
+    const curVol = totalVolume(currentSets);
+    const prevVol = totalVolume(previous.sets);
+
+    if (currentLoad > previousLoad) {
+      // Lifted heavier — progressed if reps held up reasonably, held if they dropped a lot
+      return currentReps >= Math.floor(previousReps * 0.8) ? "progressed" : "held";
     }
-    if (currentLoad === previousLoad && currentReps > previousReps) {
-      return "progressed";
+    if (currentLoad === previousLoad) {
+      if (currentReps > previousReps) return "progressed";
+      if (currentReps === previousReps) return "held";
+      // Same weight, fewer reps — held if volume stayed close (within 10%)
+      return curVol >= prevVol * 0.9 ? "held" : "missed";
     }
-    if (currentLoad === previousLoad && currentReps === previousReps) {
-      return "held";
-    }
-    return "missed";
+    // Weight dropped — held if volume compensated, otherwise missed
+    return curVol >= prevVol * 0.9 ? "held" : "missed";
   }
 
   if (currentReps > 0 || previousReps > 0) {
