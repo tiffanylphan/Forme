@@ -12,6 +12,7 @@ export const EXERCISES: Exercise[] = [
   { name: "Bodyweight squat", primary: ["quads", "glutes"], secondary: ["hamstrings"], equipment: "bodyweight", pattern: "squat" },
   { name: "Squat jump", primary: ["quads", "glutes"], secondary: ["calves"], equipment: "bodyweight", pattern: "plyo" },
   { name: "Skater hop", primary: ["glutes", "quads"], secondary: ["calves", "core"], equipment: "bodyweight", pattern: "plyo" },
+  { name: "DB front rack curtsey lunge", primary: ["glutes", "quads"], secondary: ["core", "adductors"], equipment: "dumbbell", pattern: "squat", aliases: ["DB curtsey lunge", "Front rack curtsey lunge"] },
   { name: "DB forward lunge", primary: ["quads", "glutes"], secondary: ["hamstrings", "core"], equipment: "dumbbell", pattern: "squat" },
   { name: "DB reverse lunge", primary: ["quads", "glutes"], secondary: ["hamstrings", "core"], equipment: "dumbbell", pattern: "squat" },
   { name: "DB reverse lunge w/ pulse", primary: ["quads", "glutes"], secondary: ["hamstrings", "core"], equipment: "dumbbell", pattern: "squat" },
@@ -27,6 +28,7 @@ export const EXERCISES: Exercise[] = [
     pattern: "squat",
   },
   { name: "DB squat to reverse lunge", primary: ["quads", "glutes"], secondary: ["hamstrings", "core"], equipment: "dumbbell", pattern: "squat" },
+  { name: "DB squat to clean", primary: ["quads", "glutes"], secondary: ["shoulders", "hamstrings", "core"], equipment: "dumbbell", pattern: "conditioning" },
   { name: "Leg press", primary: ["quads", "glutes"], secondary: ["hamstrings"], equipment: "machine", pattern: "squat" },
   { name: "Angled machine leg press", primary: ["quads", "glutes"], secondary: ["hamstrings"], equipment: "machine", pattern: "squat" },
   { name: "Hack squat", primary: ["quads"], secondary: ["glutes"], equipment: "machine", pattern: "squat" },
@@ -238,6 +240,7 @@ export const EXERCISES: Exercise[] = [
   { name: "DB snatch", primary: ["shoulders", "glutes"], secondary: ["back", "core"], equipment: "dumbbell", pattern: "plyo" },
   { name: "Wall ball shot", primary: ["quads", "shoulders"], secondary: ["glutes", "core"], equipment: "other", pattern: "conditioning" },
   { name: "Medicine ball slam", primary: ["core", "shoulders"], secondary: ["back", "glutes"], equipment: "other", pattern: "conditioning" },
+  { name: "Med ball side slam", primary: ["core"], secondary: ["shoulders", "back"], equipment: "other", pattern: "conditioning", aliases: ["Medicine ball side slam", "Med ball rotational slam"] },
   { name: "Tall-kneeling rotational medicine ball slam", primary: ["core", "shoulders"], secondary: ["back", "glutes"], equipment: "other", pattern: "conditioning" },
   {
     name: "DB side lunge to high pull",
