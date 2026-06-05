@@ -222,14 +222,16 @@ export default function WorkoutDetailPage() {
 
 function ExerciseHistory({
   history,
+  exerciseName,
 }: {
   history: ReturnType<typeof getExerciseHistory>;
+  exerciseName?: string;
 }) {
   if (history.length === 0) return null;
   return (
     <div className="border-t border-divider px-4 py-2">
       <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-text-subtle">
-        Recent history
+        {exerciseName ? `${exerciseName} history` : "Recent history"}
       </p>
       <div className="space-y-1">
         {history.map((entry) => (
@@ -394,6 +396,7 @@ function SupersetView({
           <ExerciseHistory
             key={`history-${ex.id}`}
             history={historyByExercise.get(ex.exerciseName) ?? []}
+            exerciseName={ex.exerciseName}
           />
         ))}
       </div>
