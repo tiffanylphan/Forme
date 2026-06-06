@@ -81,7 +81,7 @@ const hydrateDraft = (draft: WorkoutDraft): ExerciseLog[] => {
       activeSetGroup = null;
     }
     const groupId =
-      sec.kind === "superset" && sec.exercises.length > 1 ? uid("ss") : null;
+      (sec.kind === "superset" || sec.kind === "finisher") && sec.exercises.length > 1 ? uid("ss") : null;
     for (const dex of sec.exercises) {
       const sets: SetEntry[] = dex.targets.map((t) =>
         newSet({

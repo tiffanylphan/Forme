@@ -216,6 +216,56 @@ describe("LogPage interactions", () => {
     expect(screen.getByText("No exercises yet. Tap below to add your first one.")).toBeInTheDocument();
   });
 
+  it("links finisher exercises together as a superset group when hydrating a draft", async () => {
+    const user = userEvent.setup();
+    popEditWorkoutMock.mockReturnValue(null);
+    let persistedWorkout: Record<string, unknown> | null = null;
+    upsertWorkoutMock.mockImplementation((savedWorkout) => {
+      persistedWorkout = savedWorkout as Record<string, unknown>;
+    });
+    popDraftMock.mockReturnValue({
+      source: "manual",
+      draft: {
+        split: {
+          slotId: "upper_back_shoulder",
+          title: "Upper A · Back/Shoulders",
+          summary: "Upper session",
+          sessionIndex: 2,
+          totalSessions: 4,
+          targetPrimarySets: { back: 8 },
+        },
+        rationale: [],
+        rotatedOffLifts: [],
+        mobility: { title: "Warm-up", items: [], complementary: [] },
+        cooldown: { title: "Cooldown", items: [], complementary: [] },
+        sections: [
+          {
+            kind: "finisher",
+            rounds: 3,
+            repScheme: "8 reps each · finisher circuit",
+            exercises: [
+              { name: "Burpee", primary: ["core"], secondary: [], pattern: "conditioning", movement: null, targets: [8, 8, 8], suggestedWeight: null, unit: "lb", isFamiliar: true, progression: { lastSummary: null, goal: "", nextStep: "", recentHistory: [] } },
+              { name: "High knees", primary: ["core"], secondary: [], pattern: "conditioning", movement: null, targets: [20, 20, 20], suggestedWeight: null, unit: "lb", isFamiliar: true, progression: { lastSummary: null, goal: "", nextStep: "", recentHistory: [] } },
+            ],
+          },
+        ],
+        slotRecommendations: [],
+      },
+    });
+    getWorkoutMock.mockImplementation(() => persistedWorkout);
+
+    render(<LogPage />);
+    await screen.findByText("Log workout");
+    await user.click(screen.getByText("Save"));
+
+    const saved = upsertWorkoutMock.mock.calls[0]?.[0] as { exercises: Array<{ supersetGroup: string | null }> } | undefined;
+    expect(saved?.exercises).toHaveLength(2);
+    const group0 = saved?.exercises[0]?.supersetGroup;
+    const group1 = saved?.exercises[1]?.supersetGroup;
+    expect(group0).not.toBeNull();
+    expect(group0).toBe(group1);
+  });
+
   it("auto-clears draft metadata after removing the last exercise", async () => {
     const user = userEvent.setup();
     popEditWorkoutMock.mockReturnValue(null);

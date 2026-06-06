@@ -169,7 +169,7 @@ export const PLANNER_TUNING = {
     targetRemainingWeight: 0.1,
     targetReachedPenalty: 0.35,
     focusSecondaryBonus: 0.15,
-    randomnessWeight: 0.5,
+    randomnessWeight: 2.0,
   },
 
   // Total per-session recovery budget and how finishers count against it.
