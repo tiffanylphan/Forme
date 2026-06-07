@@ -963,7 +963,7 @@ function ExerciseEditor({
       <div className="px-4 pb-3">
         <div className="mb-1 grid grid-cols-[28px_1fr_1fr_56px_28px] items-center gap-2 px-1 pt-1 text-[10px] font-medium uppercase tracking-wider text-text-subtle">
           <span>#</span>
-          <span>Reps</span>
+          <span>{meta?.tracksDuration ? "Sec" : "Reps"}</span>
           <span>Weight</span>
           <span className="text-right">Unit</span>
           <span></span>
@@ -981,18 +981,28 @@ function ExerciseEditor({
                 type="number"
                 inputMode="numeric"
                 placeholder="—"
-                value={s.reps ?? ""}
+                value={(meta?.tracksDuration ? s.durationSec : s.reps) ?? ""}
                 onChange={(e) =>
-                  onUpdateSet(ex.id, s.id, {
-                    reps: e.target.value === "" ? null : Number(e.target.value),
-                  })
+                  onUpdateSet(
+                    ex.id,
+                    s.id,
+                    meta?.tracksDuration
+                      ? { durationSec: e.target.value === "" ? null : Number(e.target.value) }
+                      : { reps: e.target.value === "" ? null : Number(e.target.value) },
+                  )
                 }
                 className="w-full rounded-md border border-[#E6E3D8] bg-white px-2 py-1.5 pr-7 text-center text-[14px] outline-none focus:border-[#888780]"
               />
-              {s.reps !== null && (
+              {(meta?.tracksDuration ? s.durationSec : s.reps) !== null && (
                 <InputClearButton
-                  onClear={() => onUpdateSet(ex.id, s.id, { reps: null })}
-                  label={`Clear reps for set ${setIdx + 1}`}
+                  onClear={() =>
+                    onUpdateSet(
+                      ex.id,
+                      s.id,
+                      meta?.tracksDuration ? { durationSec: null } : { reps: null },
+                    )
+                  }
+                  label={`Clear ${meta?.tracksDuration ? "seconds" : "reps"} for set ${setIdx + 1}`}
                   className="right-1 h-5 w-5 text-[12px]"
                 />
               )}
@@ -1220,6 +1230,7 @@ function SupersetBlockView({
               {lanes.map((ex, i) => {
                 const set = ex.sets[roundIdx];
                 if (!set) return null;
+                const isDuration = findExercise(ex.exerciseName)?.tracksDuration === true;
                 return (
                   <div
                     key={ex.id}
@@ -1235,22 +1246,25 @@ function SupersetBlockView({
                       <input
                         type="number"
                         inputMode="numeric"
-                        placeholder="reps"
-                        value={set.reps ?? ""}
+                        placeholder={isDuration ? "sec" : "reps"}
+                        value={(isDuration ? set.durationSec : set.reps) ?? ""}
                         onChange={(e) =>
-                          onUpdateSet(ex.id, set.id, {
-                            reps:
-                              e.target.value === ""
-                                ? null
-                                : Number(e.target.value),
-                          })
+                          onUpdateSet(
+                            ex.id,
+                            set.id,
+                            isDuration
+                              ? { durationSec: e.target.value === "" ? null : Number(e.target.value) }
+                              : { reps: e.target.value === "" ? null : Number(e.target.value) },
+                          )
                         }
                         className="w-full rounded-md border border-[#E6E3D8] bg-white px-2 py-1.5 pr-7 text-center text-[14px] outline-none focus:border-[#888780]"
                       />
-                      {set.reps !== null && (
+                      {(isDuration ? set.durationSec : set.reps) !== null && (
                         <InputClearButton
-                          onClear={() => onUpdateSet(ex.id, set.id, { reps: null })}
-                          label={`Clear reps for round ${roundIdx + 1}, ${ex.exerciseName}`}
+                          onClear={() =>
+                            onUpdateSet(ex.id, set.id, isDuration ? { durationSec: null } : { reps: null })
+                          }
+                          label={`Clear ${isDuration ? "seconds" : "reps"} for round ${roundIdx + 1}, ${ex.exerciseName}`}
                           className="right-1 h-5 w-5 text-[12px]"
                         />
                       )}

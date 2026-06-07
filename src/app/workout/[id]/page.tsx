@@ -33,7 +33,12 @@ const buildBlocks = (exs: ExerciseLog[]): Block[] => {
 };
 
 const formatSet = (s: SetEntry): string => {
-  const reps = s.reps != null ? `${s.reps} reps` : null;
+  const reps =
+    s.durationSec != null
+      ? `${s.durationSec}s`
+      : s.reps != null
+        ? `${s.reps} reps`
+        : null;
   const weight = s.weight != null ? `${s.weight} ${s.unit}` : null;
   if (reps && weight) return `${reps} · ${weight}`;
   return reps ?? weight ?? "—";

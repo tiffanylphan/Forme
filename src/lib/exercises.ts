@@ -33,7 +33,7 @@ export const EXERCISES: Exercise[] = [
   { name: "Angled machine leg press", primary: ["quads", "glutes"], secondary: ["hamstrings"], equipment: "machine", pattern: "squat" },
   { name: "Hack squat", primary: ["quads"], secondary: ["glutes"], equipment: "machine", pattern: "squat" },
   { name: "Leg extension", primary: ["quads"], secondary: [], equipment: "machine", pattern: "squat" },
-  { name: "Wall sit", primary: ["quads"], secondary: ["core"], equipment: "bodyweight", pattern: "squat" },
+  { name: "Wall sit", primary: ["quads"], secondary: ["core"], equipment: "bodyweight", pattern: "squat", tracksDuration: true },
   {
     name: "Wall sit with adductor squeeze",
     aliases: ["Wall sits with adductor squeeze", "Adductor squeeze wall sit", "Adductor squeeze wall sits"],
@@ -41,6 +41,7 @@ export const EXERCISES: Exercise[] = [
     secondary: ["core"],
     equipment: "other",
     pattern: "squat",
+    tracksDuration: true,
   },
   {
     name: "Banded wall sit abduction pulses",
@@ -187,10 +188,10 @@ export const EXERCISES: Exercise[] = [
   { name: "Dead bug", primary: ["core"], secondary: ["hip_flexors"], equipment: "bodyweight", pattern: "core" },
   { name: "Hanging knee raise", primary: ["core", "hip_flexors"], secondary: [], equipment: "bodyweight", pattern: "core" },
   { name: "Hanging leg raise", primary: ["core", "hip_flexors"], secondary: [], equipment: "bodyweight", pattern: "core" },
-  { name: "Plank", primary: ["core"], secondary: ["shoulders"], equipment: "bodyweight", pattern: "core" },
-  { name: "High plank", primary: ["core", "shoulders"], secondary: ["chest"], equipment: "bodyweight", pattern: "core" },
+  { name: "Plank", primary: ["core"], secondary: ["shoulders"], equipment: "bodyweight", pattern: "core", tracksDuration: true },
+  { name: "High plank", primary: ["core", "shoulders"], secondary: ["chest"], equipment: "bodyweight", pattern: "core", tracksDuration: true },
   { name: "Plank drag", primary: ["core"], secondary: ["shoulders", "back"], equipment: "dumbbell", pattern: "core" },
-  { name: "Side plank", primary: ["core"], secondary: [], equipment: "bodyweight", pattern: "core" },
+  { name: "Side plank", primary: ["core"], secondary: [], equipment: "bodyweight", pattern: "core", tracksDuration: true },
   { name: "Side plank dip", primary: ["core"], secondary: [], equipment: "bodyweight", pattern: "core" },
   { name: "DB side plank rotation", primary: ["core"], secondary: ["shoulders"], equipment: "dumbbell", pattern: "core" },
   { name: "Pallof press", primary: ["core"], secondary: [], equipment: "cable", pattern: "core" },
@@ -205,8 +206,8 @@ export const EXERCISES: Exercise[] = [
   { name: "High knees", primary: ["hip_flexors", "quads"], secondary: ["core", "calves"], equipment: "bodyweight", pattern: "conditioning" },
   { name: "Squat thrust", primary: ["quads", "core"], secondary: ["shoulders", "glutes"], equipment: "bodyweight", pattern: "conditioning" },
   { name: "Flutter kick", primary: ["core", "hip_flexors"], secondary: [], equipment: "bodyweight", pattern: "core" },
-  { name: "Hollow body hold", primary: ["core"], secondary: ["hip_flexors"], equipment: "bodyweight", pattern: "core" },
-  { name: "Superman hold", primary: ["back", "glutes"], secondary: ["shoulders", "core"], equipment: "bodyweight", pattern: "core" },
+  { name: "Hollow body hold", primary: ["core"], secondary: ["hip_flexors"], equipment: "bodyweight", pattern: "core", tracksDuration: true },
+  { name: "Superman hold", primary: ["back", "glutes"], secondary: ["shoulders", "core"], equipment: "bodyweight", pattern: "core", tracksDuration: true },
   { name: "Shoulder tap", primary: ["core", "shoulders"], secondary: ["chest"], equipment: "bodyweight", pattern: "core" },
   { name: "Plank jack", primary: ["core"], secondary: ["shoulders", "glutes"], equipment: "bodyweight", pattern: "core" },
   { name: "Bird dog", primary: ["core"], secondary: ["glutes"], equipment: "bodyweight", pattern: "core" },
@@ -268,7 +269,7 @@ export const EXERCISES: Exercise[] = [
 
   // === HIP ADDUCTORS ===
   { name: "Adductor machine", primary: ["adductors"], secondary: [], equipment: "machine", pattern: "squat" },
-  { name: "Copenhagen plank", primary: ["adductors", "core"], secondary: ["glutes"], equipment: "bodyweight", pattern: "core" },
+  { name: "Copenhagen plank", primary: ["adductors", "core"], secondary: ["glutes"], equipment: "bodyweight", pattern: "core", tracksDuration: true },
   { name: "Cable hip adduction", primary: ["adductors"], secondary: ["glutes"], equipment: "cable", pattern: "squat" },
 
   // === CALVES ===

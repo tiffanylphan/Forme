@@ -43,6 +43,38 @@ describe("LogPage interactions", () => {
     expect(screen.getAllByLabelText("Remove set")).toHaveLength(2);
   });
 
+  it("logs static holds like Plank in seconds rather than reps", async () => {
+    const user = userEvent.setup();
+    popEditWorkoutMock.mockReturnValue(null);
+    popDraftMock.mockReturnValue(null);
+    getWorkoutMock.mockReturnValue(null);
+    let persistedWorkout: Record<string, unknown> | null = null;
+    upsertWorkoutMock.mockImplementation((savedWorkout) => {
+      persistedWorkout = savedWorkout as Record<string, unknown>;
+    });
+
+    render(<LogPage />);
+
+    await user.click(screen.getByText("+ Add exercise"));
+    await user.type(screen.getByPlaceholderText("Search exercises…"), "Plank");
+    await user.click(screen.getByText("Plank"));
+
+    expect(screen.getByText("Sec")).toBeInTheDocument();
+    expect(screen.queryByText("Reps")).not.toBeInTheDocument();
+
+    const durationInput = screen.getAllByPlaceholderText("—")[0];
+    await user.type(durationInput, "45");
+    expect(durationInput).toHaveValue(45);
+
+    await user.click(screen.getByText("Save"));
+
+    const saved = persistedWorkout as {
+      exercises: Array<{ sets: Array<{ reps: number | null; durationSec: number | null }> }>;
+    } | null;
+    expect(saved?.exercises[0]?.sets[0]?.durationSec).toBe(45);
+    expect(saved?.exercises[0]?.sets[0]?.reps).toBeNull();
+  });
+
   it("shows an error instead of navigating when save verification fails", async () => {
     const user = userEvent.setup();
     popEditWorkoutMock.mockReturnValue(null);

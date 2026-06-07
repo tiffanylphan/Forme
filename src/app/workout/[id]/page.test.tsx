@@ -61,6 +61,15 @@ describe("WorkoutDetailPage", () => {
                 { id: "s2", reps: 10, weight: 75, unit: "lb" },
               ],
             },
+            {
+              id: "e2",
+              exerciseName: "Plank",
+              progressionStatus: "baseline",
+              supersetGroup: null,
+              sets: [
+                { id: "s3", reps: null, weight: null, unit: "lb", durationSec: 45 },
+              ],
+            },
           ],
         },
       ],
@@ -72,6 +81,9 @@ describe("WorkoutDetailPage", () => {
     expect(screen.getByText("Recent history")).toBeInTheDocument();
     expect(screen.getByText(/65 lb x 12\/10/)).toBeInTheDocument();
     expect(screen.getByText("Felt strong")).toBeInTheDocument();
+
+    // Duration-based holds display as seconds, not as a bare rep count.
+    expect(screen.getByText("45s")).toBeInTheDocument();
 
     await user.click(screen.getByText("Edit"));
     expect(stashEditWorkoutMock).toHaveBeenCalledTimes(1);

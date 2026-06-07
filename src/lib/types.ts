@@ -66,6 +66,8 @@ export type Exercise = {
   secondary: MuscleGroup[];
   equipment: Equipment;
   pattern: Pattern;
+  /** Static holds tracked by time (seconds) rather than rep count. */
+  tracksDuration?: boolean;
 };
 
 export type WeightUnit = "lb" | "kg";
