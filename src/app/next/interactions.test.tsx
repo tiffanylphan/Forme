@@ -296,6 +296,7 @@ vi.mock("@/lib/generator", () => ({
   generateNextWorkout: (...args: Parameters<typeof generateNextWorkoutMock>) =>
     generateNextWorkoutMock(...args),
   stashDraft: (draft: unknown) => stashDraftMock(draft),
+  getWeeklyTargetStimulus: () => ({}),
 }));
 
 describe("NextPage interactions", () => {

@@ -11,6 +11,7 @@ import { formatMuscle, todayISO } from "@/lib/format";
 import {
   buildDraftExercise,
   generateNextWorkout,
+  getWeeklyTargetStimulus,
   stashDraft,
 } from "@/lib/generator";
 import { movementOf, MOVEMENT_COLORS, MOVEMENT_LABELS } from "@/lib/movement";
@@ -542,7 +543,11 @@ function PlanningCard({
 
       <div className="mt-3 border-t border-divider pt-3">
         <WeeklyTargetCard
-          targetPrimaryStimulus={draft.split.targetPrimaryStimulus ?? draft.split.targetPrimarySets}
+          targetPrimaryStimulus={
+            profile
+              ? getWeeklyTargetStimulus(profile, coverage.workouts)
+              : (draft.split.targetPrimaryStimulus ?? draft.split.targetPrimarySets)
+          }
           coverage={coverage}
           embedded
         />

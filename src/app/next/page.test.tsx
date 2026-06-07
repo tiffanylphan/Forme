@@ -49,6 +49,34 @@ describe("NextPage", () => {
     expect(screen.getAllByText("Complementary mobility").length).toBeGreaterThan(0);
   });
 
+  it("shows the weekly target total, not just this slot's target, in the weekly target stimulus card", () => {
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "beginner",
+        intensity: "standard",
+        blockedExercises: [],
+        allowedExercises: [],
+      },
+    });
+    useWorkoutsMock.mockReturnValue({
+      ready: true,
+      workouts: [],
+    });
+
+    render(<NextPage />);
+
+    // The displayed slot is "Lower A · Posterior", whose own glutes target is 7,
+    // but the weekly total across all 4 physique slots is 7 + 2 + 6 + 2 = 17.
+    // The card's "done" value is the weekly total, so its target must also be
+    // the weekly total (17), not this slot's own target (7).
+    expect(screen.getByText("0.0/17.0")).toBeInTheDocument();
+    expect(screen.queryByText("0.0/7.0")).not.toBeInTheDocument();
+  });
+
   it("prompts for setup when no training profile exists", () => {
     useTrainingProfileMock.mockReturnValue({ ready: true, profile: null });
     useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
