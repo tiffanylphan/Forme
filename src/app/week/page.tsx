@@ -225,7 +225,9 @@ export default function WeekPage() {
                 threshold: 1.4,
                 flag: pull === 0
                   ? "No pulling yet this week."
-                  : `${(push / pull).toFixed(1)}:1 — add ~${Math.round(push - pull)} pull sets to reach 1:1.`,
+                  : push >= pull
+                    ? `${(push / pull).toFixed(1)}:1 — add ~${Math.round(push - pull)} pull sets to reach 1:1.`
+                    : `${(pull / push).toFixed(1)}:1 — add ~${Math.round(pull - push)} push sets to reach 1:1.`,
               },
               {
                 left: "Knee", leftSets: squat, leftBar: "#c5e8dc", leftText: "#085041",
@@ -233,7 +235,9 @@ export default function WeekPage() {
                 threshold: 1.6,
                 flag: hinge === 0
                   ? "No hinge work yet — deadlifts or RDLs balance the knees."
-                  : `${(squat / hinge).toFixed(1)}:1 knee-to-hip. Add more hinge work.`,
+                  : squat >= hinge
+                    ? `${(squat / hinge).toFixed(1)}:1 knee-to-hip. Add more hinge work.`
+                    : `${(hinge / squat).toFixed(1)}:1 hip-to-knee. Add more squat and lunge work.`,
               },
               {
                 left: "Upper", leftSets: upper, leftBar: "#faeeda", leftText: "#633806",
