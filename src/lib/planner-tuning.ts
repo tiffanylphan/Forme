@@ -172,6 +172,13 @@ export const PLANNER_TUNING = {
     randomnessWeight: 2.0,
   },
 
+  // How wide the random draw over candidate finisher templates is — a larger
+  // spread pulls more templates into the weighted draw instead of collapsing
+  // to whichever 1-3 templates score closest to the top.
+  finisherVariety: {
+    templateShortlistSpread: 2.5,
+  },
+
   // Total per-session recovery budget and how finishers count against it.
   fatigueBudget: {
     baseThreeDay: 30,

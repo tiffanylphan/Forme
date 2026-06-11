@@ -27,6 +27,11 @@ import { useWorkouts } from "@/lib/storage";
 import type { DraftExercise, DraftSection, WorkoutDraft } from "@/lib/generator";
 import type { Exercise, MovementPattern, MuscleGroup } from "@/lib/types";
 
+// How many recently-shown finisher circuits to keep excluded from the next
+// shuffle draw — keeps a small shortlist from feeling repetitive over a
+// handful of clicks without starving it entirely.
+const RECENT_FINISHER_HISTORY = 3;
+
 const SECTION_TITLE: Record<DraftSection["kind"], string> = {
   compound: "Set",
   accessory: "Set",
@@ -284,13 +289,20 @@ export default function NextPage() {
   const { profile, ready: profileReady } = useTrainingProfile();
   const today = todayISO();
   const [seed, setSeed] = useState<number>(0);
+  const [finisherSeed, setFinisherSeed] = useState<number | null>(null);
+  const [recentFinisherTemplateIds, setRecentFinisherTemplateIds] = useState<string[]>([]);
   const [preferredExercises, setPreferredExercises] = useState<string[]>([]);
   const router = useRouter();
 
   const baseDraft = useMemo(
     () =>
-      generateNextWorkout(workouts, today, seed, profile, { preferredExercises }),
-    [workouts, today, seed, profile, preferredExercises],
+      generateNextWorkout(workouts, today, seed, profile, {
+        preferredExercises,
+        finisherSeed: finisherSeed ?? undefined,
+        excludeFinisherTemplateIds:
+          recentFinisherTemplateIds.length > 0 ? recentFinisherTemplateIds : undefined,
+      }),
+    [workouts, today, seed, profile, preferredExercises, finisherSeed, recentFinisherTemplateIds],
   );
 
   // Manual per-exercise swaps: { seed, map } — the seed acts as a generation
@@ -352,7 +364,30 @@ export default function NextPage() {
 
   const regenerate = () => {
     setSeed(Math.floor(Math.random() * 1e9));
+    setFinisherSeed(null);
+    setRecentFinisherTemplateIds([]);
     // swapState.seed will differ from the new seed, so swaps auto-reset.
+  };
+
+  const shuffleFinisher = (sectionIdx: number) => {
+    const current = baseDraft.sections[sectionIdx];
+    const currentId = current?.kind === "finisher" ? current.templateId : undefined;
+    setRecentFinisherTemplateIds((prev) =>
+      currentId
+        ? [currentId, ...prev.filter((id) => id !== currentId)].slice(0, RECENT_FINISHER_HISTORY)
+        : prev,
+    );
+    setFinisherSeed(Math.floor(Math.random() * 1e9));
+    // The new finisher has different exercises at these indices — drop any
+    // per-exercise swaps that were aimed at the old ones.
+    setSwapState((prev) => ({
+      seed,
+      map: Object.fromEntries(
+        Object.entries(prev.seed === seed ? prev.map : {}).filter(
+          ([key]) => !key.startsWith(`${sectionIdx}-`),
+        ),
+      ),
+    }));
   };
 
   const bringBackLift = (exerciseName: string) => {
@@ -419,6 +454,7 @@ export default function NextPage() {
                     mode,
                   })
                 }
+                onShuffleFinisher={shuffleFinisher}
               />
             ))}
           </div>
@@ -756,6 +792,7 @@ function BookendCard({
 function SectionCard({
   displaySection,
   onSwapRequest,
+  onShuffleFinisher,
 }: {
   displaySection: DisplaySection;
   onSwapRequest: (
@@ -765,6 +802,7 @@ function SectionCard({
     targets: (number | string)[],
     mode: "standard" | "finisher",
   ) => void;
+  onShuffleFinisher: (sectionIdx: number) => void;
 }) {
   if (displaySection.kind === "set_group") {
     const firstEntry = displaySection.entries[0];
@@ -806,11 +844,21 @@ function SectionCard({
     <div className="overflow-hidden rounded-2xl border border-[#E6E3D8] bg-surface">
       <div className="flex items-start justify-between gap-3 border-b border-divider px-4 py-2.5">
         <span className="label-eyebrow">{sectionTitleFor(section)}</span>
-        <div className="min-w-0 text-right">
-          <div className="text-[11px] text-text-subtle">{section.rounds} rounds</div>
-          <div className="text-[10px] leading-snug text-text-subtle">
-            {section.repScheme}
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 text-right">
+            <div className="text-[11px] text-text-subtle">{section.rounds} rounds</div>
+            <div className="text-[10px] leading-snug text-text-subtle">
+              {section.repScheme}
+            </div>
           </div>
+          {section.kind === "finisher" && (
+            <button
+              onClick={() => onShuffleFinisher(sectionIdx)}
+              className="shrink-0 rounded-full border border-[#D3D1C7] bg-white px-3 py-1 text-[11px] font-medium text-text-muted"
+            >
+              Shuffle
+            </button>
+          )}
         </div>
       </div>
       <div className={section.kind === "finisher" ? "space-y-2 px-3 py-3" : "divide-y divide-divider"}>

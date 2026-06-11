@@ -8,6 +8,7 @@
 
 ## When adding new functionality or exercises
 - Add or update a test for it.
+- When fixing a bug, add a test that fails without the fix and passes with it, so the bug can't regress.
 - Run `npm test` before reporting the task complete.
 - If adding exercises changes a filter count in `src/app/library/page.test.tsx`, update that test.
 
@@ -18,6 +19,7 @@
 ## Project conventions
 - Exercises are defined in `src/lib/exercises.ts` as an `Exercise[]`.
 - Storage helpers live in `src/lib/storage.ts`.
+- Planner tuning lives in `src/lib/planner-tuning.ts`; see `docs/planner-tuning-notes.md` for a guide to diagnosing and adjusting planner behavior.
 - Tests live alongside source files (`*.test.ts` / `*.test.tsx`).
 - No comments unless the WHY is non-obvious.
 - Prefer editing existing files over creating new ones.

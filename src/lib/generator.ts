@@ -35,6 +35,7 @@ export type DraftSection = {
   rounds: number;
   repScheme: string;
   exercises: DraftExercise[];
+  templateId?: string;
 };
 
 export type DraftExercise = {
@@ -97,6 +98,8 @@ export type WorkoutDraft = {
 type GeneratorOverrides = {
   preferredExercises?: string[];
   forcedSlotId?: string;
+  finisherSeed?: number;
+  excludeFinisherTemplateIds?: string[];
 };
 
 type SplitSlot = {
@@ -139,7 +142,7 @@ const PHYSIQUE_UPPER_B_SLOT: SplitSlot = {
   targetPrimaryStimulus: { back: 6, shoulders: 5, rear_delts: 4, biceps: 3, triceps: 2, glutes: 2, core: 2 },
 };
 
-const FINISHER_TEMPLATES: FinisherTemplate[] = [
+export const FINISHER_TEMPLATES: FinisherTemplate[] = [
   {
     id: "mechanical_pushup_drop",
     label: "mechanical advantage drop set",
@@ -223,6 +226,110 @@ const FINISHER_TEMPLATES: FinisherTemplate[] = [
     repScheme: "8 reps each, no rest · metabolic chain",
     tags: ["upper", "lower", "conditioning"],
     requiresHardMode: true,
+  },
+  {
+    id: "skater_shuffle",
+    label: "skater shuffle",
+    exercises: ["Skater hop", "Mountain climber", "High knees"],
+    rounds: 3,
+    repScheme: "10/side hops + 16 climbers + 20 high knees, no rest between",
+    tags: ["lower", "core", "conditioning"],
+  },
+  {
+    id: "broad_jump_chain",
+    label: "broad jump chain",
+    exercises: ["Broad jump", "Bodyweight squat", "Mountain climber"],
+    rounds: 3,
+    repScheme: "5 broad jumps + 12 squats + 16 climbers",
+    tags: ["lower", "conditioning"],
+  },
+  {
+    id: "carry_and_crawl",
+    label: "carry-and-crawl gauntlet",
+    exercises: ["Farmer carry", "Bear crawl", "Tuck-up"],
+    rounds: 3,
+    repScheme: "30-step carry + 20 crawl steps + 12 tuck-ups",
+    tags: ["core", "conditioning"],
+  },
+  {
+    id: "tuck_and_tap",
+    label: "tuck-jump and tap chain",
+    exercises: ["Tuck jump", "Push-up", "Hanging knee raise"],
+    rounds: 3,
+    repScheme: "8 tuck jumps + 10 push-ups + 12 knee raises",
+    tags: ["upper", "lower", "core", "conditioning"],
+  },
+  {
+    id: "core_conditioning_chain",
+    label: "core conditioning chain",
+    exercises: ["V-up", "Side plank", "Squat thrust"],
+    rounds: 3,
+    repScheme: "12 V-ups + 20 sec/side plank + 10 squat thrusts",
+    tags: ["core", "conditioning"],
+  },
+  {
+    id: "rotation_and_pop_chain",
+    label: "rotation and pop chain",
+    exercises: ["Alternating V-up", "Bird dog", "Squat jump"],
+    rounds: 3,
+    repScheme: "10/side V-ups + 8/side bird dogs + 10 squat jumps",
+    tags: ["core", "conditioning"],
+  },
+  {
+    id: "unilateral_carry_circuit",
+    label: "unilateral carry circuit",
+    exercises: ["Single-side V-up", "Copenhagen plank", "Suitcase carry"],
+    rounds: 3,
+    repScheme: "8/side V-ups + 20 sec/side plank + 30-step carry",
+    tags: ["core", "conditioning"],
+  },
+  {
+    id: "anti_extension_march",
+    label: "anti-extension march",
+    exercises: ["Dead bug", "High plank", "DB overhead march"],
+    rounds: 3,
+    repScheme: "10/side dead bugs + 20 sec plank hold + 20-step march",
+    tags: ["core", "conditioning"],
+  },
+  {
+    id: "hanging_core_complex",
+    label: "hanging core complex",
+    exercises: ["Hanging leg raise", "Cable woodchop", "DB renegade row"],
+    rounds: 3,
+    repScheme: "10 leg raises + 10/side woodchops + 8/side rows",
+    tags: ["core", "conditioning"],
+  },
+  {
+    id: "bicycle_and_clean_chain",
+    label: "bicycle and clean chain",
+    exercises: ["Bicycle crunch", "Side plank dip", "DB squat to clean"],
+    rounds: 3,
+    repScheme: "16 bicycle crunches + 8/side plank dips + 8 squat-to-cleans",
+    tags: ["core", "conditioning"],
+  },
+  {
+    id: "flutter_and_drag_burner",
+    label: "flutter and drag burner",
+    exercises: ["Flutter kick", "Plank drag", "Woman maker"],
+    rounds: 3,
+    repScheme: "20 flutter kicks + 8/side plank drags + 6 woman makers",
+    tags: ["core", "conditioning"],
+  },
+  {
+    id: "twist_and_pull_chain",
+    label: "twist and pull chain",
+    exercises: ["Butterfly sit-up", "DB side plank rotation", "DB side lunge to high pull"],
+    rounds: 3,
+    repScheme: "12 sit-ups + 8/side rotations + 8/side lunge-to-pulls",
+    tags: ["upper", "core", "conditioning"],
+  },
+  {
+    id: "rotational_core_gauntlet",
+    label: "rotational core gauntlet",
+    exercises: ["Oblique twist", "Russian twist", "Pallof press", "Ab wheel rollout"],
+    rounds: 3,
+    repScheme: "16 reps each, controlled tempo throughout",
+    tags: ["core"],
   },
 ];
 
@@ -1193,13 +1300,13 @@ const adaptSelectedSlot = (
     "adductors",
     "core",
   ]);
-  const pushFatigue = sumDeficits(recentMuscleFatigue, [
-    "chest",
-    "shoulders",
-    "triceps",
-  ]);
+  // "shoulders" is excluded here (and from pullDeficit/pressDeficit below) because
+  // rear-delt-focused pull work (rows, face pulls, reverse flies) trains it as a
+  // secondary target too — counting it toward "press" fatigue/deficit lets a
+  // pull-heavy week masquerade as recent pressing and wrongly suppress pressing further.
+  const pushFatigue = sumDeficits(recentMuscleFatigue, ["chest", "triceps"]);
   const pullDeficit = sumDeficits(muscleDeficits, ["back", "rear_delts", "biceps"]);
-  const pressDeficit = sumDeficits(muscleDeficits, ["chest", "shoulders", "triceps"]);
+  const pressDeficit = sumDeficits(muscleDeficits, ["chest", "triceps"]);
 
   if (
     lowerFatigue <
@@ -2071,6 +2178,7 @@ export function generateNextWorkout(
   const recent = recentMusclesWithin(workouts, todayISO, 48);
   const recentStress = recentMuscleStressWithin(workouts, todayISO, 96);
   const rng = mulberry32(seed);
+  const finisherRng = mulberry32(overrides?.finisherSeed ?? seed);
   const split = resolveSplitVariants(
     getSplitTemplate(activeProfile),
     activeProfile,
@@ -3332,6 +3440,19 @@ export function generateNextWorkout(
       if (template.tags.includes("core")) score += 2.5;
       if (templateExercises.some((exercise) => movementOf(exercise) === "carry_core")) score += 2;
     }
+    if (lowerBiasSlot) {
+      const templateUnilateralFamilies = templateExercises
+        .map((exercise) => lowerUnilateralKneeFamilyOf(exercise))
+        .filter((family): family is string => family !== null);
+      if (templateUnilateralFamilies.length > 0) {
+        const usedLowerUnilateralFamilies = ["split_squat", "lunge", "step_up"].reduce(
+          (count, key) => count + (claimedFamilies[key] ?? 0),
+          0,
+        );
+        if (usedLowerUnilateralFamilies >= 1) score -= PLANNER_TUNING.exerciseSelection.unilateralFamilyPenalty;
+        if (usedLowerUnilateralFamilies >= 2) score -= PLANNER_TUNING.exerciseSelection.repeatedUnilateralFamilyPenalty;
+      }
+    }
     score -= finisherRepeatPenalty(template.exercises, workouts, todayISO);
     return score;
   };
@@ -3344,27 +3465,31 @@ export function generateNextWorkout(
     .sort((a, b) => b.score - a.score);
   const bestTemplateScore = scoredTemplates[0]?.score ?? -Infinity;
   const templateShortlist = scoredTemplates.filter(
-    ({ score }) => score >= bestTemplateScore - 1.5,
+    ({ score }) => score >= bestTemplateScore - PLANNER_TUNING.finisherVariety.templateShortlistSpread,
   );
+  // Bringing back a stalled conditioning/plyo/calf lift only works through a
+  // finisher pick — curated templates can't name it, so skip them and let the
+  // candidate-scoring path below give it its preferred-exercise bonus.
+  const bringingBackFinisherOnly = [...preferredExerciseNames].some((name) => {
+    const exercise = findExerciseByName(name);
+    return (
+      exercise &&
+      !used.has(exercise.name) &&
+      movementOf(exercise) === null &&
+      environmentAllowsExercise(exercise, activeProfile)
+    );
+  });
   let chosenTemplate: FinisherTemplate | undefined;
-  if (hardMode && scoredTemplates.length > 0) {
-    const rotationPool = scoredTemplates.slice(0, Math.min(4, scoredTemplates.length));
-    chosenTemplate = rotationPool[Math.abs(seed) % rotationPool.length]?.template;
+  if (bringingBackFinisherOnly) {
+    // fall through to manual candidate selection
   } else if (templateShortlist.length > 0) {
-    const weighted = templateShortlist.map(({ template, score }) => ({
-      template,
-      weight: Math.max(0.25, score - (bestTemplateScore - 1.75)),
-    }));
-    const totalWeight = weighted.reduce((sum, entry) => sum + entry.weight, 0);
-    let draw = rng() * totalWeight;
-    for (const entry of weighted) {
-      draw -= entry.weight;
-      if (draw <= 0) {
-        chosenTemplate = entry.template;
-        break;
-      }
-    }
-    chosenTemplate ??= weighted[weighted.length - 1]?.template;
+    // Every template in the shortlist already cleared the score-proximity
+    // gate, so treat them as equally valid picks — weighting again within
+    // that "good enough" set just collapses variety back onto the top 1-2.
+    const excluded = new Set(overrides?.excludeFinisherTemplateIds ?? []);
+    const drawPool = templateShortlist.filter(({ template }) => !excluded.has(template.id));
+    const pool = drawPool.length > 0 ? drawPool : templateShortlist;
+    chosenTemplate = pool[Math.floor(finisherRng() * pool.length)]?.template;
   }
 
   if (chosenTemplate) {
@@ -3381,6 +3506,7 @@ export function generateNextWorkout(
     });
     sections.push({
       kind: "finisher",
+      templateId: chosenTemplate.id,
       rounds: chosenTemplate.rounds,
       repScheme: `${chosenTemplate.repScheme} · ${chosenTemplate.label}`,
       exercises: templateExercises.map((exercise) =>
@@ -3394,6 +3520,9 @@ export function generateNextWorkout(
       if (strictPullCatchUpUpperSlot) {
         if (isPushLeaningFinisher(ex) || isLowerFatiguingFinisher(ex)) return false;
       }
+      // A user explicitly bringing back a stalled lift overrides the usual
+      // finisher curation — as long as their environment can support it.
+      if (preferredExerciseNames.has(ex.name)) return true;
       if (allowConditioningFinisher) return isPreferredAccessibleFinisher(ex);
       return movementOf(ex) === "carry_core" || isAccessibleMetabolicFinisher(ex);
     });
@@ -3402,7 +3531,7 @@ export function generateNextWorkout(
   const finisherNames = new Set<string>();
   const finisherFamilies = new Set<string>();
   const finisherNoise = new Map<string, number>();
-  finisherCandidates.forEach((ex) => finisherNoise.set(ex.name, rng()));
+  finisherCandidates.forEach((ex) => finisherNoise.set(ex.name, finisherRng()));
   const sortFinisherScore = (ex: Exercise, currentPicks: Exercise[]): number => {
     let s = 0;
     const projectedStress = estimatePlannedExerciseStress(
@@ -3439,6 +3568,20 @@ export function generateNextWorkout(
   };
 
   const remainingFinisherCandidates = [...finisherCandidates];
+
+  // Bringing back a stalled lift is an explicit ask — seat it directly rather
+  // than hoping it out-scores the curated finisher picks.
+  preferredExerciseNames.forEach((name) => {
+    if (finisherPicks.length >= preferredFinisherCount) return;
+    const candidateIdx = remainingFinisherCandidates.findIndex((ex) => ex.name === name);
+    if (candidateIdx === -1) return;
+    const picked = remainingFinisherCandidates[candidateIdx];
+    finisherPicks.push(picked);
+    finisherNames.add(picked.name);
+    finisherFamilies.add(familyOf(picked));
+    remainingFinisherCandidates.splice(candidateIdx, 1);
+  });
+
   while (finisherPicks.length < preferredFinisherCount && remainingFinisherCandidates.length > 0) {
     const rankedCandidates = [...remainingFinisherCandidates].sort(
       (a, b) => sortFinisherScore(b, finisherPicks) - sortFinisherScore(a, finisherPicks),
@@ -3478,6 +3621,7 @@ export function generateNextWorkout(
       if (strictPullCatchUpUpperSlot) {
         if (isPushLeaningFinisher(ex) || isLowerFatiguingFinisher(ex)) return false;
       }
+      if (preferredExerciseNames.has(ex.name)) return true;
       if (allowConditioningFinisher) return isPreferredAccessibleFinisher(ex);
       return movementOf(ex) === "carry_core" || isAccessibleMetabolicFinisher(ex);
     });
@@ -3521,12 +3665,21 @@ export function generateNextWorkout(
   const rotatedOffLiftNames = [...stalledExerciseNames]
     .map((name) => EXERCISES.find((exercise) => exercise.name === name))
     .filter((exercise): exercise is Exercise => Boolean(exercise))
-    .filter(
-      (exercise) =>
-        !selectedExerciseNames.has(exercise.name) &&
-        slot.allowedMovements.includes(movementOf(exercise) ?? "carry_core") &&
-        hasAnyMuscle(exercise, slot.focusMuscles),
-    )
+    .filter((exercise) => {
+      if (selectedExerciseNames.has(exercise.name)) return false;
+      const movement = movementOf(exercise);
+      if (movement === null) {
+        // Conditioning/plyo/calf work never fills a main slot (see
+        // scoreExercise's `if (!movement) return -10`) — it can only return
+        // through a finisher pick, so only offer it back when the user's
+        // environment could actually support it there.
+        return environmentAllowsExercise(exercise, activeProfile);
+      }
+      return (
+        slot.allowedMovements.includes(movement) &&
+        hasAnyMuscle(exercise, slot.focusMuscles)
+      );
+    })
     .map((exercise) => exercise.name);
 
   if (rotatedOffLiftNames.length > 0) {

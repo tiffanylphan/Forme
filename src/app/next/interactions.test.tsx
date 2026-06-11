@@ -6,16 +6,94 @@ import NextPage from "./page";
 const useWorkoutsMock = vi.fn();
 const useTrainingProfileMock = vi.fn();
 const stashDraftMock = vi.fn();
+
+const FINISHER_OPTIONS = [
+  {
+    templateId: "burpee_pair",
+    exercise: {
+      name: "Burpee",
+      primary: ["quads", "core"],
+      secondary: ["shoulders", "chest"],
+      pattern: "conditioning",
+      movement: null,
+      targets: [10, 10],
+      suggestedWeight: null,
+      unit: "lb",
+      isFamiliar: true,
+      progression: {
+        lastSummary: "10 / 10 reps",
+        goal: "Keep the pace even across both rounds.",
+        nextStep: "Stay smooth and keep the output high.",
+        recentHistory: [],
+      },
+    },
+  },
+  {
+    templateId: "mountain_climber_pair",
+    exercise: {
+      name: "Mountain climber",
+      primary: ["core", "hip_flexors"],
+      secondary: ["shoulders"],
+      pattern: "core",
+      movement: "carry_core",
+      targets: [16, 16],
+      suggestedWeight: null,
+      unit: "lb",
+      isFamiliar: true,
+      progression: {
+        lastSummary: "16 / 16 reps",
+        goal: "Keep the pace even across both rounds.",
+        nextStep: "Stay smooth and keep the output high.",
+        recentHistory: [],
+      },
+    },
+  },
+  {
+    templateId: "high_knees_pair",
+    exercise: {
+      name: "High knees",
+      primary: ["hip_flexors", "core"],
+      secondary: ["calves"],
+      pattern: "conditioning",
+      movement: null,
+      targets: [20, 20],
+      suggestedWeight: null,
+      unit: "lb",
+      isFamiliar: true,
+      progression: {
+        lastSummary: "20 / 20 reps",
+        goal: "Keep the pace even across both rounds.",
+        nextStep: "Stay smooth and keep the output high.",
+        recentHistory: [],
+      },
+    },
+  },
+] as const;
+
 const generateNextWorkoutMock = vi.fn(
   (
     _workouts?: unknown,
     _today?: unknown,
     _seed?: unknown,
     _profile?: unknown,
-    overrides?: { preferredExercises?: string[]; forcedSlotId?: string },
+    overrides?: {
+      preferredExercises?: string[];
+      forcedSlotId?: string;
+      finisherSeed?: number;
+      excludeFinisherTemplateIds?: string[];
+    },
   ) => {
     const broughtBack = overrides?.preferredExercises?.includes("Barbell hip thrust");
     const forcedUpperB = overrides?.forcedSlotId === "upper_back_shoulder_arms";
+    const shuffledFinisher = overrides?.finisherSeed !== undefined;
+    const excludedTemplateIds = new Set(overrides?.excludeFinisherTemplateIds ?? []);
+    const finisherChoice = (() => {
+      if (!shuffledFinisher) return FINISHER_OPTIONS[0];
+      return (
+        FINISHER_OPTIONS.find((option) => !excludedTemplateIds.has(option.templateId)) ??
+        FINISHER_OPTIONS[0]
+      );
+    })();
     const split = forcedUpperB
       ? {
           slotId: "upper_back_shoulder_arms",
@@ -218,27 +296,10 @@ const generateNextWorkoutMock = vi.fn(
         },
         {
           kind: "finisher",
+          templateId: finisherChoice.templateId,
           rounds: 2,
           repScheme: "8–12 reps each · finisher pair",
-          exercises: [
-            {
-              name: "Burpee",
-              primary: ["quads", "core"],
-              secondary: ["shoulders", "chest"],
-              pattern: "conditioning",
-              movement: null,
-              targets: [10, 10],
-              suggestedWeight: null,
-              unit: "lb",
-              isFamiliar: true,
-              progression: {
-                lastSummary: "10 / 10 reps",
-                goal: "Keep the pace even across both rounds.",
-                nextStep: "Stay smooth and keep the output high.",
-                recentHistory: [],
-              },
-            },
-          ],
+          exercises: [finisherChoice.exercise],
         },
       ],
     };
@@ -601,5 +662,60 @@ describe("NextPage interactions", () => {
 
     expect(screen.getByText("High knees")).toBeInTheDocument();
     expect(screen.queryByText("Swap finisher")).not.toBeInTheDocument();
+  });
+
+  it("can shuffle the whole finisher circuit without changing the rest of the draft", async () => {
+    const user = userEvent.setup();
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "beginner",
+        intensity: "standard",
+      },
+    });
+    useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
+
+    render(<NextPage />);
+    expect(screen.getByText("Burpee")).toBeInTheDocument();
+    expect(screen.getByText("Cable row")).toBeInTheDocument();
+
+    await user.click(screen.getByText("Shuffle"));
+
+    expect(screen.queryByText("Burpee")).not.toBeInTheDocument();
+    expect(screen.getByText("Mountain climber")).toBeInTheDocument();
+    expect(screen.getByText("Cable row")).toBeInTheDocument();
+  });
+
+  it("never shows the same finisher circuit on two consecutive shuffles", async () => {
+    const user = userEvent.setup();
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "beginner",
+        intensity: "standard",
+      },
+    });
+    useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
+
+    render(<NextPage />);
+    expect(screen.getByText("Burpee")).toBeInTheDocument();
+
+    await user.click(screen.getByText("Shuffle"));
+    expect(screen.getByText("Mountain climber")).toBeInTheDocument();
+    expect(screen.queryByText("Burpee")).not.toBeInTheDocument();
+
+    await user.click(screen.getByText("Shuffle"));
+    expect(screen.getByText("High knees")).toBeInTheDocument();
+    expect(screen.queryByText("Mountain climber")).not.toBeInTheDocument();
+
+    await user.click(screen.getByText("Shuffle"));
+    expect(screen.getByText("Burpee")).toBeInTheDocument();
+    expect(screen.queryByText("High knees")).not.toBeInTheDocument();
   });
 });

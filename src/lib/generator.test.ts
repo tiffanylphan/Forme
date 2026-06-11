@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { findExercise } from "./exercises";
-import { generateNextWorkout } from "./generator";
+import { EXERCISES, findExercise } from "./exercises";
+import { FINISHER_TEMPLATES, generateNextWorkout } from "./generator";
 import { movementOf } from "./movement";
 import type { TrainingProfile, Workout } from "./types";
 
@@ -191,6 +191,58 @@ describe("generateNextWorkout", () => {
         return exercise?.pattern === "push" || name === "Push-up to renegade row";
       }),
     ).toBe(false);
+  });
+
+  it("does not bias Upper A toward minimal pressing just because rear-delt pull work recently trained shoulders", () => {
+    // Recent sessions are pull-heavy (rows, reverse flies, face pulls) which train
+    // "shoulders" as a secondary target — that should not be misread as recent
+    // pressing fatigue and used to suppress a press-needing session's pressing.
+    const workouts = [
+      workout("w1", "2026-06-01", [
+        { name: "Barbell back squat", sets: 8 },
+        { name: "Goblet squat", sets: 6 },
+        { name: "Leg extension", sets: 4 },
+        { name: "DB Romanian deadlift", sets: 4 },
+        { name: "Barbell bench press", sets: 4 },
+        { name: "DB skull crusher", sets: 3 },
+        { name: "DB lateral raise", sets: 6 },
+        { name: "Cable lateral raise", sets: 8 },
+      ]),
+      workout("w2", "2026-06-03", [
+        { name: "Bodyweight squat", sets: 6 },
+        { name: "Lateral step-up", sets: 7 },
+        { name: "Single-leg DB RDL", sets: 3 },
+      ]),
+      workout("w3", "2026-06-05", [
+        { name: "Cable row", sets: 4 },
+        { name: "Prone T raise", sets: 4 },
+        { name: "DB reverse fly", sets: 4 },
+        { name: "Band-assisted pull-up", sets: 4 },
+        { name: "Cable curl", sets: 4 },
+        { name: "Burpee", sets: 3 },
+      ]),
+      workout("w4", "2026-06-06", [
+        { name: "Good morning", sets: 4 },
+        { name: "Single-leg DB RDL", sets: 4 },
+        { name: "Leg curl", sets: 4 },
+        { name: "DB front raise", sets: 4 },
+        { name: "Forward lunge", sets: 3 },
+        { name: "Lateral lunge", sets: 3 },
+        { name: "Reverse lunge", sets: 3 },
+      ]),
+    ];
+
+    const draft = generateNextWorkout(
+      workouts,
+      "2026-06-07",
+      7,
+      { ...profile, daysPerWeek: 5, experience: "intermediate", intensity: "hard" },
+      { forcedSlotId: "upper_back_shoulder" },
+    );
+
+    expect(draft.split.summary).not.toContain("minimal pressing");
+    const names = draft.sections.flatMap((section) => section.exercises.map((exercise) => exercise.name));
+    expect(names.some((name) => movementOf(findExercise(name)!) === "push")).toBe(true);
   });
 
   it("does not stack multiple vertical pulls in the same upper pull session", () => {
@@ -466,6 +518,55 @@ describe("generateNextWorkout", () => {
     const repeatNames = repeatFinisher?.exercises.map((exercise) => exercise.name) ?? [];
 
     expect(repeatNames).not.toEqual(baselineNames);
+  });
+
+  it("rerolls only the finisher when a finisherSeed override is given", () => {
+    const seed = 123;
+    const baseline = generateNextWorkout([], "2026-05-18", seed, profile);
+    const reroll = generateNextWorkout([], "2026-05-18", seed, profile, { finisherSeed: 11 });
+
+    const namesExcludingFinisher = (draft: ReturnType<typeof generateNextWorkout>) =>
+      draft.sections
+        .filter((section) => section.kind !== "finisher")
+        .flatMap((section) => section.exercises.map((exercise) => exercise.name));
+    const finisherNames = (draft: ReturnType<typeof generateNextWorkout>) =>
+      draft.sections.find((section) => section.kind === "finisher")?.exercises.map((exercise) => exercise.name) ?? [];
+
+    expect(namesExcludingFinisher(reroll)).toEqual(namesExcludingFinisher(baseline));
+    expect(finisherNames(reroll)).not.toEqual(finisherNames(baseline));
+  });
+
+  it("can surface circuits that are a weaker slot-bias fit when shuffled enough", () => {
+    const seed = 4242;
+    const finisherNamesAt = (finisherSeed: number) =>
+      generateNextWorkout([], "2026-05-18", seed, profile, { finisherSeed })
+        .sections.find((section) => section.kind === "finisher")
+        ?.exercises.map((exercise) => exercise.name) ?? [];
+
+    const found = new Set<string>();
+    for (let finisherSeed = 0; finisherSeed < 50; finisherSeed += 1) {
+      finisherNamesAt(finisherSeed).forEach((name) => found.add(name));
+    }
+
+    expect(found.has("Hollow body hold")).toBe(true);
+    expect(found.has("Farmer carry")).toBe(true);
+  });
+
+  it("excludes the currently-shown finisher template when asked to redraw", () => {
+    const seed = 4242;
+    const baseline = generateNextWorkout([], "2026-05-18", seed, profile, { finisherSeed: 0 });
+    const baselineTemplateId = baseline.sections.find((section) => section.kind === "finisher")?.templateId;
+
+    expect(baselineTemplateId).toBeTruthy();
+
+    const redraw = generateNextWorkout([], "2026-05-18", seed, profile, {
+      finisherSeed: 1,
+      excludeFinisherTemplateIds: [baselineTemplateId!],
+    });
+    const redrawTemplateId = redraw.sections.find((section) => section.kind === "finisher")?.templateId;
+
+    expect(redrawTemplateId).toBeTruthy();
+    expect(redrawTemplateId).not.toBe(baselineTemplateId);
   });
 
   it("advances to the next slot when the current week already has the prior sessions logged", () => {
@@ -824,10 +925,39 @@ describe("generateNextWorkout", () => {
           "Tall-kneeling rotational medicine ball slam",
           "Farmer carry",
           "Suitcase carry",
+          "Broad jump",
+          "Tuck-up",
+          "Tuck jump",
+          "Hanging knee raise",
+          "V-up",
+          "Side plank",
+          "Alternating V-up",
+          "Bird dog",
+          "Single-side V-up",
+          "Copenhagen plank",
+          "Dead bug",
+          "High plank",
+          "DB overhead march",
+          "Hanging leg raise",
+          "Cable woodchop",
+          "Bicycle crunch",
+          "Side plank dip",
+          "DB squat to clean",
+          "Flutter kick",
+          "Plank drag",
+          "Woman maker",
+          "Butterfly sit-up",
+          "DB side plank rotation",
+          "DB side lunge to high pull",
+          "Oblique twist",
+          "Russian twist",
+          "Pallof press",
+          "Ab wheel rollout",
         ].includes(exercise.name),
       ),
     ).toBe(true);
-    expect(finisherSection?.rounds).toBe(3);
+    expect(finisherSection?.rounds).toBeGreaterThanOrEqual(2);
+    expect(finisherSection?.rounds).toBeLessThanOrEqual(4);
   });
 
   it("avoids specialized machine finishers when accessible options exist", () => {
@@ -869,6 +999,30 @@ describe("generateNextWorkout", () => {
           "Tall-kneeling rotational medicine ball slam",
           "Farmer carry",
           "Suitcase carry",
+          "V-up",
+          "Side plank",
+          "Alternating V-up",
+          "Bird dog",
+          "Single-side V-up",
+          "Copenhagen plank",
+          "Dead bug",
+          "High plank",
+          "DB overhead march",
+          "Hanging leg raise",
+          "Cable woodchop",
+          "Bicycle crunch",
+          "Side plank dip",
+          "DB squat to clean",
+          "Flutter kick",
+          "Plank drag",
+          "Woman maker",
+          "Butterfly sit-up",
+          "DB side plank rotation",
+          "DB side lunge to high pull",
+          "Oblique twist",
+          "Russian twist",
+          "Pallof press",
+          "Ab wheel rollout",
         ].includes(exercise.name),
       ),
     ).toBe(true);
@@ -1103,6 +1257,36 @@ describe("generateNextWorkout", () => {
     ).toBe(true);
   });
 
+  it("offers to bring back a stalled conditioning finisher and can plan it back in", () => {
+    const workouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Ski erg", sets: 3, progressionStatus: "held" },
+        { name: "Barbell back squat", sets: 4 },
+      ]),
+      workout("w2", "2026-05-06", [
+        { name: "Cable row", sets: 4 },
+        { name: "DB overhead press", sets: 3 },
+      ]),
+      workout("w3", "2026-05-07", [
+        { name: "Ski erg", sets: 3, progressionStatus: "missed" },
+        { name: "DB Romanian deadlift", sets: 3 },
+      ]),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-08", 9494, profile);
+    expect(draftExerciseNames(draft)).not.toContain("Ski erg");
+    expect(draft.rotatedOffLifts).toContain("Ski erg");
+    expect(
+      draft.rationale.some((line) => line.includes("Rotated off stalled lift") && line.includes("Ski erg")),
+    ).toBe(true);
+
+    const broughtBack = generateNextWorkout(workouts, "2026-05-08", 9494, profile, {
+      preferredExercises: ["Ski erg"],
+    });
+    expect(draftExerciseNames(broughtBack)).toContain("Ski erg");
+    expect(broughtBack.rotatedOffLifts).not.toContain("Ski erg");
+  });
+
   it("does not fall back to naive modulo rotation once all slots are represented", () => {
     const workouts = [
       workout("w1", "2026-05-05", [
@@ -1330,7 +1514,9 @@ describe("generateNextWorkout", () => {
             return movement === "hinge" || movement === "squat" || movement === "single_leg";
           });
           expect(draft.split.title).toBe("Lower A · Posterior");
-          expect(costlyLowerAnchors.length).toBeLessThanOrEqual(4);
+          // 4 main-session anchors, plus at most one more from a finisher
+          // (e.g. "Bodyweight squat" in burpee_ladder).
+          expect(costlyLowerAnchors.length).toBeLessThanOrEqual(5);
         },
       },
     ];
@@ -1502,5 +1688,39 @@ describe("generateNextWorkout", () => {
       );
       expect(carryCoreSections.length).toBeLessThanOrEqual(2);
     }
+  });
+
+  it("gives every finisher-eligible exercise a home in a curated finisher template", () => {
+    const accessibleConditioningFinisher = (ex: (typeof EXERCISES)[number]) =>
+      ex.pattern === "conditioning" && ["bodyweight", "dumbbell", "band"].includes(ex.equipment);
+
+    const accessibleMetabolicFinisher = (ex: (typeof EXERCISES)[number]) =>
+      [
+        "Half burpee w/ dumbbell",
+        "Burpee",
+        "Squat thrust",
+        "High knees",
+        "Mountain climber",
+        "Bear crawl",
+        "Bear plank shoulder tap",
+        "Plank to push-up",
+        "Push-up to renegade row",
+        "DB renegade row",
+        "DB snatch",
+        "Skater hop",
+        "Squat jump",
+      ].includes(ex.name);
+
+    const finisherEligible = EXERCISES.filter(
+      (ex) =>
+        movementOf(ex) === "carry_core" ||
+        accessibleConditioningFinisher(ex) ||
+        accessibleMetabolicFinisher(ex),
+    );
+
+    const namesInTemplates = new Set(FINISHER_TEMPLATES.flatMap((t) => t.exercises));
+
+    const missing = finisherEligible.filter((ex) => !namesInTemplates.has(ex.name));
+    expect(missing.map((ex) => ex.name)).toEqual([]);
   });
 });
