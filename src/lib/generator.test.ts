@@ -1211,6 +1211,40 @@ describe("generateNextWorkout", () => {
     expect(directArmExercises.length).toBeGreaterThanOrEqual(1);
   });
 
+  it("does not let the pull-biased upper-b allocation cap shoulder work below rear delts when shoulders are more deficient", () => {
+    const workouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "DB Bulgarian split squat", sets: 3 },
+      ], {
+        slotId: "lower_glute_ham",
+        title: "Lower A",
+      }),
+      workout("w2", "2026-05-06", [
+        { name: "Cable row", sets: 4 },
+        { name: "DB overhead press", sets: 3 },
+      ], {
+        slotId: "upper_back_shoulder",
+        title: "Upper A",
+      }),
+      workout("w3", "2026-05-07", [
+        { name: "Goblet squat", sets: 4 },
+        { name: "DB reverse lunge", sets: 3 },
+      ], {
+        slotId: "lower_glute_quad",
+        title: "Lower B",
+      }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-08", 9393, profile);
+
+    expect(draft.split.title).toBe("Upper B · Upper/Arms");
+    expect(draft.split.summary).toContain("back and rear-delt catch-up");
+    expect(draft.split.targetPrimaryStimulus.shoulders ?? 0).toBeGreaterThanOrEqual(
+      draft.split.targetPrimaryStimulus.rear_delts ?? 0,
+    );
+  });
+
   it("rotates away from a stalled lift toward a nearby substitute", () => {
     const workouts = [
       workout("w1", "2026-05-05", [

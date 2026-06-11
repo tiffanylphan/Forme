@@ -1320,6 +1320,11 @@ const adaptSelectedSlot = (
   const strictPullBias =
     pushFatigue >= PLANNER_TUNING.splitSelection.adaptiveUpperPullPushFatigueThreshold;
 
+  // When shoulders are more deficient than rear delts, don't let the
+  // pull-bias allocation cap shoulder work below rear-delt work.
+  const shoulderAllocation =
+    (muscleDeficits.shoulders ?? 0) > (muscleDeficits.rear_delts ?? 0) ? 4 : 3;
+
   return {
     ...slot,
     summary: strictPullBias
@@ -1334,10 +1339,10 @@ const adaptSelectedSlot = (
       slot.id === PHYSIQUE_UPPER_B_SLOT.id
         ? strictPullBias
           ? { back: 8, rear_delts: 4, biceps: 3, core: 3 }
-          : { back: 7, rear_delts: 4, shoulders: 3, biceps: 3, core: 3 }
+          : { back: 7, rear_delts: 4, shoulders: shoulderAllocation, biceps: 3, core: 3 }
         : strictPullBias
           ? { back: 8, rear_delts: 4, biceps: 2, core: 3 }
-          : { back: 8, rear_delts: 4, shoulders: 3, core: 3 },
+          : { back: 8, rear_delts: 4, shoulders: shoulderAllocation, core: 3 },
   };
 };
 
