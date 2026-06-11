@@ -1291,7 +1291,7 @@ const adaptSelectedSlot = (
   muscleDeficits: MuscleDeficitMap,
   recentMuscleFatigue: Partial<Record<MuscleGroup, number>>,
 ): SplitSlot => {
-  if (!(profile.goal === "physique" && isUpperSlot(slot))) return slot;
+  if (!(profile.goal === "physique" && isUpperSlot(slot) && !isLowerSlot(slot))) return slot;
 
   const lowerFatigue = sumDeficits(recentMuscleFatigue, [
     "glutes",
@@ -2418,6 +2418,7 @@ export function generateNextWorkout(
       (physiqueFactor || PLANNER_TUNING.exerciseSelection.fallbackMovementPriorityWeight);
 
     let deficitClosureScore = 0;
+    let deficitMagnitudeScore = 0;
     let recoveryPenalty = 0;
     let sessionOverlapPenalty = 0;
 
@@ -2429,6 +2430,8 @@ export function generateNextWorkout(
         ? PLANNER_TUNING.exerciseSelection.primaryFocusMultiplier
         : 1;
       deficitClosureScore += closure * weight * focusMultiplier;
+      const magnitude = Math.min(deficit, PLANNER_TUNING.exerciseSelection.deficitMagnitudeCap);
+      deficitMagnitudeScore += magnitude * weight * focusMultiplier;
       recoveryPenalty +=
         (recentStress[m] ?? 0) *
         stimulus.recoveryPerSet *
@@ -2461,6 +2464,12 @@ export function generateNextWorkout(
         weight *
         focusMultiplier *
         PLANNER_TUNING.exerciseSelection.secondaryClosureWeight;
+      const magnitude = Math.min(deficit, PLANNER_TUNING.exerciseSelection.deficitMagnitudeCap);
+      deficitMagnitudeScore +=
+        magnitude *
+        weight *
+        focusMultiplier *
+        PLANNER_TUNING.exerciseSelection.secondaryClosureWeight;
       recoveryPenalty +=
         (recentStress[m] ?? 0) *
         stimulus.recoveryPerSet *
@@ -2483,6 +2492,7 @@ export function generateNextWorkout(
     });
 
     s += deficitClosureScore * PLANNER_TUNING.exerciseSelection.deficitClosureWeight;
+    s += deficitMagnitudeScore * PLANNER_TUNING.exerciseSelection.deficitMagnitudeWeight;
     s -= Math.min(PLANNER_TUNING.exerciseSelection.recoveryPenaltyCap, recoveryPenalty);
     s -= Math.min(PLANNER_TUNING.exerciseSelection.overlapPenaltyCap, sessionOverlapPenalty);
     if (projectedSessionTotal > sessionFatigueBudget) {

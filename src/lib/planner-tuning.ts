@@ -112,6 +112,8 @@ export const PLANNER_TUNING = {
     primaryPriorityWeight: 0.35,
     secondaryPriorityWeight: 0.2,
     deficitClosureWeight: 8.5,
+    deficitMagnitudeCap: 18,
+    deficitMagnitudeWeight: 0.10,
     recoveryPenaltyCap: 7.5,
     overlapPenaltyCap: 4.5,
     armBiasBudgetPenaltyMultiplier: 0.3,

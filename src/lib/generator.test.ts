@@ -1245,6 +1245,83 @@ describe("generateNextWorkout", () => {
     );
   });
 
+  it("favors an exercise for the muscle with the larger remaining weekly deficit when deficit-closure scores would otherwise tie", () => {
+    const workouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "DB Bulgarian split squat", sets: 3 },
+      ], {
+        slotId: "lower_glute_ham",
+        title: "Lower A",
+      }),
+      workout("w2", "2026-05-06", [
+        { name: "Cable row", sets: 4 },
+        { name: "DB overhead press", sets: 3 },
+      ], {
+        slotId: "upper_back_shoulder",
+        title: "Upper A",
+      }),
+      workout("w3", "2026-05-07", [
+        { name: "Goblet squat", sets: 4 },
+        { name: "DB reverse lunge", sets: 3 },
+      ], {
+        slotId: "lower_glute_quad",
+        title: "Lower B",
+      }),
+      workout("w4", "2026-05-08", [
+        { name: "Barbell bench press", sets: 4 },
+        { name: "Cable triceps pushdown", sets: 3 },
+        { name: "DB incline press", sets: 3 },
+      ]),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-09", 9393, profile);
+
+    expect(draft.split.title).toBe("Upper B · Upper/Arms");
+    expect(draftExerciseNames(draft)).toContain("Face pull");
+  });
+
+  it("keeps the 5-day Accessory day's glute/shoulder focus and compound lower lift even when pull deficits are high", () => {
+    const workouts = [
+      workout("w1", "2026-05-04", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "DB Bulgarian split squat", sets: 3 },
+      ], { slotId: "lower_glute_ham", title: "Lower A" }),
+      workout("w2", "2026-05-05", [
+        { name: "Barbell bench press", sets: 4 },
+        { name: "DB lateral raise", sets: 3 },
+        { name: "Cable triceps pushdown", sets: 3 },
+      ], { slotId: "upper_back_shoulder", title: "Upper A" }),
+      workout("w3", "2026-05-06", [
+        { name: "Goblet squat", sets: 4 },
+        { name: "DB reverse lunge", sets: 3 },
+      ], { slotId: "lower_glute_quad", title: "Lower B" }),
+      workout("w4", "2026-05-07", [
+        { name: "Barbell bent-over row", sets: 4 },
+        { name: "DB curl", sets: 3 },
+        { name: "Cable triceps pushdown", sets: 3 },
+      ], { slotId: "upper_back_shoulder_arms", title: "Upper B" }),
+    ];
+
+    const draft = generateNextWorkout(
+      workouts,
+      "2026-05-08",
+      9393,
+      { ...profile, daysPerWeek: 5 },
+      { forcedSlotId: "glute_shoulder_accessory" },
+    );
+
+    expect(draft.split.title).toBe("Accessory day");
+    expect(draft.split.targetPrimaryStimulus.glutes ?? 0).toBeGreaterThan(0);
+    const names = draftExerciseNames(draft);
+    expect(
+      names.some((name) => {
+        const movement = movementOf(findExercise(name)!);
+        return movement === "hinge" || movement === "single_leg";
+      }),
+    ).toBe(true);
+  });
+
   it("rotates away from a stalled lift toward a nearby substitute", () => {
     const workouts = [
       workout("w1", "2026-05-05", [
