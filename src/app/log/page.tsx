@@ -248,10 +248,8 @@ const buildBlocks = (exs: ExerciseLog[]): Block[] => {
     }
   });
   for (const b of blocks) {
-    b.rounds =
-      b.routineGroup
-        ? b.routineGroup.rounds
-        : Math.max(...b.exercises.map((e) => e.sets.length));
+    const maxSets = Math.max(...b.exercises.map((e) => e.sets.length));
+    b.rounds = b.routineGroup ? Math.max(b.routineGroup.rounds, maxSets) : maxSets;
   }
   return blocks;
 };

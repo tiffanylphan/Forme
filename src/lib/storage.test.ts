@@ -161,7 +161,7 @@ describe("storage", () => {
     expect(normalized).toHaveLength(1);
     expect(normalized[0]?.id).toBe("flat-1");
     expect(normalized[0]?.planSlot).toEqual({
-      slotId: "lower_a",
+      slotId: "lower_glute_ham",
       title: "Lower A",
     });
     expect(normalized[0]?.exercises).toHaveLength(2);
@@ -169,5 +169,53 @@ describe("storage", () => {
     expect(normalized[0]?.exercises[0]?.sets.map((set) => set.reps)).toEqual([8, 10]);
     expect(normalized[0]?.exercises[1]?.exerciseName).toBe("Bear crawl");
     expect(normalized[0]?.exercises[1]?.sets[0]?.weight).toBeNull();
+  });
+
+  it("re-derives slotId from title when loading JSON workouts, fixing stale stored values", () => {
+    const normalized = normalizeWorkouts([
+      {
+        id: "w1",
+        date: "2026-06-10",
+        source: "manual",
+        createdAt: 1,
+        updatedAt: 1,
+        planSlot: { slotId: "upper_a_back_shoulders", title: "Upper A · Back/Shoulders" },
+        exercises: [
+          { id: "e1", exerciseName: "Cable row", supersetGroup: null, sets: [{ id: "s1", reps: 10, weight: 70, unit: "lb" }] },
+        ],
+      },
+    ]);
+    expect(normalized[0]?.planSlot?.slotId).toBe("upper_back_shoulder");
+    expect(normalized[0]?.planSlot?.title).toBe("Upper A · Back/Shoulders");
+  });
+
+  it.each([
+    ["Lower A", "lower_glute_ham"],
+    ["Lower B", "lower_glute_quad"],
+    ["Upper A", "upper_back_shoulder"],
+    ["Upper B", "upper_back_shoulder_arms"],
+    ["Lower A · Posterior", "lower_glute_ham"],
+    ["Lower B · Quad/Glute", "lower_glute_quad"],
+    ["Upper A · Back/Shoulders", "upper_back_shoulder"],
+    ["Upper B · Upper/Arms", "upper_back_shoulder_arms"],
+  ])("maps plan_slot %s to slotId %s", (planSlot, expectedSlotId) => {
+    const normalized = normalizeWorkouts([
+      {
+        workout_id: "w1",
+        date: "2026-05-16",
+        source: "manual",
+        plan_slot: planSlot,
+        exercise: "Cable row",
+        set_number: 1,
+        reps: 10,
+        weight: 70,
+        unit: "lb",
+        duration_sec: "",
+        distance_m: "",
+        progression_status: "baseline",
+        workout_notes: "",
+      },
+    ]);
+    expect(normalized[0]?.planSlot?.slotId).toBe(expectedSlotId);
   });
 });

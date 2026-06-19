@@ -37,13 +37,14 @@ const parseNumericField = (value: unknown): number | null =>
 
 const slotIdFromTitle = (title: string): string => {
   const normalized = title.trim().toLowerCase();
+  const prefix = normalized.split("·")[0].trim();
   const known = new Map<string, string>([
-    ["lower a", "lower_a"],
+    ["lower a", "lower_glute_ham"],
     ["upper a", "upper_back_shoulder"],
-    ["lower b", "lower_b"],
+    ["lower b", "lower_glute_quad"],
     ["upper b", "upper_back_shoulder_arms"],
   ]);
-  return known.get(normalized) ?? normalized.replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  return known.get(normalized) ?? known.get(prefix) ?? normalized.replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
 };
 
 const isFlattenedImportRow = (
@@ -153,9 +154,9 @@ const normalizeWorkout = (raw: unknown, index: number): Workout | null => {
     exercises,
     planSlot:
       isRecord(raw.planSlot) &&
-      typeof raw.planSlot.slotId === "string" &&
-      typeof raw.planSlot.title === "string"
-        ? { slotId: raw.planSlot.slotId, title: raw.planSlot.title }
+      typeof raw.planSlot.title === "string" &&
+      raw.planSlot.title.trim()
+        ? { slotId: slotIdFromTitle(raw.planSlot.title), title: raw.planSlot.title.trim() }
         : undefined,
     notes: typeof raw.notes === "string" ? raw.notes : undefined,
     createdAt,

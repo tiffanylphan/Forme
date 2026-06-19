@@ -1368,6 +1368,34 @@ describe("generateNextWorkout", () => {
     ).toBe(true);
   });
 
+  it("does not override cycle order to upper when upper already leads and lower slots remain", () => {
+    // Accessory upper exercises stalling (3 stalled: push + pull pressure) while
+    // Upper A was already done this cycle. Lower A has not been done. The stall
+    // override should be suppressed because there are more incomplete lower slots
+    // (Lower A, Lower B) than upper slots (Upper B) remaining.
+    const workouts = [
+      workout("w1", "2026-06-10", [
+        { name: "Cable row", sets: 4, progressionStatus: "held" },
+        { name: "DB lateral raise", sets: 3, progressionStatus: "held" },
+        { name: "DB reverse fly", sets: 3, progressionStatus: "held" },
+      ], {
+        slotId: "upper_back_shoulder",
+        title: "Upper A",
+      }),
+      workout("w2", "2026-06-12", [
+        { name: "Cable row", sets: 4, progressionStatus: "missed" },
+        { name: "DB lateral raise", sets: 3, progressionStatus: "missed" },
+        { name: "DB reverse fly", sets: 3, progressionStatus: "missed" },
+      ], {
+        slotId: "upper_back_shoulder",
+        title: "Upper A",
+      }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-06-17", 42, profile);
+    expect(draft.split.slotId).toMatch(/^lower_/);
+  });
+
   it("offers to bring back a stalled conditioning finisher and can plan it back in", () => {
     const workouts = [
       workout("w1", "2026-05-05", [

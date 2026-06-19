@@ -298,6 +298,56 @@ describe("LogPage interactions", () => {
     expect(group0).toBe(group1);
   });
 
+  it("adds a round to a routine-hydrated superset block", async () => {
+    const user = userEvent.setup();
+    popEditWorkoutMock.mockReturnValue(null);
+    popDraftMock.mockReturnValue({
+      source: "manual",
+      draft: {
+        split: {
+          slotId: "upper_back_shoulder",
+          title: "Upper A · Back/Shoulders",
+          summary: "Upper session",
+          sessionIndex: 2,
+          totalSessions: 4,
+          targetPrimarySets: { back: 8, shoulders: 5 },
+        },
+        mobility: { title: "5-minute warm-up", items: [], complementary: [] },
+        cooldown: { title: "Cooldown", items: [], complementary: [] },
+        rationale: [],
+        sections: [
+          {
+            kind: "compound",
+            rounds: 3,
+            repScheme: "3 x 10",
+            exercises: [
+              {
+                name: "Cable row",
+                primary: ["back"],
+                secondary: ["biceps"],
+                pattern: "pull",
+                movement: "pull",
+                targets: [10, 10, 10],
+                suggestedWeight: 70,
+                unit: "lb",
+                isFamiliar: false,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    getWorkoutMock.mockReturnValue(null);
+
+    render(<LogPage />);
+    await screen.findByText("Round 3");
+    expect(screen.queryByText("Round 4")).not.toBeInTheDocument();
+
+    await user.click(screen.getByText("+ Add round"));
+
+    expect(screen.getByText("Round 4")).toBeInTheDocument();
+  });
+
   it("auto-clears draft metadata after removing the last exercise", async () => {
     const user = userEvent.setup();
     popEditWorkoutMock.mockReturnValue(null);

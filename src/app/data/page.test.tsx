@@ -64,6 +64,18 @@ describe("parseImportText", () => {
     expect((result![0] as Record<string, unknown>).workout_notes).toBe("Good, felt strong");
   });
 
+  it("parses CSV with quoted headers (spreadsheet export format)", () => {
+    const csv = [
+      '"workout_id","date","source","plan_slot","exercise","set_number","reps","weight","unit","duration_sec","distance_m","progression_status","workout_notes"',
+      '"w1","2026-05-06","manual","","Cable row","1","12","70","lb","","","baseline",""',
+    ].join("\n");
+    const result = parseImportText(csv);
+    expect(result).toHaveLength(1);
+    expect((result![0] as Record<string, unknown>).workout_id).toBe("w1");
+    expect((result![0] as Record<string, unknown>).exercise).toBe("Cable row");
+    expect((result![0] as Record<string, unknown>).reps).toBe("12");
+  });
+
   it("returns null for unrecognised input", () => {
     expect(parseImportText("not valid at all")).toBeNull();
     expect(parseImportText("")).toBeNull();

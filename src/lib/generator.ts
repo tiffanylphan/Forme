@@ -1751,6 +1751,20 @@ const maybeOverrideForStalledBias = (
         : "mixed";
   if (preferredBias === "mixed") return baseIndex;
 
+  // Don't override when the preferred type has fewer remaining cycle slots than the
+  // other type. That means the non-preferred type is more behind in the current cycle
+  // and skipping it would push the imbalance further in the wrong direction. Stall
+  // pressure from accessory exercises (e.g. lateral raises) shouldn't override the
+  // cycle order when the preferred type is already ahead.
+  const incompletePreferred = incompleteIndices.filter(
+    (i) => getSlotBias(split[i]) === preferredBias,
+  ).length;
+  const incompleteOpposite = incompleteIndices.filter((i) => {
+    const bias = getSlotBias(split[i]);
+    return bias !== preferredBias && bias !== "mixed";
+  }).length;
+  if (incompletePreferred < incompleteOpposite) return baseIndex;
+
   const baseBias = getSlotBias(split[baseIndex]);
   if (baseBias === preferredBias) return baseIndex;
 
