@@ -20,6 +20,7 @@
 - Exercises are defined in `src/lib/exercises.ts` as an `Exercise[]`.
 - Storage helpers live in `src/lib/storage.ts`.
 - Planner tuning lives in `src/lib/planner-tuning.ts`; see `docs/planner-tuning-notes.md` for a guide to diagnosing and adjusting planner behavior.
+- Planner debugging (diagnosing unexpected slot or exercise picks): see `docs/planner-debugging.md`.
 - Tests live alongside source files (`*.test.ts` / `*.test.tsx`).
 - No comments unless the WHY is non-obvious.
 - Prefer editing existing files over creating new ones.
