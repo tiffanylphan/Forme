@@ -161,6 +161,7 @@ export const EXERCISES: Exercise[] = [
   },
   { name: "DB renegade row", primary: ["back", "core"], secondary: ["biceps"], equipment: "dumbbell", pattern: "pull" },
   { name: "KB gorilla row", primary: ["back"], secondary: ["biceps", "core"], equipment: "kettlebell", pattern: "pull", aliases: ["Kettlebell gorilla row", "Gorilla row", "KB gorilla alternating row", "Kettlebell gorilla alternating row"] },
+  { name: "Kettlebell high pull", primary: ["shoulders", "back"], secondary: ["glutes", "hamstrings", "core"], equipment: "kettlebell", pattern: "pull", aliases: ["KB high pull"] },
   { name: "Face pull", primary: ["rear_delts", "shoulders"], secondary: ["back"], equipment: "cable", pattern: "pull" },
   { name: "Band face pull", primary: ["rear_delts", "shoulders"], secondary: ["back"], equipment: "band", pattern: "pull" },
   { name: "DB hammer curl", primary: ["biceps"], secondary: [], equipment: "dumbbell", pattern: "pull" },
