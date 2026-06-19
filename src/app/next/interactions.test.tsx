@@ -178,7 +178,7 @@ const generateNextWorkoutMock = vi.fn(
             "Still building this slot's focus stimulus: back, shoulders.",
             "Hit only once: pull, push.",
           ],
-      rotatedOffLifts: broughtBack ? [] : ["Barbell hip thrust"],
+      rotatedOffLifts: ["Barbell hip thrust"],
       sections: [
         {
           kind: "compound",
@@ -380,7 +380,34 @@ describe("NextPage interactions", () => {
     await user.click(screen.getByRole("button", { name: "Bring back Barbell hip thrust" }));
 
     expect(screen.getByText("Barbell hip thrust")).toBeInTheDocument();
+    // "Bring back" button is replaced by an active chip with a remove (×) affordance.
     expect(screen.queryByRole("button", { name: "Bring back Barbell hip thrust" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Barbell hip thrust ×" })).toBeInTheDocument();
+  });
+
+  it("can remove a brought-back lift by clicking its active chip", async () => {
+    const user = userEvent.setup();
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "beginner",
+        intensity: "standard",
+      },
+    });
+    useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
+
+    render(<NextPage />);
+
+    await user.click(screen.getByRole("button", { name: "Bring back Barbell hip thrust" }));
+    expect(screen.getByRole("button", { name: "Barbell hip thrust ×" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Barbell hip thrust ×" }));
+
+    expect(screen.getByRole("button", { name: "Bring back Barbell hip thrust" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Barbell hip thrust ×" })).not.toBeInTheDocument();
   });
 
   it("swaps an exercise within the allowed movement family", async () => {

@@ -1423,7 +1423,12 @@ describe("generateNextWorkout", () => {
       preferredExercises: ["Ski erg"],
     });
     expect(draftExerciseNames(broughtBack)).toContain("Ski erg");
-    expect(broughtBack.rotatedOffLifts).not.toContain("Ski erg");
+    // Preferred exercises stay in rotatedOffLifts so the UI can render them as
+    // active chips (with a remove button).
+    expect(broughtBack.rotatedOffLifts).toContain("Ski erg");
+    // The finisher should have 3 exercises, not just the 1 preferred exercise.
+    const finisherSection = broughtBack.sections.find((s) => s.kind === "finisher");
+    expect(finisherSection?.exercises.length).toBeGreaterThanOrEqual(2);
   });
 
   it("does not fall back to naive modulo rotation once all slots are represented", () => {

@@ -396,6 +396,10 @@ export default function NextPage() {
     );
   };
 
+  const removePreferredExercise = (exerciseName: string) => {
+    setPreferredExercises((current) => current.filter((name) => name !== exerciseName));
+  };
+
   const accept = () => {
     stashDraft({ source: "manual", draft });
     router.push("/log");
@@ -434,7 +438,9 @@ export default function NextPage() {
           <RationaleCard
             rationale={draft.rationale}
             rotatedOffLifts={draft.rotatedOffLifts}
+            preferredExercises={preferredExercises}
             onBringBack={bringBackLift}
+            onRemovePreferred={removePreferredExercise}
           />
           <BookendCard block={draft.mobility} eyebrow="Before you lift" />
 
@@ -595,11 +601,15 @@ function PlanningCard({
 function RationaleCard({
   rationale,
   rotatedOffLifts,
+  preferredExercises,
   onBringBack,
+  onRemovePreferred,
 }: {
   rationale: string[];
   rotatedOffLifts: string[];
+  preferredExercises: string[];
   onBringBack: (exerciseName: string) => void;
+  onRemovePreferred: (exerciseName: string) => void;
 }) {
   const ordered = useMemo(() => prioritizeRationale(rationale), [rationale]);
   const shouldCollapse =
@@ -632,17 +642,33 @@ function RationaleCard({
         ))}
       </ul>
       {rotatedOffLifts.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {rotatedOffLifts.map((exerciseName) => (
-            <button
-              key={exerciseName}
-              type="button"
-              onClick={() => onBringBack(exerciseName)}
-              className="rounded-full border border-[#D3D1C7] bg-white px-3 py-1 text-[12px] font-medium text-text"
-            >
-              Bring back {exerciseName}
-            </button>
-          ))}
+        <div className="mt-3">
+          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-text-muted">
+            Stalled — skipped this session
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {rotatedOffLifts.map((exerciseName) =>
+              preferredExercises.includes(exerciseName) ? (
+                <button
+                  key={exerciseName}
+                  type="button"
+                  onClick={() => onRemovePreferred(exerciseName)}
+                  className="rounded-full border border-[#C8C4B8] bg-[#E6E3D8] px-3 py-1 text-[12px] font-medium text-text"
+                >
+                  {exerciseName} ×
+                </button>
+              ) : (
+                <button
+                  key={exerciseName}
+                  type="button"
+                  onClick={() => onBringBack(exerciseName)}
+                  className="rounded-full border border-[#D3D1C7] bg-white px-3 py-1 text-[12px] font-medium text-text"
+                >
+                  Bring back {exerciseName}
+                </button>
+              )
+            )}
+          </div>
         </div>
       )}
     </section>

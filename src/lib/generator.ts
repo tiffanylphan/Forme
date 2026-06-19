@@ -3555,7 +3555,7 @@ export function generateNextWorkout(
       if (allowConditioningFinisher) return isPreferredAccessibleFinisher(ex);
       return movementOf(ex) === "carry_core" || isAccessibleMetabolicFinisher(ex);
     });
-    const preferredFinisherCount = hardMode ? 3 : activeProfile.daysPerWeek === 3 ? 2 : 1;
+    const preferredFinisherCount = hardMode ? 3 : 3;
   const finisherPicks: Exercise[] = [];
   const finisherNames = new Set<string>();
   const finisherFamilies = new Set<string>();
@@ -3695,7 +3695,9 @@ export function generateNextWorkout(
     .map((name) => EXERCISES.find((exercise) => exercise.name === name))
     .filter((exercise): exercise is Exercise => Boolean(exercise))
     .filter((exercise) => {
-      if (selectedExerciseNames.has(exercise.name)) return false;
+      // Keep preferred exercises in the list so the UI can render them as active
+      // chips (with a remove button) rather than making them invisible once brought back.
+      if (selectedExerciseNames.has(exercise.name) && !preferredExerciseNames.has(exercise.name)) return false;
       const movement = movementOf(exercise);
       if (movement === null) {
         // Conditioning/plyo/calf work never fills a main slot (see
