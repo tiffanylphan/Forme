@@ -1,6 +1,10 @@
 #!/bin/sh
 set -e
 
+# Claude Code injects NODE_OPTIONS to preload a temp file that may not exist
+# when the hook runs. Unset it so npm/node invocations here work cleanly.
+unset NODE_OPTIONS
+
 echo "Running tests before push…"
 npm test
 
