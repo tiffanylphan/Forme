@@ -1834,6 +1834,62 @@ describe("generateNextWorkout", () => {
     }
   });
 
+  it("picks the only remaining untouched slot when three slots are already logged this week", () => {
+    const workouts = [
+      workout("w1", "2026-05-18", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "Barbell Romanian deadlift", sets: 3 },
+      ], { slotId: "lower_glute_ham", title: "Lower A" }),
+      workout("w2", "2026-05-19", [
+        { name: "Lat pulldown", sets: 4 },
+        { name: "DB lateral raise", sets: 3 },
+        { name: "DB curl", sets: 2 },
+      ], { slotId: "upper_back_shoulder_arms", title: "Upper B" }),
+      workout("w3", "2026-05-20", [
+        { name: "Goblet squat", sets: 4 },
+        { name: "DB reverse lunge", sets: 3 },
+      ], { slotId: "lower_glute_quad", title: "Lower B" }),
+    ];
+    const draft = generateNextWorkout(workouts, "2026-05-21", 123, profile);
+    expect(draft.split.slotId).toBe("upper_back_shoulder");
+  });
+
+  it("starts a fresh rotation on Lower A when all four slots from the prior week are past the slot-inference window", () => {
+    const workouts = [
+      workout("w1", "2026-05-11", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "Barbell Romanian deadlift", sets: 3 },
+      ], { slotId: "lower_glute_ham", title: "Lower A" }),
+      workout("w2", "2026-05-12", [
+        { name: "Cable row", sets: 4 },
+        { name: "DB lateral raise", sets: 3 },
+      ], { slotId: "upper_back_shoulder", title: "Upper A" }),
+      workout("w3", "2026-05-13", [
+        { name: "Goblet squat", sets: 4 },
+        { name: "DB reverse lunge", sets: 3 },
+      ], { slotId: "lower_glute_quad", title: "Lower B" }),
+      workout("w4", "2026-05-14", [
+        { name: "Lat pulldown", sets: 4 },
+        { name: "DB curl", sets: 3 },
+      ], { slotId: "upper_back_shoulder_arms", title: "Upper B" }),
+    ];
+    // All 4 slots logged Mon–Thu last week; this Monday restarts the cycle
+    const draft = generateNextWorkout(workouts, "2026-05-18", 123, profile);
+    expect(draft.split.slotId).toBe("lower_glute_ham");
+  });
+
+  it("continues the rotation from a prior-week slot even when it was logged 7 days ago", () => {
+    const workouts = [
+      workout("w1", "2026-05-11", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "Barbell Romanian deadlift", sets: 3 },
+      ], { slotId: "lower_glute_ham", title: "Lower A" }),
+    ];
+    // Lower A was logged 7 days ago; cross-week continuity should advance to Upper A
+    const draft = generateNextWorkout(workouts, "2026-05-18", 123, profile);
+    expect(draft.split.slotId).toBe("upper_back_shoulder");
+  });
+
   it("gives every finisher-eligible exercise a home in a curated finisher template", () => {
     const accessibleConditioningFinisher = (ex: (typeof EXERCISES)[number]) =>
       ex.pattern === "conditioning" && ["bodyweight", "dumbbell", "band"].includes(ex.equipment);
