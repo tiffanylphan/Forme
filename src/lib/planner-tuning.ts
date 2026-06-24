@@ -140,7 +140,6 @@ export const PLANNER_TUNING = {
     beginnerTechnicalBarbellPenalty: 1.2,
     beginnerNovelLiftPenalty: 0.8,
     barbellCapPenalty: 12,
-    preferredExerciseBonus: 9,
     stalledExercisePenalty: 7,
     watchedExercisePenalty: 2.5,
     stalledFamilySubBonus: 1.6,

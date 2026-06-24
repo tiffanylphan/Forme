@@ -1396,7 +1396,7 @@ describe("generateNextWorkout", () => {
     expect(draft.split.slotId).toMatch(/^lower_/);
   });
 
-  it("offers to bring back a stalled conditioning finisher and can plan it back in", () => {
+  it("rotates away from a stalled conditioning finisher and notes it in the rationale", () => {
     const workouts = [
       workout("w1", "2026-05-05", [
         { name: "Ski erg", sets: 3, progressionStatus: "held" },
@@ -1414,21 +1414,9 @@ describe("generateNextWorkout", () => {
 
     const draft = generateNextWorkout(workouts, "2026-05-08", 9494, profile);
     expect(draftExerciseNames(draft)).not.toContain("Ski erg");
-    expect(draft.rotatedOffLifts).toContain("Ski erg");
     expect(
       draft.rationale.some((line) => line.includes("Rotated off stalled lift") && line.includes("Ski erg")),
     ).toBe(true);
-
-    const broughtBack = generateNextWorkout(workouts, "2026-05-08", 9494, profile, {
-      preferredExercises: ["Ski erg"],
-    });
-    expect(draftExerciseNames(broughtBack)).toContain("Ski erg");
-    // Preferred exercises stay in rotatedOffLifts so the UI can render them as
-    // active chips (with a remove button).
-    expect(broughtBack.rotatedOffLifts).toContain("Ski erg");
-    // The finisher should have 3 exercises, not just the 1 preferred exercise.
-    const finisherSection = broughtBack.sections.find((s) => s.kind === "finisher");
-    expect(finisherSection?.exercises.length).toBeGreaterThanOrEqual(2);
   });
 
   it("does not fall back to naive modulo rotation once all slots are represented", () => {

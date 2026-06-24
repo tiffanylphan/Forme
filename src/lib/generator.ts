@@ -77,11 +77,11 @@ export type WorkoutDraft = {
     targetPrimaryStimulus: Partial<Record<MuscleGroup, number>>;
     targetPrimarySets: Partial<Record<MuscleGroup, number>>;
     topMuscles: MuscleGroup[];
+    allowedMovements: MovementPattern[];
     note: string;
     caution: string | null;
   }>;
   rationale: string[];
-  rotatedOffLifts: string[];
   mobility: {
     title: string;
     items: string[];
@@ -96,8 +96,8 @@ export type WorkoutDraft = {
 };
 
 type GeneratorOverrides = {
-  preferredExercises?: string[];
   forcedSlotId?: string;
+  focusedMovements?: MovementPattern[];
   finisherSeed?: number;
   excludeFinisherTemplateIds?: string[];
 };
@@ -1622,6 +1622,7 @@ const buildSlotRecommendations = (
       targetPrimaryStimulus: slot.targetPrimaryStimulus,
       targetPrimarySets: slot.targetPrimaryStimulus,
       topMuscles,
+      allowedMovements: slot.allowedMovements,
       note,
       caution,
     };
@@ -2191,7 +2192,6 @@ export function generateNextWorkout(
   overrides?: GeneratorOverrides,
 ): WorkoutDraft {
   const activeProfile: TrainingProfile = profile ?? DEFAULT_PROFILE;
-  const preferredExerciseNames = new Set(overrides?.preferredExercises ?? []);
   const window = weekContaining(todayISO);
   const coverage = computeCoverage(workouts, window);
   const recent = recentMusclesWithin(workouts, todayISO, 48);
@@ -2415,12 +2415,11 @@ export function generateNextWorkout(
     const projectedStress = estimatePlannedExerciseStress(ex, plannedRounds);
     const projectedSessionTotal =
       sumMuscleStress(plannedSessionStress) + sumMuscleStress(projectedStress);
-    const remaining = Math.max(
-      0,
-      need[movement] - claimedMovements[movement],
-    );
-    let s = remaining * 2.75;
-    s = remaining * PLANNER_TUNING.exerciseSelection.movementNeedWeight;
+    const baseNeed = overrides?.focusedMovements?.includes(movement)
+      ? 3
+      : (need[movement] ?? 0);
+    const remaining = Math.max(0, baseNeed - claimedMovements[movement]);
+    let s = remaining * PLANNER_TUNING.exerciseSelection.movementNeedWeight;
     const physiqueFactor =
       activeProfile.goal === "physique"
         ? 1
@@ -2588,8 +2587,7 @@ export function generateNextWorkout(
       s -= PLANNER_TUNING.exerciseSelection.barbellCapPenalty;
     }
 
-    if (preferredExerciseNames.has(ex.name)) s += PLANNER_TUNING.exerciseSelection.preferredExerciseBonus;
-    else if (stalledExerciseNames.has(ex.name)) s -= PLANNER_TUNING.exerciseSelection.stalledExercisePenalty;
+    if (stalledExerciseNames.has(ex.name)) s -= PLANNER_TUNING.exerciseSelection.stalledExercisePenalty;
     else if (watchedExerciseNames.has(ex.name)) s -= PLANNER_TUNING.exerciseSelection.watchedExercisePenalty;
     if (stalledFamilies.has(familyOf(ex)) && !stalledExerciseNames.has(ex.name)) {
       s += PLANNER_TUNING.exerciseSelection.stalledFamilySubBonus;
@@ -3496,22 +3494,8 @@ export function generateNextWorkout(
   const templateShortlist = scoredTemplates.filter(
     ({ score }) => score >= bestTemplateScore - PLANNER_TUNING.finisherVariety.templateShortlistSpread,
   );
-  // Bringing back a stalled conditioning/plyo/calf lift only works through a
-  // finisher pick — curated templates can't name it, so skip them and let the
-  // candidate-scoring path below give it its preferred-exercise bonus.
-  const bringingBackFinisherOnly = [...preferredExerciseNames].some((name) => {
-    const exercise = findExerciseByName(name);
-    return (
-      exercise &&
-      !used.has(exercise.name) &&
-      movementOf(exercise) === null &&
-      environmentAllowsExercise(exercise, activeProfile)
-    );
-  });
   let chosenTemplate: FinisherTemplate | undefined;
-  if (bringingBackFinisherOnly) {
-    // fall through to manual candidate selection
-  } else if (templateShortlist.length > 0) {
+  if (templateShortlist.length > 0) {
     // Every template in the shortlist already cleared the score-proximity
     // gate, so treat them as equally valid picks — weighting again within
     // that "good enough" set just collapses variety back onto the top 1-2.
@@ -3549,9 +3533,6 @@ export function generateNextWorkout(
       if (strictPullCatchUpUpperSlot) {
         if (isPushLeaningFinisher(ex) || isLowerFatiguingFinisher(ex)) return false;
       }
-      // A user explicitly bringing back a stalled lift overrides the usual
-      // finisher curation — as long as their environment can support it.
-      if (preferredExerciseNames.has(ex.name)) return true;
       if (allowConditioningFinisher) return isPreferredAccessibleFinisher(ex);
       return movementOf(ex) === "carry_core" || isAccessibleMetabolicFinisher(ex);
     });
@@ -3598,19 +3579,6 @@ export function generateNextWorkout(
 
   const remainingFinisherCandidates = [...finisherCandidates];
 
-  // Bringing back a stalled lift is an explicit ask — seat it directly rather
-  // than hoping it out-scores the curated finisher picks.
-  preferredExerciseNames.forEach((name) => {
-    if (finisherPicks.length >= preferredFinisherCount) return;
-    const candidateIdx = remainingFinisherCandidates.findIndex((ex) => ex.name === name);
-    if (candidateIdx === -1) return;
-    const picked = remainingFinisherCandidates[candidateIdx];
-    finisherPicks.push(picked);
-    finisherNames.add(picked.name);
-    finisherFamilies.add(familyOf(picked));
-    remainingFinisherCandidates.splice(candidateIdx, 1);
-  });
-
   while (finisherPicks.length < preferredFinisherCount && remainingFinisherCandidates.length > 0) {
     const rankedCandidates = [...remainingFinisherCandidates].sort(
       (a, b) => sortFinisherScore(b, finisherPicks) - sortFinisherScore(a, finisherPicks),
@@ -3650,7 +3618,6 @@ export function generateNextWorkout(
       if (strictPullCatchUpUpperSlot) {
         if (isPushLeaningFinisher(ex) || isLowerFatiguingFinisher(ex)) return false;
       }
-      if (preferredExerciseNames.has(ex.name)) return true;
       if (allowConditioningFinisher) return isPreferredAccessibleFinisher(ex);
       return movementOf(ex) === "carry_core" || isAccessibleMetabolicFinisher(ex);
     });
@@ -3695,9 +3662,7 @@ export function generateNextWorkout(
     .map((name) => EXERCISES.find((exercise) => exercise.name === name))
     .filter((exercise): exercise is Exercise => Boolean(exercise))
     .filter((exercise) => {
-      // Keep preferred exercises in the list so the UI can render them as active
-      // chips (with a remove button) rather than making them invisible once brought back.
-      if (selectedExerciseNames.has(exercise.name) && !preferredExerciseNames.has(exercise.name)) return false;
+      if (selectedExerciseNames.has(exercise.name)) return false;
       const movement = movementOf(exercise);
       if (movement === null) {
         // Conditioning/plyo/calf work never fills a main slot (see
@@ -3834,7 +3799,6 @@ export function generateNextWorkout(
     slotRecommendations,
     sections,
     rationale,
-    rotatedOffLifts: rotatedOffLiftNames,
     mobility,
     cooldown,
   };
