@@ -1,6 +1,6 @@
 import { EXERCISES } from "./exercises";
 import { environmentAllowsExercise } from "./exercise-availability";
-import { movementOf } from "./movement";
+import { movementOf, muscleSetToMovements } from "./movement";
 import { PLANNER_TUNING } from "./planner-tuning";
 import { DEFAULT_PROFILE } from "./profile";
 import { MOVEMENT_PATTERNS, MUSCLE_GROUPS } from "./types";
@@ -98,6 +98,7 @@ export type WorkoutDraft = {
 type GeneratorOverrides = {
   forcedSlotId?: string;
   focusedMovements?: MovementPattern[];
+  focusedMuscles?: MuscleGroup[];
   finisherSeed?: number;
   excludeFinisherTemplateIds?: string[];
 };
@@ -1405,7 +1406,19 @@ const scoreSplitSlot = (
     .map((m) => muscleSaturation[m] as number);
   if (saturations.length > 0) {
     const avg = saturations.reduce((a, b) => a + b, 0) / saturations.length;
-    if (avg >= PLANNER_TUNING.splitSelection.saturationHighThreshold) {
+    // Check if any PRIMARY-DRIVER muscle (large enough target to define the slot's identity)
+    // is genuinely over its weekly target. Minor support targets (e.g. glutes: 2 in Upper A)
+    // are excluded so support muscles saturated by another slot don't penalize this one.
+    const majorThreshold = PLANNER_TUNING.splitSelection.saturationOverTargetMajorMuscleThreshold;
+    const maxMajorSat = Math.max(
+      0,
+      ...targetedMuscles
+        .filter((m) => (slot.targetPrimaryStimulus[m] ?? 0) >= majorThreshold && muscleSaturation[m] !== undefined)
+        .map((m) => muscleSaturation[m] as number),
+    );
+    if (maxMajorSat > PLANNER_TUNING.splitSelection.saturationOverTargetThreshold) {
+      score -= PLANNER_TUNING.splitSelection.saturationOverTargetPenalty;
+    } else if (avg >= PLANNER_TUNING.splitSelection.saturationHighThreshold) {
       score -= PLANNER_TUNING.splitSelection.saturationHighPenalty;
     } else if (avg >= PLANNER_TUNING.splitSelection.saturationMediumThreshold) {
       score -= PLANNER_TUNING.splitSelection.saturationMediumPenalty;
@@ -2227,7 +2240,7 @@ export function generateNextWorkout(
     const target = weeklyMuscleTargets[m];
     if (target && target > 0) {
       const done = coverage.muscleStats[m]?.primaryStimulus ?? 0;
-      muscleSaturation[m] = Math.min(1, done / target);
+      muscleSaturation[m] = done / target;
     }
   });
   const muscleDeficits = computeMuscleDeficits(split, coverage);
@@ -2415,9 +2428,13 @@ export function generateNextWorkout(
     const projectedStress = estimatePlannedExerciseStress(ex, plannedRounds);
     const projectedSessionTotal =
       sumMuscleStress(plannedSessionStress) + sumMuscleStress(projectedStress);
-    const baseNeed = overrides?.focusedMovements?.includes(movement)
-      ? 3
-      : (need[movement] ?? 0);
+    const effectiveMovementFocus = new Set<MovementPattern>([
+      ...(overrides?.focusedMovements ?? []),
+      ...(overrides?.focusedMuscles?.length
+        ? muscleSetToMovements(overrides.focusedMuscles)
+        : []),
+    ]);
+    const baseNeed = effectiveMovementFocus.has(movement) ? 3 : (need[movement] ?? 0);
     const remaining = Math.max(0, baseNeed - claimedMovements[movement]);
     let s = remaining * PLANNER_TUNING.exerciseSelection.movementNeedWeight;
     const physiqueFactor =
@@ -2439,9 +2456,11 @@ export function generateNextWorkout(
       const deficit = muscleDeficits[m] ?? 0;
       const closure = Math.min(deficit, stimulus.primaryPerSet);
       const weight = PRIMARY_MUSCLE_PRIORITY[m] ?? 1;
-      const focusMultiplier = slot.focusMuscles.includes(m)
-        ? PLANNER_TUNING.exerciseSelection.primaryFocusMultiplier
-        : 1;
+      const focusMultiplier = overrides?.focusedMuscles?.includes(m)
+        ? PLANNER_TUNING.exerciseSelection.userFocusPrimaryMultiplier
+        : slot.focusMuscles.includes(m)
+          ? PLANNER_TUNING.exerciseSelection.primaryFocusMultiplier
+          : 1;
       deficitClosureScore += closure * weight * focusMultiplier;
       const magnitude = Math.min(deficit, PLANNER_TUNING.exerciseSelection.deficitMagnitudeCap);
       deficitMagnitudeScore += magnitude * weight * focusMultiplier;
@@ -2469,9 +2488,11 @@ export function generateNextWorkout(
       const deficit = muscleDeficits[m] ?? 0;
       const closure = Math.min(deficit, stimulus.secondaryPerSet);
       const weight = SECONDARY_MUSCLE_PRIORITY[m] ?? PRIMARY_MUSCLE_PRIORITY[m] ?? 1;
-      const focusMultiplier = slot.focusMuscles.includes(m)
-        ? PLANNER_TUNING.exerciseSelection.secondaryFocusMultiplier
-        : 1;
+      const focusMultiplier = overrides?.focusedMuscles?.includes(m)
+        ? PLANNER_TUNING.exerciseSelection.userFocusSecondaryMultiplier
+        : slot.focusMuscles.includes(m)
+          ? PLANNER_TUNING.exerciseSelection.secondaryFocusMultiplier
+          : 1;
       deficitClosureScore +=
         closure *
         weight *

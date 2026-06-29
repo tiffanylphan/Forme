@@ -1911,4 +1911,30 @@ describe("generateNextWorkout", () => {
     const missing = finisherEligible.filter((ex) => !namesInTemplates.has(ex.name));
     expect(missing.map((ex) => ex.name)).toEqual([]);
   });
+
+  it("3-day split picks Upper A instead of Lower B when glutes are over weekly target and pull need is partially satisfied", () => {
+    // Lower A (Mon) + extra lower session (Tue) push glutes to ~135% of weekly target.
+    // A minimal upper session (Thu) adds one reverse fly — enough to drop pull need from
+    // critical (3) to moderate (1), muting the lowerBiasFatigue pivot that would otherwise
+    // fire when heavy lower is the second-most-recent session. Without the over-target
+    // saturation penalty, Lower B wins on quads deficit + single-leg/squat movement need.
+    // With the per-major-muscle over-target check (-20 when glutes > 100%), Lower B is
+    // penalized enough that Upper A wins on back deficit + pull movement need.
+    const workouts = [
+      workout("w1", "2026-06-22", [
+        { name: "Barbell hip thrust", sets: 8 },
+        { name: "Barbell Romanian deadlift", sets: 6 },
+      ], { slotId: "lower_glute_ham", title: "Lower A" }),
+      workout("w2", "2026-06-23", [
+        { name: "Barbell hip thrust", sets: 5 },
+        { name: "Barbell Romanian deadlift", sets: 4 },
+      ]),
+      workout("w3", "2026-06-25", [
+        { name: "DB lateral raise", sets: 2 },
+        { name: "DB reverse fly", sets: 1 },
+      ]),
+    ];
+    const draft = generateNextWorkout(workouts, "2026-06-28", 123, threeDayProfile);
+    expect(draft.split.slotId).toBe("upper_back_shoulder");
+  });
 });
