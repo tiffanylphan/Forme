@@ -14,8 +14,16 @@ import {
   getWeeklyTargetStimulus,
   stashDraft,
 } from "@/lib/generator";
-import { movementOf, MOVEMENT_BLURBS, MOVEMENT_COLORS, MOVEMENT_LABELS } from "@/lib/movement";
-import { movementScore } from "@/lib/coverage";
+import {
+  FOCUSABLE_MUSCLES,
+  movementOf,
+  MOVEMENT_BLURBS,
+  MOVEMENT_COLORS,
+  MOVEMENT_LABELS,
+  muscleSetToMovements,
+} from "@/lib/movement";
+import { movementScore, muscleScore } from "@/lib/coverage";
+import { MUSCLE_COLORS } from "@/lib/colors";
 import {
   DEFAULT_PROFILE,
   formatEnvironment,
@@ -259,6 +267,25 @@ function bestSlotForMovements(
   }
   return best.slotId;
 }
+
+function bestSlotForMuscles(
+  muscles: MuscleGroup[],
+  slots: WorkoutDraft["slotRecommendations"],
+): string {
+  if (muscles.length === 0 || slots.length === 0) return slots[0]?.slotId ?? "";
+  let best = slots[0];
+  let bestScore = -1;
+  for (const slot of slots) {
+    const score =
+      muscles.filter((m) => slot.topMuscles.includes(m)).length * 10 +
+      (slot.isRecommended ? 1 : 0);
+    if (score > bestScore) {
+      best = slot;
+      bestScore = score;
+    }
+  }
+  return best.slotId;
+}
 const LONG_RATIONALE_LENGTH = 90;
 
 const prioritizeRationale = (rationale: string[]): string[] =>
@@ -312,6 +339,7 @@ export default function NextPage() {
   const [recentFinisherTemplateIds, setRecentFinisherTemplateIds] = useState<string[]>([]);
   const [forcedSlotId, setForcedSlotId] = useState<string | null>(null);
   const [focusedMovements, setFocusedMovements] = useState<MovementPattern[]>([]);
+  const [focusedMuscles, setFocusedMuscles] = useState<MuscleGroup[]>([]);
   const [showConfigure, setShowConfigure] = useState(false);
   const router = useRouter();
 
@@ -323,8 +351,9 @@ export default function NextPage() {
           recentFinisherTemplateIds.length > 0 ? recentFinisherTemplateIds : undefined,
         forcedSlotId: forcedSlotId ?? undefined,
         focusedMovements: focusedMovements.length > 0 ? focusedMovements : undefined,
+        focusedMuscles: focusedMuscles.length > 0 ? focusedMuscles : undefined,
       }),
-    [workouts, today, seed, profile, finisherSeed, recentFinisherTemplateIds, forcedSlotId, focusedMovements],
+    [workouts, today, seed, profile, finisherSeed, recentFinisherTemplateIds, forcedSlotId, focusedMovements, focusedMuscles],
   );
 
   // Manual per-exercise swaps: { seed, map } — the seed acts as a generation
@@ -390,15 +419,22 @@ export default function NextPage() {
     setRecentFinisherTemplateIds([]);
     setForcedSlotId(null);
     setFocusedMovements([]);
+    setFocusedMuscles([]);
     // swapState.seed will differ from the new seed, so swaps auto-reset.
   };
 
-  const applyConfiguration = (movements: MovementPattern[]) => {
-    if (movements.length > 0) {
-      setForcedSlotId(bestSlotForMovements(movements, draft.slotRecommendations));
+  const applyConfiguration = (muscles: MuscleGroup[], movements: MovementPattern[]) => {
+    const hasAny = muscles.length > 0 || movements.length > 0;
+    if (hasAny) {
+      const slotId =
+        muscles.length > 0
+          ? bestSlotForMuscles(muscles, draft.slotRecommendations)
+          : bestSlotForMovements(movements, draft.slotRecommendations);
+      setForcedSlotId(slotId);
     } else {
       setForcedSlotId(null);
     }
+    setFocusedMuscles(muscles);
     setFocusedMovements(movements);
     setSeed(Math.floor(Math.random() * 1e9));
     setShowConfigure(false);
@@ -407,6 +443,7 @@ export default function NextPage() {
   const resetForcedSlot = () => {
     setForcedSlotId(null);
     setFocusedMovements([]);
+    setFocusedMuscles([]);
     setSeed(Math.floor(Math.random() * 1e9));
   };
 
@@ -465,6 +502,7 @@ export default function NextPage() {
             profile={profile}
             profileReady={profileReady}
             forcedSlotId={forcedSlotId}
+            focusedMuscles={focusedMuscles}
             focusedMovements={focusedMovements}
             onConfigure={() => setShowConfigure(true)}
             onResetSlot={resetForcedSlot}
@@ -531,11 +569,12 @@ export default function NextPage() {
         </div>
       )}
 
-      {/* Configure modal — movement picker */}
+      {/* Configure modal — muscle / movement focus picker */}
       <ConfigureModal
         open={showConfigure}
         slotRecommendations={draft.slotRecommendations}
         coverage={coverage}
+        initialMuscles={focusedMuscles}
         initialMovements={focusedMovements}
         onClose={() => setShowConfigure(false)}
         onApply={applyConfiguration}
@@ -572,6 +611,7 @@ function PlanningCard({
   profile,
   profileReady,
   forcedSlotId,
+  focusedMuscles,
   focusedMovements,
   onConfigure,
   onResetSlot,
@@ -581,6 +621,7 @@ function PlanningCard({
   profile: ReturnType<typeof useTrainingProfile>["profile"];
   profileReady: boolean;
   forcedSlotId: string | null;
+  focusedMuscles: MuscleGroup[];
   focusedMovements: MovementPattern[];
   onConfigure: () => void;
   onResetSlot: () => void;
@@ -594,9 +635,12 @@ function PlanningCard({
             <h2 className="text-[18px] font-semibold text-text">
               {draft.split.title}
             </h2>
-            {focusedMovements.length > 0 && (
+            {(focusedMuscles.length > 0 || focusedMovements.length > 0) && (
               <span className="rounded-full bg-[#E8F0E8] px-2 py-0.5 text-[10px] font-medium text-[#2D5A2D]">
-                {focusedMovements.map((m) => MOVEMENT_LABELS[m]).join(" · ")}
+                {[
+                  ...focusedMuscles.map((m) => formatMuscle(m)),
+                  ...focusedMovements.map((m) => MOVEMENT_LABELS[m]),
+                ].join(" · ")}
               </span>
             )}
           </div>
@@ -611,7 +655,7 @@ function PlanningCard({
             >
               Configure focus
             </button>
-            {(forcedSlotId || focusedMovements.length > 0) && (
+            {(forcedSlotId || focusedMovements.length > 0 || focusedMuscles.length > 0) && (
               <>
                 <span className="text-[12px] text-text-subtle">·</span>
                 <button
@@ -1102,6 +1146,7 @@ function ConfigureModal({
   open,
   slotRecommendations,
   coverage,
+  initialMuscles,
   initialMovements,
   onClose,
   onApply,
@@ -1109,15 +1154,20 @@ function ConfigureModal({
   open: boolean;
   slotRecommendations: WorkoutDraft["slotRecommendations"];
   coverage: ReturnType<typeof computeCoverage>;
+  initialMuscles: MuscleGroup[];
   initialMovements: MovementPattern[];
   onClose: () => void;
-  onApply: (movements: MovementPattern[]) => void;
+  onApply: (muscles: MuscleGroup[], movements: MovementPattern[]) => void;
 }) {
-  const [selected, setSelected] = useState<MovementPattern[]>(initialMovements);
+  const [selectedMuscles, setSelectedMuscles] = useState<MuscleGroup[]>(initialMuscles);
+  const [selectedMovements, setSelectedMovements] = useState<MovementPattern[]>(initialMovements);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
-    setSelected(initialMovements);
-  }, [open, initialMovements]);
+    setSelectedMuscles(initialMuscles);
+    setSelectedMovements(initialMovements);
+    setShowAdvanced(initialMovements.length > 0 && initialMuscles.length === 0);
+  }, [open, initialMuscles, initialMovements]);
 
   useEffect(() => {
     if (!open) return;
@@ -1128,16 +1178,33 @@ function ConfigureModal({
   }, [open]);
 
   const willUseTitle = useMemo(() => {
-    if (selected.length === 0) return "auto-recommended";
-    const slotId = bestSlotForMovements(selected, slotRecommendations);
+    if (selectedMuscles.length === 0 && selectedMovements.length === 0)
+      return "auto-recommended";
+    const slotId =
+      selectedMuscles.length > 0
+        ? bestSlotForMuscles(selectedMuscles, slotRecommendations)
+        : bestSlotForMovements(selectedMovements, slotRecommendations);
     return slotRecommendations.find((s) => s.slotId === slotId)?.title ?? "auto-recommended";
-  }, [selected, slotRecommendations]);
+  }, [selectedMuscles, selectedMovements, slotRecommendations]);
 
-  const toggle = (mp: MovementPattern) => {
-    setSelected((prev) =>
+  const toggleMuscle = (m: MuscleGroup) => {
+    setSelectedMuscles((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
+  };
+
+  const toggleMovement = (mp: MovementPattern) => {
+    setSelectedMovements((prev) =>
       prev.includes(mp) ? prev.filter((m) => m !== mp) : [...prev, mp],
     );
   };
+
+  const applyLabel = useMemo(() => {
+    const labels = [
+      ...selectedMuscles.map((m) => formatMuscle(m)),
+      ...selectedMovements.map((m) => MOVEMENT_LABELS[m]),
+    ];
+    if (labels.length === 0) return "Reset to recommended";
+    return `Focus on ${labels.join(" · ")}`;
+  }, [selectedMuscles, selectedMovements]);
 
   if (!open) return null;
 
@@ -1159,7 +1226,7 @@ function ConfigureModal({
               Configure workout
             </h2>
             <p className="mt-0.5 text-[12px] text-text-subtle">
-              Choose movements to focus on. The planner picks exercises to match.
+              Choose muscles to prioritize. The planner picks exercises and movements to match.
             </p>
           </div>
           <button
@@ -1170,21 +1237,21 @@ function ConfigureModal({
           </button>
         </div>
 
-        {/* Movement grid */}
         <div className="flex-1 overflow-y-auto px-4">
+          {/* Muscle grid */}
           <div className="grid grid-cols-2 gap-2 pb-2">
-            {MOVEMENT_PATTERNS.map((mp) => {
-              const stats = coverage.movementStats[mp];
-              const score = movementScore(stats);
-              const c = MOVEMENT_COLORS[mp];
-              const isSelected = selected.includes(mp);
+            {FOCUSABLE_MUSCLES.map((m) => {
+              const stats = coverage.muscleStats[m];
+              const score = muscleScore(stats);
+              const c = MUSCLE_COLORS[m];
+              const isSelected = selectedMuscles.includes(m);
               return (
                 <button
-                  key={mp}
+                  key={m}
                   type="button"
-                  aria-label={MOVEMENT_LABELS[mp]}
+                  aria-label={formatMuscle(m)}
                   aria-pressed={isSelected}
-                  onClick={() => toggle(mp)}
+                  onClick={() => toggleMuscle(m)}
                   style={{
                     background: c.bg,
                     outline: isSelected ? `2px solid ${c.text}` : "2px solid transparent",
@@ -1193,11 +1260,8 @@ function ConfigureModal({
                   className="rounded-xl px-3 py-3 text-left"
                 >
                   <div className="flex items-center justify-between">
-                    <span
-                      style={{ color: c.text }}
-                      className="text-[13px] font-semibold"
-                    >
-                      {MOVEMENT_LABELS[mp]}
+                    <span style={{ color: c.text }} className="text-[13px] font-semibold">
+                      {formatMuscle(m)}
                     </span>
                     <span
                       aria-hidden
@@ -1205,23 +1269,11 @@ function ConfigureModal({
                       className="h-2 w-2 rounded-full"
                     />
                   </div>
-                  <p
-                    style={{ color: c.text }}
-                    className="mt-0.5 text-[10px] opacity-75"
-                  >
-                    {MOVEMENT_BLURBS[mp]}
-                  </p>
                   <div className="mt-2 flex items-baseline justify-between">
-                    <span
-                      style={{ color: c.text }}
-                      className="font-mono text-[12px]"
-                    >
-                      {stats?.sets ?? 0} sets
+                    <span style={{ color: c.text }} className="font-mono text-[12px]">
+                      {stats?.asPrimarySets ?? 0} sets
                     </span>
-                    <span
-                      style={{ color: c.text }}
-                      className="text-[10px] opacity-70"
-                    >
+                    <span style={{ color: c.text }} className="text-[10px] opacity-70">
                       {stats?.daysHit.length ?? 0}d this week
                     </span>
                   </div>
@@ -1229,6 +1281,63 @@ function ConfigureModal({
               );
             })}
           </div>
+
+          {/* Advanced toggle — movement patterns */}
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="mt-1 mb-2 text-[12px] font-medium text-text-muted"
+          >
+            Movement patterns {showAdvanced ? "↑" : "↓"}
+          </button>
+
+          {showAdvanced && (
+            <div className="grid grid-cols-2 gap-2 pb-2">
+              {MOVEMENT_PATTERNS.map((mp) => {
+                const stats = coverage.movementStats[mp];
+                const score = movementScore(stats);
+                const c = MOVEMENT_COLORS[mp];
+                const isSelected = selectedMovements.includes(mp);
+                return (
+                  <button
+                    key={mp}
+                    type="button"
+                    aria-label={MOVEMENT_LABELS[mp]}
+                    aria-pressed={isSelected}
+                    onClick={() => toggleMovement(mp)}
+                    style={{
+                      background: c.bg,
+                      outline: isSelected ? `2px solid ${c.text}` : "2px solid transparent",
+                      outlineOffset: "2px",
+                    }}
+                    className="rounded-xl px-3 py-3 text-left"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span style={{ color: c.text }} className="text-[13px] font-semibold">
+                        {MOVEMENT_LABELS[mp]}
+                      </span>
+                      <span
+                        aria-hidden
+                        style={{ background: SCORE_DOT_CONFIGURE[score] }}
+                        className="h-2 w-2 rounded-full"
+                      />
+                    </div>
+                    <p style={{ color: c.text }} className="mt-0.5 text-[10px] opacity-75">
+                      {MOVEMENT_BLURBS[mp]}
+                    </p>
+                    <div className="mt-2 flex items-baseline justify-between">
+                      <span style={{ color: c.text }} className="font-mono text-[12px]">
+                        {stats?.sets ?? 0} sets
+                      </span>
+                      <span style={{ color: c.text }} className="text-[10px] opacity-70">
+                        {stats?.daysHit.length ?? 0}d this week
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -1239,12 +1348,10 @@ function ConfigureModal({
           </p>
           <button
             type="button"
-            onClick={() => onApply(selected)}
+            onClick={() => onApply(selectedMuscles, selectedMovements)}
             className="w-full rounded-full bg-text py-3 text-[14px] font-medium text-white"
           >
-            {selected.length > 0
-              ? `Focus on ${selected.map((m) => MOVEMENT_LABELS[m]).join(" · ")}`
-              : "Reset to recommended"}
+            {applyLabel}
           </button>
         </div>
       </div>

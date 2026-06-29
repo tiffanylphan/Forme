@@ -1,4 +1,4 @@
-import type { Exercise, MovementPattern } from "./types";
+import type { Exercise, MuscleGroup, MovementPattern } from "./types";
 
 const UNILATERAL_RX =
   /single-leg|split squat|\blunge\b|step-up|pistol|cossack|bench single/i;
@@ -53,3 +53,40 @@ export const MOVEMENT_COLORS: Record<MovementPattern, { bg: string; text: string
   single_leg: { bg: "#FAEEDA", text: "#633806" },
   carry_core: { bg: "#FBEAF0", text: "#72243E" },
 };
+
+export const FOCUSABLE_MUSCLES = [
+  "glutes",
+  "hamstrings",
+  "quads",
+  "adductors",
+  "back",
+  "shoulders",
+  "rear_delts",
+  "core",
+] as const satisfies readonly MuscleGroup[];
+export type FocusableMuscle = (typeof FOCUSABLE_MUSCLES)[number];
+
+// Maps each focusable muscle to bilateral movement patterns only. single_leg is intentionally
+// omitted so muscle focus stays independent of unilateral/bilateral structure — single_leg
+// remains accessible via the advanced movement grid. The per-muscle exercise score boost still
+// applies to single-leg exercises with the focused muscle in primary.
+export const MUSCLE_TO_MOVEMENTS: Record<FocusableMuscle, MovementPattern[]> = {
+  glutes: ["hinge"],
+  hamstrings: ["hinge"],
+  quads: ["squat"],
+  adductors: ["squat"],
+  back: ["pull"],
+  shoulders: ["push"],
+  rear_delts: ["pull"],
+  core: ["carry_core"],
+};
+
+export function muscleSetToMovements(muscles: readonly MuscleGroup[]): MovementPattern[] {
+  const seen = new Set<MovementPattern>();
+  muscles.forEach((m) => {
+    if (MUSCLE_TO_MOVEMENTS[m as FocusableMuscle]) {
+      MUSCLE_TO_MOVEMENTS[m as FocusableMuscle].forEach((mp) => seen.add(mp));
+    }
+  });
+  return [...seen];
+}
