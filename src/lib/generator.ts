@@ -3168,6 +3168,19 @@ export function generateNextWorkout(
 
   // 1. Main lift — the most-needed heavy compound among squat, hinge, push, pull.
   const lowerAnchorMovements: MovementPattern[] = ["squat", "hinge", "single_leg"];
+  const upperCompoundFilter = (ex: Exercise): boolean => {
+    const movement = movementOf(ex);
+    if (!environmentAllowsExercise(ex, activeProfile)) return false;
+    if (!goalAllows(ex, activeProfile.goal)) return false;
+    if (!(isHeavyEquipment(ex) || (movement === "pull" && ex.equipment === "cable"))) return false;
+    if (movement === "pull") return isBackPullAnchor(ex);
+    return true;
+  };
+  // Back-focused upper slots should always anchor on a pull compound regardless of
+  // how many pull exercises appeared earlier in the week (e.g. renegade rows in a
+  // lower session reduce need["pull"] to 1 but are not valid back anchors).
+  const preferBackPullCompound =
+    slot.focusMuscles.includes("back") && slot.preferredMovements.includes("pull");
   const compoundPick = lowerBiasSlot
     ? pickForMovement(
         lowerAnchorMovements,
@@ -3178,18 +3191,10 @@ export function generateNextWorkout(
           isStrongLowerAnchor(ex) &&
           (isHeavyEquipment(ex) || movementOf(ex) === "single_leg"),
       )
-    : pickForMovement(
-        compoundMovements,
-        compoundTargets.length,
-        (ex) => {
-          const movement = movementOf(ex);
-          if (!environmentAllowsExercise(ex, activeProfile)) return false;
-          if (!goalAllows(ex, activeProfile.goal)) return false;
-          if (!(isHeavyEquipment(ex) || (movement === "pull" && ex.equipment === "cable"))) return false;
-          if (movement === "pull") return isBackPullAnchor(ex);
-          return true;
-        },
-      );
+    : (preferBackPullCompound
+        ? pickForMovement(["pull"], compoundTargets.length, upperCompoundFilter)
+        : null) ??
+      pickForMovement(compoundMovements, compoundTargets.length, upperCompoundFilter);
   // 2. Secondary lift — add another focused block before accessories.
   const secondaryMovements = accessoryMovements.filter(
     (movement) => movement !== compoundPick?.movement,

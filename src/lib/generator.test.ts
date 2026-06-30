@@ -885,6 +885,37 @@ describe("generateNextWorkout", () => {
     expect(anyHasVerticalPull).toBe(true);
   });
 
+  it("picks a pull compound on Upper A even when a lower session already hit pull via renegade row", () => {
+    // DB renegade row is excluded from isBackPullAnchor but still counts as a "pull"
+    // movement hit, which used to drop need["pull"] to 1 and let push win the compound.
+    const workouts = [
+      workout("w1", "2026-05-18", [
+        { name: "DB renegade row", sets: 3 },
+        { name: "Barbell Romanian deadlift", sets: 4 },
+      ]),
+    ];
+    const draft = generateNextWorkout(workouts, "2026-05-20", 123, profile, {
+      forcedSlotId: "upper_back_shoulder",
+    });
+    const compoundExercise = draft.sections[0]?.exercises[0];
+    expect(findExercise(compoundExercise?.name ?? "")?.pattern).toBe("pull");
+    expect(compoundExercise?.name).not.toBe("DB prone press");
+    const allNames = draft.sections.flatMap((s) => s.exercises.map((e) => e.name));
+    expect(
+      allNames.some((name) =>
+        [
+          "Lat pulldown",
+          "Cable row",
+          "Barbell bent-over row",
+          "DB single-arm row",
+          "DB bent-over row",
+          "Band-assisted pull-up",
+          "T-bar row",
+        ].includes(name),
+      ),
+    ).toBe(true);
+  });
+
   it("allows a short conditioning finisher on 3-day lower sessions", () => {
     const draft = generateNextWorkout([], "2026-05-06", 9090, threeDayProfile);
     const finisherSection = draft.sections.find((section) => section.kind === "finisher");
