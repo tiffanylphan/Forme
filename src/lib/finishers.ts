@@ -197,4 +197,12 @@ export const FINISHER_TEMPLATES: FinisherTemplate[] = [
     repScheme: "16 reps each, controlled tempo throughout",
     tags: ["core"],
   },
+  {
+    id: "power_core_chain",
+    label: "power and core chain",
+    exercises: ["DB clean -> press", "Kneeling chop", "Mountain climber"],
+    rounds: 3,
+    repScheme: "8 clean-to-press + 10/side chops + 16 climbers",
+    tags: ["upper", "core", "conditioning"],
+  },
 ];
