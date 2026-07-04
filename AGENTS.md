@@ -45,7 +45,21 @@
 4. If the new exercise has `hamstrings` in `primary` or `secondary`, increment the count in the
    hamstrings filter assertion in `src/app/library/page.test.tsx`.
 
-5. Run `npm test` and confirm all tests pass.
+5. **Consider aliases** — if the exercise has common shorthand names, alternate spellings, or names
+   users are likely to type when logging (e.g. "DB step ups" for "Box step-up", "Dumbbell drags"
+   for "Plank drag"), add them to the `aliases` array so they resolve correctly from log entries.
+   Also check whether an existing exercise already covers the new name before adding a duplicate.
+
+6. **Finisher-eligible exercises must appear in a finisher template** — `npm test` will catch this
+   via the "gives every finisher-eligible exercise a home" assertion in `generator.test.ts`. An
+   exercise is finisher-eligible if its movement is `carry_core` (pattern `core` or `carry`) or it
+   passes the accessible conditioning/metabolic checks (`pattern: "conditioning"` with dumbbell/
+   bodyweight/band equipment, or is on the named metabolic list). If the new exercise is
+   finisher-eligible, either add it to an existing appropriate template in `src/lib/finishers.ts`
+   or create a new one. Prefer creating a new template if the exercise doesn't fit cleanly into an
+   existing circuit.
+
+7. Run `npm test` and confirm all tests pass.
 
 ## Before pushing code
 - Run `npm test && npm run build --webpack` and confirm both pass.
