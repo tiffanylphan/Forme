@@ -13,7 +13,7 @@ import {
   weekContaining,
 } from "@/lib/coverage";
 import { formatMuscle, todayISO } from "@/lib/format";
-import { getWeeklyTargetStimulus } from "@/lib/generator";
+import { getWeeklyTargetStimulus } from "@/lib/splits";
 import {
   MOVEMENT_BLURBS,
   MOVEMENT_COLORS,

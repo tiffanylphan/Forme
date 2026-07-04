@@ -1,5 +1,52 @@
 import { EXERCISES } from "./exercises";
 import { environmentAllowsExercise } from "./exercise-availability";
+import {
+  ACCESSORY_MOVEMENTS,
+  COMPOUND_MOVEMENTS,
+  capSuggestedWeight,
+  familyOf,
+  formatMovement,
+  goalAllows,
+  hasAnyMuscle,
+  hasPrimary,
+  hasSecondary,
+  isAccessibleConditioningFinisher,
+  isAccessibleMetabolicFinisher,
+  isActivationLowerAccessory,
+  isBackOrShoulderFocused,
+  isBackPullAnchor,
+  isChestDominantPush,
+  isDirectArmFocus,
+  isDirectGluteFocus,
+  isGluteBiasedLower,
+  isHeavyEquipment,
+  isHomeConditioningFriendly,
+  isLowerFatiguingFinisher,
+  isLowerIsolation,
+  isPhysiqueFriendly,
+  isPreferredAccessibleFinisher,
+  isPushLeaningFinisher,
+  isStrongLowerAnchor,
+  isTechnicalBarbell,
+  lowerUnilateralKneeFamilyOf,
+  MOVEMENT_PRIORITY,
+  PRIMARY_MUSCLE_PRIORITY,
+  SECONDARY_MUSCLE_PRIORITY,
+} from "./exercise-predicates";
+import {
+  compareWorkoutsDesc,
+  getSplitTemplate,
+  isLowerSlot,
+  isUpperSlot,
+  PHYSIQUE_UPPER_A_SLOT,
+  PHYSIQUE_UPPER_B_SLOT,
+  resolveSplitVariants,
+} from "./splits";
+import type { SplitSlot } from "./splits";
+export { getWeeklyTargetStimulus, getWeeklyTargetSets } from "./splits";
+import { FINISHER_TEMPLATES } from "./finishers";
+import type { FinisherTemplate } from "./finishers";
+export { FINISHER_TEMPLATES } from "./finishers";
 import { movementOf, muscleSetToMovements } from "./movement";
 import { PLANNER_TUNING } from "./planner-tuning";
 import { DEFAULT_PROFILE } from "./profile";
@@ -102,237 +149,6 @@ type GeneratorOverrides = {
   finisherSeed?: number;
   excludeFinisherTemplateIds?: string[];
 };
-
-type SplitSlot = {
-  id: string;
-  title: string;
-  summary: string;
-  focusMuscles: MuscleGroup[];
-  preferredMovements: MovementPattern[];
-  allowedMovements: MovementPattern[];
-  targetPrimaryStimulus: Partial<Record<MuscleGroup, number>>;
-};
-
-type FinisherTemplate = {
-  id: string;
-  label: string;
-  exercises: string[];
-  rounds: number;
-  repScheme: string;
-  tags: ("upper" | "lower" | "core" | "conditioning")[];
-  requiresHardMode?: boolean;
-};
-
-const PHYSIQUE_UPPER_A_SLOT: SplitSlot = {
-  id: "upper_back_shoulder",
-  title: "Upper A · Back/Shoulders",
-  summary: "Upper session theme with back, shoulders, and glute support.",
-  focusMuscles: ["back", "shoulders", "rear_delts", "glutes", "core"],
-  preferredMovements: ["pull", "push"],
-  allowedMovements: ["pull", "push", "hinge", "carry_core"],
-  targetPrimaryStimulus: { back: 7, shoulders: 5, rear_delts: 4, glutes: 2, core: 3 },
-};
-
-const PHYSIQUE_UPPER_B_SLOT: SplitSlot = {
-  id: "upper_back_shoulder_arms",
-  title: "Upper B · Upper/Arms",
-  summary: "Upper session theme with shoulders, arms, and lower-body support.",
-  focusMuscles: ["back", "shoulders", "rear_delts", "biceps", "triceps", "glutes", "core"],
-  preferredMovements: ["pull", "push"],
-  allowedMovements: ["pull", "push", "single_leg", "carry_core"],
-  targetPrimaryStimulus: { back: 6, shoulders: 5, rear_delts: 4, biceps: 3, triceps: 2, glutes: 2, core: 2 },
-};
-
-export const FINISHER_TEMPLATES: FinisherTemplate[] = [
-  {
-    id: "mechanical_pushup_drop",
-    label: "mechanical advantage drop set",
-    exercises: ["Archer push-up", "Push-up", "Incline push-up"],
-    rounds: 3,
-    repScheme: "5 reps each, no rest · drop set",
-    tags: ["upper", "conditioning"],
-    requiresHardMode: true,
-  },
-  {
-    id: "lunge_trip",
-    label: "bi-directional lunge complex",
-    exercises: ["Forward lunge", "Lateral lunge", "Reverse lunge"],
-    rounds: 3,
-    repScheme: "6 reps/side each direction · stay on one side before switching",
-    tags: ["lower", "conditioning"],
-  },
-  {
-    id: "burpee_ladder",
-    label: "burpee ladder",
-    exercises: ["Burpee", "Bodyweight squat"],
-    rounds: 2,
-    repScheme: "Burpees 1→5→1, air squats 10 each rung",
-    tags: ["conditioning", "lower"],
-    requiresHardMode: true,
-  },
-  {
-    id: "hollow_superman",
-    label: "hollow-to-superman roll",
-    exercises: ["Hollow body hold", "Superman hold"],
-    rounds: 4,
-    repScheme: "8 reps each + controlled roll transition",
-    tags: ["core", "conditioning"],
-  },
-  {
-    id: "plank_traveler",
-    label: "plank traveler",
-    exercises: ["Plank", "Plank to push-up", "Plank jack", "Shoulder tap"],
-    rounds: 3,
-    repScheme: "10 reps each, non-stop travel through all positions",
-    tags: ["upper", "core", "conditioning"],
-  },
-  {
-    id: "bear_box",
-    label: "bear crawl box",
-    exercises: ["Bear crawl", "Bear plank shoulder tap", "High knees"],
-    rounds: 3,
-    repScheme: "20 crawl steps + 8 taps + 20 high knees",
-    tags: ["lower", "core", "conditioning"],
-  },
-  {
-    id: "wall_ball_sprint",
-    label: "wall-ball sprint",
-    exercises: ["Wall ball shot", "High knees"],
-    rounds: 3,
-    repScheme: "15 wall ball shots + 20 high knees + 15 wall ball shots",
-    tags: ["lower", "upper", "conditioning"],
-  },
-  {
-    id: "slam_and_sprawl",
-    label: "slam-and-sprawl chain",
-    exercises: ["Tall-kneeling rotational medicine ball slam", "Burpee", "Bear crawl"],
-    rounds: 3,
-    repScheme: "10 slams + 8 burpees + 20 crawl steps",
-    tags: ["upper", "core", "conditioning"],
-    requiresHardMode: true,
-  },
-  {
-    id: "wall_sit_burnout",
-    label: "wall-sit burnout",
-    exercises: ["Banded wall sit abduction pulses", "Lateral lunge"],
-    rounds: 3,
-    repScheme: "12 pulses + 8/side lunges + 12 pulses",
-    tags: ["lower", "conditioning"],
-  },
-  {
-    id: "dumbbell_burner",
-    label: "dumbbell burner",
-    exercises: ["Half burpee w/ dumbbell", "Push-up to renegade row", "DB snatch"],
-    rounds: 3,
-    repScheme: "8 reps each, no rest · metabolic chain",
-    tags: ["upper", "lower", "conditioning"],
-    requiresHardMode: true,
-  },
-  {
-    id: "skater_shuffle",
-    label: "skater shuffle",
-    exercises: ["Skater hop", "Mountain climber", "High knees"],
-    rounds: 3,
-    repScheme: "10/side hops + 16 climbers + 20 high knees, no rest between",
-    tags: ["lower", "core", "conditioning"],
-  },
-  {
-    id: "broad_jump_chain",
-    label: "broad jump chain",
-    exercises: ["Broad jump", "Bodyweight squat", "Mountain climber"],
-    rounds: 3,
-    repScheme: "5 broad jumps + 12 squats + 16 climbers",
-    tags: ["lower", "conditioning"],
-  },
-  {
-    id: "carry_and_crawl",
-    label: "carry-and-crawl gauntlet",
-    exercises: ["Farmer carry", "Bear crawl", "Tuck-up"],
-    rounds: 3,
-    repScheme: "30-step carry + 20 crawl steps + 12 tuck-ups",
-    tags: ["core", "conditioning"],
-  },
-  {
-    id: "tuck_and_tap",
-    label: "tuck-jump and tap chain",
-    exercises: ["Tuck jump", "Push-up", "Hanging knee raise"],
-    rounds: 3,
-    repScheme: "8 tuck jumps + 10 push-ups + 12 knee raises",
-    tags: ["upper", "lower", "core", "conditioning"],
-  },
-  {
-    id: "core_conditioning_chain",
-    label: "core conditioning chain",
-    exercises: ["V-up", "Side plank", "Squat thrust"],
-    rounds: 3,
-    repScheme: "12 V-ups + 20 sec/side plank + 10 squat thrusts",
-    tags: ["core", "conditioning"],
-  },
-  {
-    id: "rotation_and_pop_chain",
-    label: "rotation and pop chain",
-    exercises: ["Alternating V-up", "Bird dog", "Squat jump"],
-    rounds: 3,
-    repScheme: "10/side V-ups + 8/side bird dogs + 10 squat jumps",
-    tags: ["core", "conditioning"],
-  },
-  {
-    id: "unilateral_carry_circuit",
-    label: "unilateral carry circuit",
-    exercises: ["Single-side V-up", "Copenhagen plank", "Suitcase carry"],
-    rounds: 3,
-    repScheme: "8/side V-ups + 20 sec/side plank + 30-step carry",
-    tags: ["core", "conditioning"],
-  },
-  {
-    id: "anti_extension_march",
-    label: "anti-extension march",
-    exercises: ["Dead bug", "High plank", "DB overhead march"],
-    rounds: 3,
-    repScheme: "10/side dead bugs + 20 sec plank hold + 20-step march",
-    tags: ["core", "conditioning"],
-  },
-  {
-    id: "hanging_core_complex",
-    label: "hanging core complex",
-    exercises: ["Hanging leg raise", "Cable woodchop", "DB renegade row"],
-    rounds: 3,
-    repScheme: "10 leg raises + 10/side woodchops + 8/side rows",
-    tags: ["core", "conditioning"],
-  },
-  {
-    id: "bicycle_and_clean_chain",
-    label: "bicycle and clean chain",
-    exercises: ["Bicycle crunch", "Side plank dip", "DB squat to clean"],
-    rounds: 3,
-    repScheme: "16 bicycle crunches + 8/side plank dips + 8 squat-to-cleans",
-    tags: ["core", "conditioning"],
-  },
-  {
-    id: "flutter_and_drag_burner",
-    label: "flutter and drag burner",
-    exercises: ["Flutter kick", "Plank drag", "Woman maker"],
-    rounds: 3,
-    repScheme: "20 flutter kicks + 8/side plank drags + 6 woman makers",
-    tags: ["core", "conditioning"],
-  },
-  {
-    id: "twist_and_pull_chain",
-    label: "twist and pull chain",
-    exercises: ["Butterfly sit-up", "DB side plank rotation", "DB side lunge to high pull"],
-    rounds: 3,
-    repScheme: "12 sit-ups + 8/side rotations + 8/side lunge-to-pulls",
-    tags: ["upper", "core", "conditioning"],
-  },
-  {
-    id: "rotational_core_gauntlet",
-    label: "rotational core gauntlet",
-    exercises: ["Oblique twist", "Russian twist", "Pallof press", "Ab wheel rollout"],
-    rounds: 3,
-    repScheme: "16 reps each, controlled tempo throughout",
-    tags: ["core"],
-  },
-];
 
 // Deterministic PRNG so a given seed → same output.
 function mulberry32(seed: number): () => number {
@@ -507,249 +323,8 @@ const buildProgression = (
   };
 };
 
-const COMPOUND_MOVEMENTS: MovementPattern[] = ["squat", "hinge", "push", "pull"];
-const ACCESSORY_MOVEMENTS: MovementPattern[] = [
-  "squat",
-  "hinge",
-  "push",
-  "pull",
-  "single_leg",
-];
 
-const MOVEMENT_PRIORITY: Record<MovementPattern, number> = {
-  squat: 0.8,
-  hinge: 1.4,
-  push: 0.8,
-  pull: 1.2,
-  single_leg: 1.3,
-  carry_core: 0.9,
-};
 
-const PRIMARY_MUSCLE_PRIORITY: Partial<Record<MuscleGroup, number>> = {
-  glutes: 1.8,
-  hamstrings: 1.2,
-  adductors: 1.1,
-  back: 1.5,
-  shoulders: 1.5,
-  rear_delts: 1.2,
-  core: 1.1,
-  quads: 0.7,
-  chest: 0.3,
-  triceps: 0.2,
-};
-
-const SECONDARY_MUSCLE_PRIORITY: Partial<Record<MuscleGroup, number>> = {
-  glutes: 0.7,
-  hamstrings: 0.5,
-  back: 0.6,
-  shoulders: 0.6,
-  rear_delts: 0.5,
-  core: 0.5,
-};
-
-const isHeavyEquipment = (ex: Exercise): boolean =>
-  ex.equipment === "barbell" ||
-  ex.equipment === "dumbbell" ||
-  ex.equipment === "machine";
-
-const isTechnicalBarbell = (ex: Exercise): boolean =>
-  ex.equipment === "barbell" &&
-  (ex.name.includes("deadlift") ||
-    ex.name.includes("squat") ||
-    ex.name.includes("overhead press") ||
-    ex.name.includes("walking lunge"));
-
-const capSuggestedWeight = (
-  weight: number | null,
-  exercise: Exercise,
-  environment: TrainingEnvironment,
-): number | null => {
-  if (weight == null) return null;
-  if (environment !== "home") return weight;
-  if (exercise.equipment !== "dumbbell") return weight;
-  return Math.min(weight, 15);
-};
-
-const isHomeConditioningFriendly = (ex: Exercise): boolean =>
-  ex.pattern === "conditioning" ||
-  ex.pattern === "core" ||
-  ex.equipment === "bodyweight" ||
-  ex.equipment === "band";
-
-const isAccessibleConditioningFinisher = (ex: Exercise): boolean =>
-  ex.pattern === "conditioning" &&
-  ["bodyweight", "dumbbell", "band"].includes(ex.equipment);
-
-const isAccessibleMetabolicFinisher = (ex: Exercise): boolean =>
-  [
-    "Half burpee w/ dumbbell",
-    "Burpee",
-    "Squat thrust",
-    "High knees",
-    "Mountain climber",
-    "Bear crawl",
-    "Bear plank shoulder tap",
-    "Plank to push-up",
-    "Push-up to renegade row",
-    "DB renegade row",
-    "DB snatch",
-    "Skater hop",
-    "Squat jump",
-  ].includes(ex.name);
-
-const isPreferredAccessibleFinisher = (ex: Exercise): boolean =>
-  movementOf(ex) === "carry_core" ||
-  isAccessibleConditioningFinisher(ex) ||
-  isAccessibleMetabolicFinisher(ex);
-
-const isPushLeaningFinisher = (ex: Exercise): boolean =>
-  ex.pattern === "push" ||
-  ex.name === "Push-up to renegade row";
-
-const isLowerFatiguingFinisher = (ex: Exercise): boolean => {
-  const movement = movementOf(ex);
-  return movement === "hinge" || movement === "squat" || movement === "single_leg";
-};
-
-const formatMovement = (m: MovementPattern): string =>
-  m === "carry_core"
-    ? "carry/core"
-    : m === "single_leg"
-      ? "single-leg"
-      : m;
-
-const hasPrimary = (ex: Exercise, muscle: MuscleGroup): boolean =>
-  ex.primary.includes(muscle);
-
-const hasSecondary = (ex: Exercise, muscle: MuscleGroup): boolean =>
-  ex.secondary.includes(muscle);
-
-const hasAnyMuscle = (ex: Exercise, muscles: MuscleGroup[]): boolean =>
-  muscles.some((muscle) => hasPrimary(ex, muscle) || hasSecondary(ex, muscle));
-
-const isChestDominantPush = (ex: Exercise): boolean =>
-  ex.pattern === "push" &&
-  (hasPrimary(ex, "chest") ||
-    (hasPrimary(ex, "triceps") && !hasPrimary(ex, "shoulders")));
-
-const isShoulderBiasedPush = (ex: Exercise): boolean =>
-  ex.pattern === "push" &&
-  (hasPrimary(ex, "shoulders") ||
-    hasPrimary(ex, "rear_delts") ||
-    ex.name === "Landmine press");
-
-const isGluteBiasedLower = (ex: Exercise): boolean =>
-  (movementOf(ex) === "hinge" || movementOf(ex) === "single_leg") &&
-  hasAnyMuscle(ex, ["glutes", "hamstrings"]);
-
-const isBackOrShoulderFocused = (ex: Exercise): boolean =>
-  hasAnyMuscle(ex, ["back", "shoulders", "rear_delts"]);
-
-const isDirectArmFocus = (ex: Exercise): boolean =>
-  hasPrimary(ex, "biceps") || hasPrimary(ex, "triceps");
-
-const isBackPullAnchor = (ex: Exercise): boolean =>
-  movementOf(ex) === "pull" &&
-  hasPrimary(ex, "back") &&
-  ex.name !== "DB renegade row" &&
-  ex.name !== "Push-up to renegade row" &&
-  (familyOf(ex) === "row" || familyOf(ex) === "vertical_pull");
-
-const isDirectGluteFocus = (ex: Exercise): boolean =>
-  hasPrimary(ex, "glutes") &&
-  (movementOf(ex) === "hinge" || movementOf(ex) === "single_leg");
-
-const isLowerIsolation = (ex: Exercise): boolean =>
-  [
-    "Leg extension",
-    "Leg curl",
-    "Banded clamshell",
-    "Banded fire hydrant",
-    "Banded walkout",
-    "Glute bridge",
-    "Bench single-leg hip thrust",
-    "Wall sit",
-    "Wall sit with adductor squeeze",
-    "Banded wall sit abduction pulses",
-    "Sissy squat",
-  ].includes(ex.name);
-
-const isActivationLowerAccessory = (ex: Exercise): boolean =>
-  [
-    "Banded clamshell",
-    "Banded fire hydrant",
-    "Banded walkout",
-    "Glute bridge",
-  ].includes(ex.name);
-
-const isStrongLowerAnchor = (ex: Exercise): boolean => {
-  const movement = movementOf(ex);
-  if (!movement) return false;
-  if (isLowerIsolation(ex)) return false;
-
-  if (movement === "squat" || movement === "hinge") return true;
-  if (movement !== "single_leg") return false;
-
-  const family = familyOf(ex);
-  return family === "split_squat" || family === "lunge" || family === "step_up";
-};
-
-const isPhysiqueFriendly = (ex: Exercise): boolean => {
-  const movement = movementOf(ex);
-  if (!movement) return false;
-  if (isChestDominantPush(ex)) return false;
-  if (movement === "push") return isShoulderBiasedPush(ex);
-  return true;
-};
-
-const familyOf = (ex: Exercise): string => {
-  const name = ex.name.toLowerCase();
-  if (name.includes("hip thrust") || name.includes("glute bridge")) return "hip_thrust";
-  // "DB split squat to RDL" has "rdl" in its name — treat it as rdl family so it
-  // is hard-blocked from coexisting with DB Romanian deadlift / Single-leg DB RDL.
-  if ((name.includes("split squat") || name.includes("bulgarian")) && !name.includes("rdl")) return "split_squat";
-  if (name.includes("romanian deadlift") || name.includes("rdl")) return "rdl";
-  if (name.includes("deadlift")) return "deadlift";
-  if (name.includes("lunge")) return "lunge";
-  if (name.includes("step-up")) return "step_up";
-  if (name.includes("row")) return "row";
-  if (name.includes("pulldown") || name.includes("pull-up") || name.includes("chin-up"))
-    return "vertical_pull";
-  if (name.includes("face pull") || name.includes("reverse fly") || name.includes("pull-apart"))
-    return "rear_delt";
-  if (name.includes("curl") && !name.includes("leg curl")) return "biceps_isolation";
-  if (
-    name.includes("tricep pushdown") ||
-    name.includes("tricep extension") ||
-    name.includes("skull crusher") ||
-    name.includes("skullcrusher")
-  ) {
-    return "triceps_isolation";
-  }
-  if (name.includes("lateral raise") || name.includes("front raise") || name.includes("arnold"))
-    return "shoulder_isolation";
-  if (name.includes("overhead press") || name.includes("landmine press"))
-    return "vertical_press";
-  if (name.includes("squat") || name.includes("leg press") || name.includes("hack squat"))
-    return "squat_pattern";
-  if (name.includes("leg curl")) return "leg_curl";
-  if (name.includes("carry")) return "carry";
-  if (ex.pattern === "core") return "core";
-  return `${ex.pattern}_${ex.equipment}`;
-};
-
-const lowerUnilateralKneeFamilyOf = (ex: Exercise): string | null => {
-  if (movementOf(ex) !== "single_leg") return null;
-  const family = familyOf(ex);
-  if (family === "split_squat" || family === "lunge" || family === "step_up") {
-    return family;
-  }
-  // Hybrid exercises like "DB split squat to RDL" are rdl family (hard-blocked from
-  // stacking with other RDLs) but have squat pattern and single-leg movement — they
-  // are still knee-dominant and should participate in the unilateral-stacking guard.
-  if (family === "rdl" && ex.pattern === "squat") return "split_squat";
-  return null;
-};
 
 const WARMUP_BY_MUSCLE: Partial<Record<MuscleGroup, string[]>> = {
   glutes: ["Banded glute bridge x 15", "Banded lateral walk x 10/side"],
@@ -819,14 +394,6 @@ const buildSessionBookend = (
 
   return { title, items, complementary };
 };
-
-const isLowerSlot = (slot: SplitSlot): boolean =>
-  slot.preferredMovements.some((movement) =>
-    movement === "hinge" || movement === "squat" || movement === "single_leg",
-  );
-
-const isUpperSlot = (slot: SplitSlot): boolean =>
-  slot.preferredMovements.some((movement) => movement === "pull" || movement === "push");
 
 type InferredWorkoutBias = "lower" | "upper" | "mixed";
 
@@ -1801,9 +1368,6 @@ const maybeOverrideForStalledBias = (
   return preferred.index;
 };
 
-const compareWorkoutsDesc = (a: Workout, b: Workout): number =>
-  a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt;
-
 const summarizeWorkoutMuscleStress = (
   workout: Workout,
 ): Partial<Record<MuscleGroup, number>> => {
@@ -1890,288 +1454,6 @@ const finisherRepeatPenalty = (
     return penalty;
   }, 0);
 };
-
-const resolveSplitVariants = (
-  split: SplitSlot[],
-  profile: TrainingProfile,
-  workouts: Workout[],
-): SplitSlot[] => {
-  if (!(profile.goal === "physique" && profile.daysPerWeek === 3)) return split;
-
-  const lastUpperSlotId = [...workouts]
-    .sort(compareWorkoutsDesc)
-    .map((workout) => workout.planSlot?.slotId)
-    .find((slotId) =>
-      slotId === PHYSIQUE_UPPER_A_SLOT.id || slotId === PHYSIQUE_UPPER_B_SLOT.id,
-    );
-
-  const upperSlot =
-    lastUpperSlotId === PHYSIQUE_UPPER_A_SLOT.id
-      ? PHYSIQUE_UPPER_B_SLOT
-      : PHYSIQUE_UPPER_A_SLOT;
-
-  return split.map((slot, index) => (index === 1 ? upperSlot : slot));
-};
-
-const isStrengthFriendly = (ex: Exercise): boolean => {
-  if (!isHeavyEquipment(ex)) return false;
-  if (ex.name.includes("raise") || ex.name.includes("fly")) return false;
-  return movementOf(ex) !== null;
-};
-
-const goalAllows = (ex: Exercise, goal: GoalMode): boolean => {
-  if (goal === "physique") return isPhysiqueFriendly(ex);
-  if (goal === "strength") return isStrengthFriendly(ex);
-  return movementOf(ex) !== null;
-};
-
-const getSplitTemplate = (
-  profile: TrainingProfile,
-): SplitSlot[] => {
-  if (profile.goal === "physique") {
-    if (profile.daysPerWeek === 3) {
-      return [
-        {
-          id: "lower_glute_ham",
-          title: "Lower A · Posterior",
-          summary: "Lower session theme with glute and hamstring emphasis.",
-          focusMuscles: ["glutes", "hamstrings", "core"],
-          preferredMovements: ["hinge", "single_leg", "squat"],
-          allowedMovements: ["hinge", "single_leg", "squat", "carry_core"],
-          targetPrimaryStimulus: { glutes: 8, hamstrings: 6, core: 4 },
-        },
-        PHYSIQUE_UPPER_A_SLOT,
-        {
-          id: "lower_glute_quad",
-          title: "Lower B · Quad/Glute",
-          summary: "Lower session theme with glute and quad emphasis.",
-          focusMuscles: ["glutes", "quads", "hamstrings", "adductors", "core"],
-          preferredMovements: ["single_leg", "squat", "hinge"],
-          allowedMovements: ["single_leg", "squat", "hinge", "carry_core"],
-          targetPrimaryStimulus: { glutes: 7, quads: 6, hamstrings: 4, adductors: 2, core: 4 },
-        },
-      ];
-    }
-    if (profile.daysPerWeek === 4) {
-      return [
-        {
-          id: "lower_glute_ham",
-          title: "Lower A · Posterior",
-          summary: "Lower session theme with posterior chain and upper-back support.",
-          focusMuscles: ["glutes", "hamstrings", "back", "core"],
-          preferredMovements: ["hinge", "single_leg", "squat"],
-          allowedMovements: ["hinge", "single_leg", "squat", "pull", "carry_core"],
-          targetPrimaryStimulus: { glutes: 7, hamstrings: 6, back: 2, core: 4 },
-        },
-        PHYSIQUE_UPPER_A_SLOT,
-        {
-          id: "lower_glute_quad",
-          title: "Lower B · Quad/Glute",
-          summary: "Lower session theme with quads, glutes, and shoulder support.",
-          focusMuscles: ["glutes", "quads", "hamstrings", "adductors", "shoulders", "core"],
-          preferredMovements: ["single_leg", "squat", "hinge"],
-          allowedMovements: ["single_leg", "squat", "hinge", "push", "carry_core"],
-          targetPrimaryStimulus: { glutes: 6, quads: 6, hamstrings: 4, adductors: 2, shoulders: 2, core: 4 },
-        },
-        PHYSIQUE_UPPER_B_SLOT,
-      ];
-    }
-    return [
-      {
-        id: "lower_glute_ham",
-        title: "Lower A · Posterior",
-        summary: "Lower session theme with glute and hamstring emphasis.",
-        focusMuscles: ["glutes", "hamstrings", "core"],
-        preferredMovements: ["hinge", "single_leg", "squat"],
-        allowedMovements: ["hinge", "single_leg", "squat", "carry_core"],
-        targetPrimaryStimulus: { glutes: 8, hamstrings: 6, core: 4 },
-      },
-      PHYSIQUE_UPPER_A_SLOT,
-      {
-        id: "lower_glute_quad",
-        title: "Lower B · Quad/Glute",
-        summary: "Lower session theme with glute and quad emphasis.",
-        focusMuscles: ["glutes", "quads", "hamstrings", "adductors", "core"],
-        preferredMovements: ["single_leg", "squat", "hinge"],
-        allowedMovements: ["single_leg", "squat", "hinge", "carry_core"],
-        targetPrimaryStimulus: { glutes: 7, quads: 6, hamstrings: 4, adductors: 2, core: 4 },
-      },
-      PHYSIQUE_UPPER_B_SLOT,
-      {
-        id: "glute_shoulder_accessory",
-        title: "Accessory day",
-        summary: "Glute and shoulder accessory volume.",
-        focusMuscles: ["glutes", "shoulders", "rear_delts", "core"],
-        preferredMovements: ["single_leg", "hinge", "push", "pull"],
-        allowedMovements: ["single_leg", "hinge", "push", "pull", "carry_core"],
-        targetPrimaryStimulus: { glutes: 8, shoulders: 6, rear_delts: 4, core: 4 },
-      },
-    ];
-  }
-
-  if (profile.goal === "strength") {
-    if (profile.daysPerWeek === 3) {
-      return [
-        {
-          id: "lower_strength",
-          title: "Lower strength",
-          summary: "Squat and hinge focus.",
-          focusMuscles: ["quads", "glutes", "hamstrings", "core"],
-          preferredMovements: ["squat", "hinge"],
-          allowedMovements: ["squat", "hinge", "carry_core"],
-          targetPrimaryStimulus: { quads: 7, glutes: 5, hamstrings: 5, core: 3 },
-        },
-        {
-          id: "upper_strength",
-          title: "Upper strength",
-          summary: "Push and pull focus.",
-          focusMuscles: ["back", "shoulders", "chest", "triceps"],
-          preferredMovements: ["pull", "push"],
-          allowedMovements: ["pull", "push", "carry_core"],
-          targetPrimaryStimulus: { back: 6, shoulders: 5, chest: 5, triceps: 3, core: 2 },
-        },
-        {
-          id: "full_strength",
-          title: "Full body strength",
-          summary: "Heavy full-body practice.",
-          focusMuscles: ["glutes", "back", "quads", "shoulders", "core"],
-          preferredMovements: ["hinge", "squat", "pull", "push"],
-          allowedMovements: ["hinge", "squat", "pull", "push", "carry_core"],
-          targetPrimaryStimulus: { glutes: 5, back: 5, quads: 4, shoulders: 4, core: 3 },
-        },
-      ];
-    }
-    return [
-      {
-        id: "squat_day",
-        title: "Squat day",
-        summary: "Squat-dominant lower body work.",
-        focusMuscles: ["quads", "glutes", "core"],
-        preferredMovements: ["squat", "single_leg"],
-        allowedMovements: ["squat", "single_leg", "carry_core"],
-        targetPrimaryStimulus: { quads: 7, glutes: 5, core: 3 },
-      },
-      {
-        id: "push_day",
-        title: "Push day",
-        summary: "Pressing focus.",
-        focusMuscles: ["shoulders", "chest", "triceps", "core"],
-        preferredMovements: ["push"],
-        allowedMovements: ["push", "carry_core"],
-        targetPrimaryStimulus: { shoulders: 6, chest: 5, triceps: 4, core: 3 },
-      },
-      {
-        id: "hinge_day",
-        title: "Hinge day",
-        summary: "Posterior chain focus.",
-        focusMuscles: ["hamstrings", "glutes", "back", "core"],
-        preferredMovements: ["hinge"],
-        allowedMovements: ["hinge", "single_leg", "carry_core"],
-        targetPrimaryStimulus: { hamstrings: 7, glutes: 5, back: 4, core: 3 },
-      },
-      {
-        id: "pull_day",
-        title: "Pull day",
-        summary: "Back and row focus.",
-        focusMuscles: ["back", "rear_delts", "biceps", "core"],
-        preferredMovements: ["pull"],
-        allowedMovements: ["pull", "carry_core"],
-        targetPrimaryStimulus: { back: 8, rear_delts: 4, biceps: 4, core: 3 },
-      },
-    ];
-  }
-
-  if (profile.daysPerWeek === 3) {
-    return [
-      {
-        id: "full_a",
-        title: "Full body A",
-        summary: "Lower plus upper balance.",
-        focusMuscles: ["glutes", "back", "shoulders", "core"],
-        preferredMovements: ["hinge", "pull", "push"],
-        allowedMovements: ["hinge", "squat", "single_leg", "pull", "push", "carry_core"],
-        targetPrimaryStimulus: { glutes: 6, back: 5, shoulders: 4, core: 3 },
-      },
-      {
-        id: "full_b",
-        title: "Full body B",
-        summary: "Single-leg and upper balance.",
-        focusMuscles: ["glutes", "quads", "back", "shoulders", "core"],
-        preferredMovements: ["single_leg", "pull", "push"],
-        allowedMovements: ["hinge", "squat", "single_leg", "pull", "push", "carry_core"],
-        targetPrimaryStimulus: { glutes: 5, quads: 5, back: 4, shoulders: 4, core: 3 },
-      },
-      {
-        id: "full_c",
-        title: "Full body C",
-        summary: "Squat and pull balance.",
-        focusMuscles: ["quads", "glutes", "back", "core"],
-        preferredMovements: ["squat", "pull", "push"],
-        allowedMovements: ["hinge", "squat", "single_leg", "pull", "push", "carry_core"],
-        targetPrimaryStimulus: { quads: 5, glutes: 4, back: 5, core: 3 },
-      },
-    ];
-  }
-
-  return [
-    {
-      id: "lower_balanced",
-      title: "Lower body",
-      summary: "Balanced lower-body work.",
-      focusMuscles: ["glutes", "quads", "hamstrings", "adductors", "core"],
-      preferredMovements: ["hinge", "squat", "single_leg"],
-      allowedMovements: ["hinge", "squat", "single_leg", "carry_core"],
-      targetPrimaryStimulus: { glutes: 6, quads: 5, hamstrings: 4, adductors: 1, core: 3 },
-    },
-    {
-      id: "upper_balanced",
-      title: "Upper body",
-      summary: "Balanced upper-body work.",
-      focusMuscles: ["back", "shoulders", "chest", "core"],
-      preferredMovements: ["pull", "push"],
-      allowedMovements: ["pull", "push", "carry_core"],
-      targetPrimaryStimulus: { back: 6, shoulders: 4, chest: 4, core: 3 },
-    },
-    {
-      id: "full_balanced",
-      title: "Full body",
-      summary: "Full-body catch-up day.",
-      focusMuscles: ["glutes", "back", "shoulders", "core"],
-      preferredMovements: ["hinge", "single_leg", "pull", "push"],
-      allowedMovements: ["hinge", "squat", "single_leg", "pull", "push", "carry_core"],
-      targetPrimaryStimulus: { glutes: 5, back: 5, shoulders: 4, core: 3 },
-    },
-    {
-      id: "upper_pull_bias",
-      title: "Upper pull bias",
-      summary: "Back and shoulder balance.",
-      focusMuscles: ["back", "shoulders", "rear_delts", "core"],
-      preferredMovements: ["pull", "push"],
-      allowedMovements: ["pull", "push", "carry_core"],
-      targetPrimaryStimulus: { back: 6, shoulders: 4, rear_delts: 3, core: 3 },
-    },
-  ];
-};
-
-export function getWeeklyTargetStimulus(
-  profile: TrainingProfile,
-  workouts: Workout[],
-): Partial<Record<MuscleGroup, number>> {
-  const split = resolveSplitVariants(getSplitTemplate(profile), profile, workouts);
-  const totals: Partial<Record<MuscleGroup, number>> = {};
-
-  split.forEach((slot) => {
-    Object.entries(slot.targetPrimaryStimulus).forEach(([muscle, sets]) => {
-      if (typeof sets !== "number" || sets <= 0) return;
-      const key = muscle as MuscleGroup;
-      totals[key] = (totals[key] ?? 0) + sets;
-    });
-  });
-
-  return totals;
-}
-
-export const getWeeklyTargetSets = getWeeklyTargetStimulus;
 
 // Public helper — lets the UI build a DraftExercise from a library exercise
 // without re-running the full generator (used by the per-exercise swap feature).

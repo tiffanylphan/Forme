@@ -1,4 +1,5 @@
 import { findExercise } from "./exercises";
+import { isLowerIsolation } from "./exercise-predicates";
 import { movementOf } from "./movement";
 import { MOVEMENT_PATTERNS, MUSCLE_GROUPS, PATTERNS } from "./types";
 import type {
@@ -151,21 +152,6 @@ const isShoulderIsolation = (exercise: Exercise): boolean =>
   (exercise.primary.includes("shoulders") || exercise.primary.includes("rear_delts")) &&
   !exercise.primary.includes("chest") &&
   !exercise.primary.includes("triceps");
-
-const isLowerIsolation = (exercise: Exercise): boolean =>
-  [
-    "Leg extension",
-    "Leg curl",
-    "Banded clamshell",
-    "Banded fire hydrant",
-    "Banded walkout",
-    "Glute bridge",
-    "Bench single-leg hip thrust",
-    "Wall sit",
-    "Wall sit with adductor squeeze",
-    "Banded wall sit abduction pulses",
-    "Sissy squat",
-  ].includes(exercise.name);
 
 export const estimateExerciseStimulus = (exercise: Exercise): ExerciseStimulus => {
   const movement = movementOf(exercise);

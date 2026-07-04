@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EXERCISES, findExercise } from "./exercises";
-import { FINISHER_TEMPLATES, generateNextWorkout } from "./generator";
+import { FINISHER_TEMPLATES } from "./finishers";
+import { generateNextWorkout } from "./generator";
 import { movementOf } from "./movement";
 import type { TrainingProfile, Workout } from "./types";
 

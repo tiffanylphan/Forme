@@ -14,6 +14,7 @@ import {
   getWeeklyTargetStimulus,
   stashDraft,
 } from "@/lib/generator";
+import { familyOf } from "@/lib/exercise-predicates";
 import {
   FOCUSABLE_MUSCLES,
   movementOf,
@@ -100,48 +101,6 @@ type SwapRole =
   | "bilateral_squat"
   | "carry_core"
   | "general";
-
-const familyOf = (ex: Exercise): string => {
-  const name = ex.name.toLowerCase();
-  if (name.includes("hip thrust") || name.includes("glute bridge")) return "hip_thrust";
-  if (name.includes("romanian deadlift") || name.includes("rdl")) return "rdl";
-  if (name.includes("deadlift")) return "deadlift";
-  if (name.includes("split squat") || name.includes("bulgarian")) return "split_squat";
-  if (name.includes("lunge")) return "lunge";
-  if (name.includes("step-up")) return "step_up";
-  if (name.includes("row")) return "row";
-  if (
-    name.includes("pulldown") ||
-    name.includes("pull-up") ||
-    name.includes("chin-up")
-  ) {
-    return "vertical_pull";
-  }
-  if (
-    name.includes("face pull") ||
-    name.includes("reverse fly") ||
-    name.includes("pull-apart")
-  ) {
-    return "rear_delt";
-  }
-  if (
-    name.includes("lateral raise") ||
-    name.includes("front raise") ||
-    name.includes("arnold")
-  ) {
-    return "shoulder_isolation";
-  }
-  if (name.includes("overhead press") || name.includes("landmine press")) {
-    return "vertical_press";
-  }
-  if (name.includes("squat") || name.includes("leg press") || name.includes("hack squat")) {
-    return "squat_pattern";
-  }
-  if (name.includes("leg curl")) return "leg_curl";
-  if (name.includes("carry")) return "carry";
-  if (ex.pattern === "core") return "core";
-  return `${ex.pattern}_${ex.equipment}`;
-};
 
 const overlapCount = (a: readonly string[], b: readonly string[]): number =>
   a.filter((item) => b.includes(item)).length;
