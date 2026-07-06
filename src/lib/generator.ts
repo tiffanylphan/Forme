@@ -743,6 +743,12 @@ const inferCompletedSlotIds = (
       available.delete(explicitSlotId);
       return;
     }
+    if (
+      explicitSlotId &&
+      (explicitSlotId === PHYSIQUE_UPPER_A_SLOT.id || explicitSlotId === PHYSIQUE_UPPER_B_SLOT.id)
+    ) {
+      return;
+    }
     const hasStrugglingLift = workout.exercises.some(
       (exercise) =>
         exercise.progressionStatus === "held" || exercise.progressionStatus === "missed",

@@ -773,7 +773,9 @@ function WeeklyTargetCard({
               <div className="flex items-center gap-2">
                 <MuscleTag muscle={row.muscle} />
                 <span className="text-[11px] text-text-subtle capitalize">
-                  {row.remaining === 0
+                  {row.done > row.target
+                    ? "Over target"
+                    : row.remaining === 0
                     ? "On target"
                     : `${row.remaining.toFixed(1)} stimulus left`}
                 </span>
