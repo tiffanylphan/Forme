@@ -94,6 +94,7 @@ export type DraftExercise = {
   // One target per round; numbers = reps, strings = "30s" etc.
   targets: (number | string)[];
   suggestedWeight: number | null;
+  suggestedDuration: number | null;
   unit: WeightUnit;
   isFamiliar: boolean;
   progression: {
@@ -179,6 +180,22 @@ const lastWorkingWeight = (
         const last = weighted[weighted.length - 1];
         return { weight: last.weight, unit: last.unit };
       }
+    }
+  }
+  return null;
+};
+
+const lastWorkingDuration = (name: string, workouts: Workout[]): number | null => {
+  const sorted = [...workouts].sort((a, b) =>
+    a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt,
+  );
+  for (const w of sorted) {
+    for (const e of w.exercises) {
+      if (e.exerciseName !== name) continue;
+      const durations = e.sets
+        .map((s) => s.durationSec)
+        .filter((d): d is number => typeof d === "number" && d > 0);
+      if (durations.length > 0) return Math.max(...durations);
     }
   }
   return null;
@@ -990,7 +1007,9 @@ const scoreSplitSlot = (
         .map((m) => muscleSaturation[m] as number),
     );
     if (maxMajorSat > PLANNER_TUNING.splitSelection.saturationOverTargetThreshold) {
-      score -= PLANNER_TUNING.splitSelection.saturationOverTargetPenalty;
+      const excess = maxMajorSat - PLANNER_TUNING.splitSelection.saturationOverTargetThreshold;
+      score -= PLANNER_TUNING.splitSelection.saturationOverTargetPenalty +
+        excess * PLANNER_TUNING.splitSelection.saturationOverTargetPenaltyScale;
     } else if (avg >= PLANNER_TUNING.splitSelection.saturationHighThreshold) {
       score -= PLANNER_TUNING.splitSelection.saturationHighPenalty;
     } else if (avg >= PLANNER_TUNING.splitSelection.saturationMediumThreshold) {
@@ -1479,6 +1498,7 @@ export function buildDraftExercise(
     movement: movementOf(ex),
     targets,
     suggestedWeight: capSuggestedWeight(last?.weight ?? null, ex, environment),
+    suggestedDuration: ex.tracksDuration ? lastWorkingDuration(ex.name, workouts) : null,
     unit: last?.unit ?? "lb",
     isFamiliar: knownNames.has(ex.name),
     progression: buildProgression(ex, targets, workouts),
@@ -2172,6 +2192,7 @@ export function generateNextWorkout(
       movement: movementOf(ex),
       targets,
       suggestedWeight: capSuggestedWeight(last?.weight ?? null, ex, activeProfile.equipment),
+      suggestedDuration: ex.tracksDuration ? lastWorkingDuration(ex.name, workouts) : null,
       unit: last?.unit ?? "lb",
       isFamiliar: known.has(ex.name),
       progression: buildProgression(ex, targets, workouts),

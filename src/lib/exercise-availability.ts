@@ -11,6 +11,10 @@ const BODYWEIGHT_ONLY_BLOCKS = [
   "Hyperextension",
 ];
 
+// Specialized commercial-gym machines not found in typical home gym setups,
+// even when the user has unlocked "machine" via homeGymEquipment.
+const FULL_GYM_ONLY_MACHINES = ["Adductor machine"];
+
 export const environmentAllowsExercise = (
   ex: Exercise,
   profileOrEnvironment:
@@ -55,6 +59,9 @@ export const environmentAllowsExercise = (
   if (baseEquipment.includes(ex.equipment)) return true;
   if (ex.equipment === "cable") return hasCable;
   if (ex.equipment === "barbell") return hasBarbell;
-  if (ex.equipment === "machine") return hasMachine;
+  if (ex.equipment === "machine") {
+    if (FULL_GYM_ONLY_MACHINES.includes(ex.name)) return false;
+    return hasMachine;
+  }
   return false;
 };

@@ -86,6 +86,7 @@ const hydrateDraft = (draft: WorkoutDraft): ExerciseLog[] => {
       const sets: SetEntry[] = dex.targets.map((t) =>
         newSet({
           reps: typeof t === "number" ? t : null,
+          durationSec: typeof t === "string" ? (dex.suggestedDuration ?? null) : null,
           weight: dex.suggestedWeight ?? null,
           unit: dex.unit,
         }),
@@ -375,6 +376,29 @@ export default function LogPage() {
 
   const swapExercise = (exerciseId: string, exerciseName: string) => {
     setSaveError(null);
+    const allWorkouts = loadWorkouts();
+    let lastWeight: number | null = null;
+    let lastDuration: number | null = null;
+    let lastUnit: WeightUnit = defaultUnit;
+    const sorted = [...allWorkouts].sort((a, b) =>
+      a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt,
+    );
+    for (const workout of sorted) {
+      if (workout.id === workoutId) continue;
+      const match = workout.exercises.find((e) => e.exerciseName === exerciseName);
+      if (match) {
+        const weights = match.sets
+          .map((s) => s.weight)
+          .filter((w): w is number => typeof w === "number");
+        if (weights.length > 0) lastWeight = Math.max(...weights);
+        const durations = match.sets
+          .map((s) => s.durationSec)
+          .filter((d): d is number => typeof d === "number" && d > 0);
+        if (durations.length > 0) lastDuration = Math.max(...durations);
+        lastUnit = match.sets[match.sets.length - 1]?.unit ?? defaultUnit;
+        break;
+      }
+    }
     setExercises((prev) =>
       prev.map((exercise) =>
         exercise.id !== exerciseId
@@ -382,6 +406,13 @@ export default function LogPage() {
           : {
               ...exercise,
               exerciseName,
+              sets: exercise.sets.map((s) => ({
+                ...s,
+                reps: null,
+                durationSec: lastDuration,
+                weight: lastWeight,
+                unit: lastUnit,
+              })),
             },
       ),
     );

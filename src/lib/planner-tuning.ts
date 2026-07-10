@@ -74,6 +74,7 @@ export const PLANNER_TUNING = {
     saturationMediumPenalty: 4,
     saturationOverTargetThreshold: 1.0,
     saturationOverTargetPenalty: 20,
+    saturationOverTargetPenaltyScale: 20,
     saturationOverTargetMajorMuscleThreshold: 4,
     fullOverlapPenalty: 6,
     partialOverlapPenalty: 3,

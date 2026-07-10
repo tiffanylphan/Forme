@@ -1476,6 +1476,7 @@ describe("generateNextWorkout", () => {
       }),
       workout("w4", "2026-05-08", [
         { name: "Lat pulldown", sets: 4 },
+        { name: "Cable row", sets: 4 },
         { name: "DB lateral raise", sets: 3 },
         { name: "DB curl", sets: 2 },
       ], {
@@ -1495,6 +1496,41 @@ describe("generateNextWorkout", () => {
     const draft = generateNextWorkout(workouts, "2026-05-10", 2468, profile);
 
     expect(draft.split.title).toMatch(/^Lower/);
+  });
+
+  it("graduated saturation penalty steers away from a slot with muscles more than 100% over target", () => {
+    // w3 (Lower B) puts quads at ~144% of the weekly target (1.44×, excess=0.44).
+    // With a flat -20 saturation penalty (scale=0), Lower B's deficit coverage for core,
+    // hamstrings, and adductors would edge out Upper A. The graduated penalty adds
+    // 0.44 × 20 = 8.8 extra points, making Upper A the correct recommendation.
+    // This test fails if saturationOverTargetPenaltyScale is removed or set to 0.
+    const workouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "Barbell Romanian deadlift", sets: 3 },
+      ], { slotId: "lower_glute_ham", title: "Lower A" }),
+      workout("w2", "2026-05-06", [
+        { name: "Cable row", sets: 4 },
+        { name: "DB lateral raise", sets: 3 },
+      ], { slotId: "upper_back_shoulder", title: "Upper A" }),
+      workout("w3", "2026-05-07", [
+        { name: "Goblet squat", sets: 4 },
+        { name: "DB reverse lunge", sets: 3 },
+      ], { slotId: "lower_glute_quad", title: "Lower B" }),
+      workout("w4", "2026-05-08", [
+        { name: "Lat pulldown", sets: 4 },
+        { name: "DB lateral raise", sets: 3 },
+        { name: "DB curl", sets: 2 },
+      ], { slotId: "upper_back_shoulder_arms", title: "Upper B" }),
+      workout("w5", "2026-05-09", [
+        { name: "Cable row", sets: 4 },
+        { name: "Face pull", sets: 3 },
+        { name: "DB curl", sets: 2 },
+      ], { slotId: "upper_back_shoulder_arms", title: "Upper B" }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-10", 2468, profile);
+    expect(draft.split.slotId).toBe("upper_back_shoulder");
   });
 
   it("does not let a hybrid manual session consume a new split slot too aggressively", () => {
