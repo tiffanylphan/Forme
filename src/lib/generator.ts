@@ -1289,10 +1289,18 @@ const maybeOverrideForCriticalGap = (
   recentMuscleFatigue: Partial<Record<MuscleGroup, number>> = {},
 ): number => {
   const baseSlot = split[baseIndex];
+  // Pull/push are ranked above hinge here so that when a lower slot (hinge-dominant)
+  // is the base, missing pull/push gets checked before hinge short-circuits the loop.
+  const criticalGapPriority: Partial<Record<MovementPattern, number>> = {
+    ...MOVEMENT_PRIORITY,
+    pull: 1.5,
+    push: 1.0,
+    hinge: 1.1,
+  };
   const criticalMovements = MOVEMENT_PATTERNS
     .filter((movement) => (need[movement] ?? 0) >= 3)
     .sort(
-      (a, b) => (MOVEMENT_PRIORITY[b] ?? 0) - (MOVEMENT_PRIORITY[a] ?? 0),
+      (a, b) => (criticalGapPriority[b] ?? 0) - (criticalGapPriority[a] ?? 0),
     );
 
   if (criticalMovements.length === 0) return baseIndex;
@@ -1606,9 +1614,9 @@ export function generateNextWorkout(
 
   const incompleteIndices = getIncompleteSplitSlotIndices(split, recentWorkoutsForSlotSelection);
   const weeklyBiasBalance = summarizeWeeklyBiasBalance(split, recentWorkoutsForSlotSelection);
-  const sessionIndex = maybeOverrideForStalledBias(
+  const sessionIndex = maybeOverrideForCriticalGap(
     split,
-    maybeOverrideForCriticalGap(
+    maybeOverrideForStalledBias(
       split,
       getNextSplitSlotIndex(
         split,
@@ -1619,20 +1627,20 @@ export function generateNextWorkout(
         lastSessionMovements,
         recentMuscleFatigue,
       ),
+      incompleteIndices,
       need,
       muscleDeficits,
       muscleSaturation,
       lastSessionMovements,
       weeklyBiasBalance,
+      stalledBiasPressure,
       recentMuscleFatigue,
     ),
-    incompleteIndices,
     need,
     muscleDeficits,
     muscleSaturation,
     lastSessionMovements,
     weeklyBiasBalance,
-    stalledBiasPressure,
     recentMuscleFatigue,
   );
   const rankedSlots = rankSplitSlotIndices(

@@ -1428,6 +1428,38 @@ describe("generateNextWorkout", () => {
     expect(draft.split.slotId).toMatch(/^lower_/);
   });
 
+  it("does not let lower stall pressure override an upper slot chosen to close a push critical gap (3-day split)", () => {
+    // Two prior Lower A sessions with stalling hinge exercises → lower stall pressure dominates.
+    // Upper A done cross-week (Jul 5), Lower B done this week (Jul 8) — no push at all.
+    // push need = 3 (critical gap). Lower A doesn't allow push; Upper B does.
+    // The planner must recommend Upper B. Stall pressure must not override it back to Lower A.
+    const workouts = [
+      workout("w1", "2026-06-25", [
+        { name: "Barbell hip thrust", sets: 3, progressionStatus: "held" },
+        { name: "DB Romanian deadlift", sets: 3, progressionStatus: "held" },
+      ], { slotId: "lower_glute_ham", title: "Lower A · Posterior" }),
+      workout("w2", "2026-07-01", [
+        { name: "Barbell hip thrust", sets: 3, progressionStatus: "missed" },
+        { name: "DB Romanian deadlift", sets: 3, progressionStatus: "missed" },
+      ], { slotId: "lower_glute_ham", title: "Lower A · Posterior" }),
+      workout("w3", "2026-07-05", [
+        { name: "Lat pulldown", sets: 4 },
+        { name: "Cable row", sets: 4 },
+        { name: "DB reverse fly", sets: 3 },
+      ], { slotId: "upper_back_shoulder", title: "Upper A · Back/Shoulders" }),
+      workout("w4", "2026-07-08", [
+        { name: "DB sumo squat", sets: 4 },
+        { name: "DB front rack curtsey lunge", sets: 3 },
+        { name: "Cossack squat", sets: 3 },
+      ], { slotId: "lower_glute_quad", title: "Lower B · Quad/Glute" }),
+    ];
+
+    // Last upper was Upper A → resolved split uses Upper B next.
+    // Upper B allows push; Lower A does not.
+    const draft = generateNextWorkout(workouts, "2026-07-09", 42, threeDayProfile);
+    expect(draft.split.slotId).toBe("upper_back_shoulder_arms");
+  });
+
   it("rotates away from a stalled conditioning finisher and notes it in the rationale", () => {
     const workouts = [
       workout("w1", "2026-05-05", [
