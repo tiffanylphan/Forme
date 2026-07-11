@@ -1460,6 +1460,32 @@ describe("generateNextWorkout", () => {
     expect(draft.split.slotId).toBe("upper_back_shoulder_arms");
   });
 
+  it("does not strip push from Upper B when plyo/conditioning moves in a lower session inflated chest/tricep fatigue but push is entirely uncovered this week", () => {
+    // Lower B (Jul 8) has plyo/conditioning exercises whose chest/tricep primary/secondary
+    // inflate pushFatigue above the strictPullBias threshold — but no push-pattern
+    // exercise was done this week (need["push"] = 3). Push must stay in allowedMovements.
+    const workouts = [
+      workout("w1", "2026-07-05", [
+        { name: "Lat pulldown", sets: 4 },
+        { name: "Cable row", sets: 4 },
+        { name: "DB reverse fly", sets: 3 },
+      ], { slotId: "upper_back_shoulder", title: "Upper A · Back/Shoulders" }),
+      workout("w2", "2026-07-08", [
+        { name: "DB sumo squat", sets: 4 },
+        { name: "Cossack squat", sets: 3 },
+        { name: "Half burpee w/ dumbbell", sets: 3 },
+        { name: "Push-up to renegade row", sets: 3 },
+      ], { slotId: "lower_glute_quad", title: "Lower B · Quad/Glute" }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-07-09", 42, threeDayProfile, {
+      forcedSlotId: "upper_back_shoulder_arms",
+    });
+    expect(draft.split.slotId).toBe("upper_back_shoulder_arms");
+    // strictPullBias removes push from the session; when push need = 3, it must not fire.
+    expect(draft.split.summary).not.toContain("minimal pressing");
+  });
+
   it("rotates away from a stalled conditioning finisher and notes it in the rationale", () => {
     const workouts = [
       workout("w1", "2026-05-05", [

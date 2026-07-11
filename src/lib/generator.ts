@@ -881,6 +881,7 @@ const adaptSelectedSlot = (
   profile: TrainingProfile,
   muscleDeficits: MuscleDeficitMap,
   recentMuscleFatigue: Partial<Record<MuscleGroup, number>>,
+  need: Record<MovementPattern, number>,
 ): SplitSlot => {
   if (!(profile.goal === "physique" && isUpperSlot(slot) && !isLowerSlot(slot))) return slot;
 
@@ -908,7 +909,9 @@ const adaptSelectedSlot = (
     return slot;
   }
 
+  // Plyo/conditioning in lower sessions can inflate chest/tricep fatigue without representing actual pressing — guard: skip when push is entirely uncovered this week.
   const strictPullBias =
+    (need["push"] ?? 0) < 3 &&
     pushFatigue >= PLANNER_TUNING.splitSelection.adaptiveUpperPullPushFatigueThreshold;
 
   // When shoulders are more deficient than rear delts, don't let the
@@ -1669,6 +1672,7 @@ export function generateNextWorkout(
     activeProfile,
     muscleDeficits,
     recentMuscleFatigue,
+    need,
   );
   const currentWeekExerciseNames = new Set(
     coverage.workouts.flatMap((workout) =>
