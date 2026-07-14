@@ -170,6 +170,7 @@ export const PLANNER_TUNING = {
     repeatedSingleLegHardPenalty: 8,
     repeatedHingePenalty: 3,
     repeatedHingeHardPenalty: 8,
+    repeatedDeadliftFamilyPenalty: 20,
     repeatedRdlFamilyPenalty: 6,
     recentLowerFamilyRepeatPenalty: 2.5,
     focusPrimaryBonus: 0.6,

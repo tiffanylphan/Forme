@@ -2016,6 +2016,12 @@ export function generateNextWorkout(
       if (claimedMovements.hinge >= 1) s -= PLANNER_TUNING.exerciseSelection.repeatedHingePenalty;
       if (claimedMovements.hinge >= 2) s -= PLANNER_TUNING.exerciseSelection.repeatedHingeHardPenalty;
     }
+    // Hard-block a second deadlift-family exercise in the same session regardless of goal.
+    // Two deadlift variations in one session stacks too much posterior-chain fatigue on
+    // identical movement patterns.
+    if (family === "deadlift" && (claimedFamilies["deadlift"] ?? 0) >= 1) {
+      s -= PLANNER_TUNING.exerciseSelection.repeatedDeadliftFamilyPenalty;
+    }
     // Penalize repeating a lower family that appeared in either of the last 2 sessions.
     // The currentWeekFamilies penalty (1.2) is too weak to capture "you just did lunges
     // yesterday"; this provides a stronger but still soft inter-session signal.
@@ -2577,13 +2583,24 @@ export function generateNextWorkout(
     pushMovement(compoundPick.movement);
     claimWithStress(secondaryPick.exercise, 4);
     pushMovement(secondaryPick.movement);
+    // Put the barbell exercise first when the need-ranked "compound" is lighter equipment.
+    // A barbell deadlift should lead a dumbbell lunge, not follow it.
+    const barbellLeads =
+      secondaryPick.exercise.equipment === "barbell" &&
+      compoundPick.exercise.equipment !== "barbell";
     sections.push({
       kind: "superset",
       rounds: 4,
       repScheme: "strength pairing · main lift + support move",
       exercises: [
-        makeDraftEx(compoundPick.exercise, compoundTargets),
-        makeDraftEx(secondaryPick.exercise, secondaryTargets.slice(0, 4)),
+        makeDraftEx(
+          barbellLeads ? secondaryPick.exercise : compoundPick.exercise,
+          barbellLeads ? secondaryTargets.slice(0, 4) : compoundTargets,
+        ),
+        makeDraftEx(
+          barbellLeads ? compoundPick.exercise : secondaryPick.exercise,
+          barbellLeads ? compoundTargets : secondaryTargets.slice(0, 4),
+        ),
       ],
     });
   } else {
