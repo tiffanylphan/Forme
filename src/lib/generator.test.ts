@@ -1117,6 +1117,81 @@ describe("generateNextWorkout", () => {
     expect(glutePrimaryExercises.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("includes a pull exercise in 3-day physique Lower A sessions when pull need is high", () => {
+    // Prior Lower A covered only hinge/single_leg — pull need stays at max
+    const workouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "DB Bulgarian split squat", sets: 3 },
+      ], { slotId: "lower_glute_ham", title: "Lower A" }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-07", 5678, threeDayProfile, {
+      forcedSlotId: "lower_glute_ham",
+    });
+
+    const allExercises = draft.sections.flatMap((s) => s.exercises);
+    const hasPull = allExercises.some(
+      (ex) => ex.movement === "pull" || ex.primary.includes("back"),
+    );
+    expect(draft.split.title).toBe("Lower A · Posterior");
+    expect(hasPull).toBe(true);
+  });
+
+  it("includes a push exercise in 3-day physique Lower B sessions when push need is high", () => {
+    // Lower A done without push/pull — push need stays at max
+    const workouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Barbell hip thrust", sets: 4 },
+        { name: "DB Bulgarian split squat", sets: 3 },
+      ], { slotId: "lower_glute_ham", title: "Lower A" }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-05-07", 5678, threeDayProfile, {
+      forcedSlotId: "lower_glute_quad",
+    });
+
+    const allExercises = draft.sections.flatMap((s) => s.exercises);
+    const hasPush = allExercises.some(
+      (ex) => ex.movement === "push" || ex.primary.includes("shoulders"),
+    );
+    expect(draft.split.title).toBe("Lower B · Quad/Glute");
+    expect(hasPush).toBe(true);
+  });
+
+  it("does not stack three posterior-chain hinge exercises in a lower session", () => {
+    const draft = generateNextWorkout([], "2026-05-06", 9292, profile, {
+      forcedSlotId: "lower_glute_ham",
+    });
+
+    const allExercises = draft.sections.flatMap((s) => s.exercises);
+    const hingeDominantCount = allExercises.filter(
+      (ex) =>
+        ex.movement === "hinge" ||
+        (ex.movement === "single_leg" && ex.name.toLowerCase().includes("rdl")),
+    ).length;
+
+    expect(hingeDominantCount).toBeLessThanOrEqual(2);
+  });
+
+  it("includes a pull exercise in 4-day physique Lower A sessions", () => {
+    const draft = generateNextWorkout([], "2026-05-18", 4242, profile, {
+      forcedSlotId: "lower_glute_ham",
+    });
+    const allExercises = draft.sections.flatMap((s) => s.exercises);
+    const hasPull = allExercises.some((ex) => ex.movement === "pull");
+    expect(hasPull).toBe(true);
+  });
+
+  it("includes a pull exercise in 3-day physique Lower A sessions via supplemental cross-over", () => {
+    const draft = generateNextWorkout([], "2026-05-06", 123, threeDayProfile, {
+      forcedSlotId: "lower_glute_ham",
+    });
+    const allExercises = draft.sections.flatMap((s) => s.exercises);
+    const hasPull = allExercises.some((ex) => ex.movement === "pull");
+    expect(hasPull).toBe(true);
+  });
+
   it("avoids stacking multiple knee-dominant unilateral lower families in one lower-b session", () => {
     const workouts = [
       workout("w1", "2026-05-05", [

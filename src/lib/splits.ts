@@ -7,6 +7,9 @@ export type SplitSlot = {
   focusMuscles: MuscleGroup[];
   preferredMovements: MovementPattern[];
   allowedMovements: MovementPattern[];
+  // Movements added to exercise selection only — excluded from slot scoring and
+  // override logic so they don't compete with dedicated upper/lower slots.
+  supplementalMovements?: MovementPattern[];
   targetPrimaryStimulus: Partial<Record<MuscleGroup, number>>;
 };
 
@@ -54,6 +57,7 @@ export const getSplitTemplate = (
           focusMuscles: ["glutes", "hamstrings", "core"],
           preferredMovements: ["hinge", "single_leg", "squat"],
           allowedMovements: ["hinge", "single_leg", "squat", "carry_core"],
+          supplementalMovements: ["pull"],
           targetPrimaryStimulus: { glutes: 8, hamstrings: 6, core: 4 },
         },
         PHYSIQUE_UPPER_A_SLOT,
@@ -64,6 +68,7 @@ export const getSplitTemplate = (
           focusMuscles: ["glutes", "quads", "hamstrings", "adductors", "core"],
           preferredMovements: ["single_leg", "squat", "hinge"],
           allowedMovements: ["single_leg", "squat", "hinge", "carry_core"],
+          supplementalMovements: ["push"],
           targetPrimaryStimulus: { glutes: 7, quads: 6, hamstrings: 4, adductors: 2, core: 4 },
         },
       ];

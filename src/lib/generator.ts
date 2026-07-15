@@ -1723,6 +1723,8 @@ export function generateNextWorkout(
 
   const used = new Set<string>();
   const claimedFamilies: Partial<Record<string, number>> = {};
+  let pendingRdlPick = false;
+  let pendingHingePick = false;
   let barbellCount = 0;
   const plannedSessionStress: Partial<Record<MuscleGroup, number>> = {};
   const claimedMovements: Record<MovementPattern, number> = {} as Record<
@@ -1736,7 +1738,7 @@ export function generateNextWorkout(
     if (!movement) return -10; // plyo/conditioning/calf — never a planned pick
     if (!environmentAllowsExercise(ex, activeProfile)) return -10;
     if (!goalAllows(ex, activeProfile.goal)) return -10;
-    if (!slot.allowedMovements.includes(movement)) return -10;
+    if (!slot.allowedMovements.includes(movement) && !(slot.supplementalMovements ?? []).includes(movement)) return -10;
     const family = familyOf(ex);
     if (
       (family === "biceps_isolation" || family === "triceps_isolation" || family === "hip_thrust" || family === "rdl") &&
@@ -1853,7 +1855,9 @@ export function generateNextWorkout(
       const budgetPenaltyMultiplier =
         armBiasSlot && isDirectArmFocus(ex)
           ? PLANNER_TUNING.exerciseSelection.armBiasBudgetPenaltyMultiplier
-          : PLANNER_TUNING.exerciseSelection.defaultBudgetPenaltyMultiplier;
+          : lowerBiasSlot && (movement === "pull" || movement === "push")
+            ? PLANNER_TUNING.exerciseSelection.lowerBiasUpperMovementBudgetPenaltyMultiplier
+            : PLANNER_TUNING.exerciseSelection.defaultBudgetPenaltyMultiplier;
       s -= (projectedSessionTotal - sessionFatigueBudget) * budgetPenaltyMultiplier;
     }
 
@@ -2015,6 +2019,20 @@ export function generateNextWorkout(
     if (lowerBiasSlot && movement === "hinge" && activeProfile.goal !== "strength") {
       if (claimedMovements.hinge >= 1) s -= PLANNER_TUNING.exerciseSelection.repeatedHingePenalty;
       if (claimedMovements.hinge >= 2) s -= PLANNER_TUNING.exerciseSelection.repeatedHingeHardPenalty;
+    }
+    // RDL-family single_leg exercises (e.g. "Single-leg DB RDL") are kinematically
+    // hinge-dominant even though movementOf() returns "single_leg". Count them alongside
+    // true hinges for posterior-chain stacking purposes and apply a meaningful penalty
+    // when the combined total reaches 2 — preventing a 3rd hinge-pattern exercise.
+    if (lowerBiasSlot && activeProfile.goal !== "strength") {
+      // Count both claimed rdl-family exercises AND any pending rdl-family first-pick
+      // in the current superset (scored before the first pick is claimed).
+      const rdlFamilyClaimed = (claimedFamilies["rdl"] ?? 0) + (pendingRdlPick ? 1 : 0);
+      const hingePosteriorTotal = claimedMovements.hinge + rdlFamilyClaimed + (pendingHingePick ? 1 : 0);
+      const isHingeDominantPick = movement === "hinge" || (movement === "single_leg" && family === "rdl");
+      if (isHingeDominantPick && hingePosteriorTotal >= 2) {
+        s -= PLANNER_TUNING.exerciseSelection.posteriorChainOverloadPenalty;
+      }
     }
     // Hard-block a second deadlift-family exercise in the same session regardless of goal.
     // Two deadlift variations in one session stacks too much posterior-chain fatigue on
@@ -2246,7 +2264,7 @@ export function generateNextWorkout(
     slot.allowedMovements.includes(movement),
   );
   const accessoryMovements = ACCESSORY_MOVEMENTS.filter((movement) =>
-    slot.allowedMovements.includes(movement),
+    slot.allowedMovements.includes(movement) || (slot.supplementalMovements ?? []).includes(movement),
   );
   const lowerBiasSlot =
     slot.preferredMovements.includes("hinge") ||
@@ -2382,6 +2400,11 @@ export function generateNextWorkout(
     const first = pickForMovement(allowed, rounds, filter);
     if (!first) return false;
 
+    // Signal to scoreExercise that the first pick is hinge- or rdl-family, so the
+    // posterior-chain overload penalty fires when scoring second-pick candidates
+    // (before the first pick is claimed).
+    pendingRdlPick = familyOf(first.exercise) === "rdl";
+    pendingHingePick = movementOf(first.exercise) === "hinge";
     let second = pickForMovement(
       allowed.filter((movement) => movement !== first.movement),
       rounds,
@@ -2398,6 +2421,8 @@ export function generateNextWorkout(
           (filter ? filter(ex) : true),
       );
     }
+    pendingRdlPick = false;
+    pendingHingePick = false;
     if (!second) return false;
 
     claimWithStress(first.exercise, rounds);
@@ -2678,6 +2703,25 @@ export function generateNextWorkout(
       secondAccessoryTargets,
       secondAccessoryFilter,
     );
+  }
+
+  // Supplemental cross-over: if the slot has supplementalMovements and no exercise
+  // from that movement appeared in the accessory picks, add a short block now.
+  for (const suppMovement of (slot.supplementalMovements ?? [])) {
+    const hasSuppWork = sections.some((section) =>
+      section.exercises.some((ex) => ex.movement === suppMovement),
+    );
+    if (!hasSuppWork) {
+      addAccessoryBlock(
+        [suppMovement],
+        3,
+        "10–12 reps · cross-over",
+        [12, 10, 10],
+        (ex) =>
+          environmentAllowsExercise(ex, activeProfile) &&
+          goalAllows(ex, activeProfile.goal),
+      );
+    }
   }
 
   // Fill-in blocks run before the finisher so the finisher is always last in the

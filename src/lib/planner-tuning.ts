@@ -171,6 +171,8 @@ export const PLANNER_TUNING = {
     repeatedHingePenalty: 3,
     repeatedHingeHardPenalty: 8,
     repeatedDeadliftFamilyPenalty: 20,
+    posteriorChainOverloadPenalty: 100,
+    lowerBiasUpperMovementBudgetPenaltyMultiplier: 0.3,
     repeatedRdlFamilyPenalty: 6,
     recentLowerFamilyRepeatPenalty: 2.5,
     focusPrimaryBonus: 0.6,
