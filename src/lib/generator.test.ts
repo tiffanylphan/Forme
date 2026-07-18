@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EXERCISES, findExercise } from "./exercises";
+import { familyOf } from "./exercise-predicates";
 import { FINISHER_TEMPLATES } from "./finishers";
 import { generateNextWorkout } from "./generator";
 import { movementOf } from "./movement";
@@ -2225,5 +2226,31 @@ describe("generateNextWorkout", () => {
     ];
     const draft = generateNextWorkout(workouts, "2026-06-28", 123, threeDayProfile);
     expect(draft.split.slotId).toBe("upper_back_shoulder");
+  });
+
+  it("prefers a vertical press compound anchor over a familiar shoulder isolation exercise", () => {
+    const oldWorkout = workout("old", "2026-04-01", [
+      { name: "DB prone press", sets: 4 },
+    ]);
+
+    const draft = generateNextWorkout(
+      [oldWorkout],
+      "2026-07-15",
+      42,
+      {
+        ...profile,
+        goal: "strength",
+        daysPerWeek: 4,
+        equipment: "dumbbells",
+        experience: "intermediate",
+      },
+      { forcedSlotId: "push_day" },
+    );
+
+    const firstPush = draft.sections
+      .flatMap((s) => s.exercises)
+      .find((ex) => movementOf(findExercise(ex.name)!) === "push");
+
+    expect(familyOf(findExercise(firstPush?.name ?? "")!)).toBe("vertical_press");
   });
 });

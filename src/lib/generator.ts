@@ -15,6 +15,7 @@ import {
   isActivationLowerAccessory,
   isBackOrShoulderFocused,
   isBackPullAnchor,
+  isVerticalPressAnchor,
   isChestDominantPush,
   isDirectArmFocus,
   isDirectGluteFocus,
@@ -1954,6 +1955,17 @@ export function generateNextWorkout(
         s += PLANNER_TUNING.exerciseSelection.earlyBackAnchorBonus;
       } else if (hasPrimary(ex, "rear_delts") || isDirectArmFocus(ex)) {
         s -= PLANNER_TUNING.exerciseSelection.earlyBackSupportPenalty;
+      }
+    }
+    if (
+      movement === "push" &&
+      claimedMovements.push === 0 &&
+      slot.focusMuscles.includes("shoulders")
+    ) {
+      if (isVerticalPressAnchor(ex)) {
+        s += PLANNER_TUNING.exerciseSelection.earlyPushAnchorBonus;
+      } else if (familyOf(ex) === "shoulder_isolation") {
+        s -= PLANNER_TUNING.exerciseSelection.earlyPushIsolationPenalty;
       }
     }
     if (slot.preferredMovements.includes(movement)) s += PLANNER_TUNING.exerciseSelection.preferredMovementBonus;

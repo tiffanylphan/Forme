@@ -76,7 +76,13 @@ export const familyOf = (ex: Exercise): string => {
   }
   if (name.includes("lateral raise") || name.includes("front raise") || name.includes("arnold") || name.includes("prone press"))
     return "shoulder_isolation";
-  if (name.includes("overhead press") || name.includes("landmine press"))
+  if (
+    name.includes("overhead press") ||
+    name.includes("landmine press") ||
+    name.includes("strict press") ||
+    name.includes("push press") ||
+    name.includes("press to windmill")
+  )
     return "vertical_press";
   if (name.includes("squat") || name.includes("leg press") || name.includes("hack squat"))
     return "squat_pattern";
@@ -184,6 +190,11 @@ export const isBackPullAnchor = (ex: Exercise): boolean =>
   ex.name !== "DB renegade row" &&
   ex.name !== "Push-up to renegade row" &&
   (familyOf(ex) === "row" || familyOf(ex) === "vertical_pull");
+
+export const isVerticalPressAnchor = (ex: Exercise): boolean =>
+  movementOf(ex) === "push" &&
+  hasPrimary(ex, "shoulders") &&
+  familyOf(ex) === "vertical_press";
 
 export const isDirectGluteFocus = (ex: Exercise): boolean =>
   hasPrimary(ex, "glutes") &&

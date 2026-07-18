@@ -153,6 +153,8 @@ export const PLANNER_TUNING = {
     knownExerciseBonus: 1,
     earlyBackAnchorBonus: 2.4,
     earlyBackSupportPenalty: 1.8,
+    earlyPushAnchorBonus: 2.4,
+    earlyPushIsolationPenalty: 1.8,
     upperPullRepeatVerticalPenalty: 12,
     upperPullNeedsRowPenalty: 4,
     upperPullRowBalanceBonus: 3,
