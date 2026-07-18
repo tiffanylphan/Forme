@@ -11,6 +11,7 @@ export const EXERCISES: Exercise[] = [
   { name: "DB sumo squat", primary: ["glutes", "quads"], secondary: ["hamstrings", "core"], equipment: "dumbbell", pattern: "squat" },
   { name: "Bodyweight squat", primary: ["quads", "glutes"], secondary: ["hamstrings"], equipment: "bodyweight", pattern: "squat" },
   { name: "Squat jump", primary: ["quads", "glutes"], secondary: ["calves"], equipment: "bodyweight", pattern: "plyo" },
+  { name: "Mini band wide to narrow jump squat", primary: ["quads", "glutes"], secondary: ["adductors", "calves"], equipment: "band", pattern: "plyo" },
   { name: "Skater hop", primary: ["glutes", "quads"], secondary: ["calves", "core"], equipment: "bodyweight", pattern: "plyo" },
   { name: "Alt speed skaters", aliases: ["Alternating speed skaters", "Speed skaters"], primary: ["glutes", "quads"], secondary: ["adductors", "calves", "core"], equipment: "bodyweight", pattern: "plyo" },
   { name: "DB front rack curtsey lunge", primary: ["glutes", "quads"], secondary: ["core", "adductors"], equipment: "dumbbell", pattern: "squat", aliases: ["DB curtsey lunge", "Front rack curtsey lunge"] },
@@ -248,6 +249,14 @@ export const EXERCISES: Exercise[] = [
   { name: "Medicine ball slam", primary: ["core", "shoulders"], secondary: ["back", "glutes"], equipment: "other", pattern: "conditioning" },
   { name: "Med ball side slam", primary: ["core"], secondary: ["shoulders", "back"], equipment: "other", pattern: "conditioning", aliases: ["Medicine ball side slam", "Med ball rotational slam"] },
   { name: "Tall-kneeling rotational medicine ball slam", primary: ["core", "shoulders"], secondary: ["back", "glutes"], equipment: "other", pattern: "conditioning" },
+  {
+    name: "KB split squat to row",
+    primary: ["quads", "glutes", "back"],
+    secondary: ["hamstrings", "biceps", "core"],
+    equipment: "kettlebell",
+    pattern: "conditioning",
+    aliases: ["Kettlebell split squat to row"],
+  },
   {
     name: "DB side lunge to high pull",
     primary: ["glutes", "quads", "shoulders"],
