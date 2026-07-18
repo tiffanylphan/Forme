@@ -1404,6 +1404,22 @@ function SwapPicker({
       directMatches = sortedRoleScoped.slice(0, Math.min(4, sortedRoleScoped.length));
     }
 
+    if (directMatches.length < 6) {
+      const inDirect = new Set(directMatches.map((e) => e.name));
+      const crossRole = [...filtered]
+        .filter((e) => !inDirect.has(e.name) && roleOf(e) !== currentRole)
+        .sort((a, b) => {
+          const diff =
+            similarityScore(b, currentExercise, knownExercises) -
+            similarityScore(a, currentExercise, knownExercises);
+          if (diff !== 0) return diff;
+          const af = knownExercises.has(a.name) ? 0 : 1;
+          const bf = knownExercises.has(b.name) ? 0 : 1;
+          return af - bf || a.name.localeCompare(b.name);
+        });
+      directMatches = [...directMatches, ...crossRole.slice(0, 6 - directMatches.length)];
+    }
+
     return directMatches.sort((a, b) => {
       const scoreDiff =
         similarityScore(b, currentExercise, knownExercises) -

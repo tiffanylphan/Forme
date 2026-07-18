@@ -74,7 +74,7 @@ export const familyOf = (ex: Exercise): string => {
   ) {
     return "triceps_isolation";
   }
-  if (name.includes("lateral raise") || name.includes("front raise") || name.includes("arnold"))
+  if (name.includes("lateral raise") || name.includes("front raise") || name.includes("arnold") || name.includes("prone press"))
     return "shoulder_isolation";
   if (name.includes("overhead press") || name.includes("landmine press"))
     return "vertical_press";

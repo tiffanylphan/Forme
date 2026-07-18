@@ -402,6 +402,63 @@ describe("NextPage interactions", () => {
     ).toBeInTheDocument();
   });
 
+  it("includes cross-role options when swapping a shoulder isolation exercise", async () => {
+    const user = userEvent.setup();
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "intermediate",
+        intensity: "standard",
+      },
+    });
+    useWorkoutsMock.mockReturnValue({ ready: true, workouts: [] });
+
+    generateNextWorkoutMock.mockReturnValue({
+      split: {
+        slotId: "upper_a",
+        title: "Upper A · Back/Shoulders",
+        summary: "Upper session.",
+        sessionIndex: 1,
+        totalSessions: 4,
+        targetPrimaryStimulus: { shoulders: 5 },
+        targetPrimarySets: { shoulders: 5 },
+      },
+      slotRecommendations: [],
+      mobility: { title: "Warm-up", items: [] },
+      cooldown: { title: "Cooldown", items: [] },
+      rationale: [],
+      sections: [
+        {
+          kind: "accessory",
+          rounds: 3,
+          repScheme: "12–15 reps",
+          exercises: [
+            {
+              name: "DB prone press",
+              primary: ["shoulders", "rear_delts"],
+              secondary: [],
+              pattern: "push",
+              movement: "push",
+              targets: [12, 12, 12],
+              suggestedWeight: 10,
+              unit: "lb",
+              isFamiliar: true,
+              progression: { lastSummary: null, goal: "Own reps.", nextStep: "Stay clean.", recentHistory: [] },
+            },
+          ],
+        },
+      ],
+    });
+
+    render(<NextPage />);
+    await user.click(screen.getByText("Swap"));
+
+    expect(screen.getByText("DB overhead press")).toBeInTheDocument();
+  });
+
   it("stashes the selected routine when accepted", async () => {
     const user = userEvent.setup();
     useTrainingProfileMock.mockReturnValue({
