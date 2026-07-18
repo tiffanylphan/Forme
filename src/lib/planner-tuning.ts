@@ -92,6 +92,7 @@ export const PLANNER_TUNING = {
     adaptiveUpperPullLowerFatigueThreshold: 6,
     adaptiveUpperPullPushFatigueThreshold: 4,
     adaptiveUpperPullDeficitGap: 2,
+    adaptiveUpperPullShoulderDeficitThreshold: 4,
   },
 
   // How much the latest sessions matter when scoring overlap.

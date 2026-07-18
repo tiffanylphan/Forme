@@ -13,6 +13,7 @@ const profile: TrainingProfile = {
   intensity: "standard",
   blockedExercises: [],
   allowedExercises: [],
+  homeGymEquipment: [],
 };
 
 const threeDayProfile: TrainingProfile = {
@@ -23,6 +24,7 @@ const threeDayProfile: TrainingProfile = {
   intensity: "standard",
   blockedExercises: [],
   allowedExercises: [],
+  homeGymEquipment: [],
 };
 
 const workout = (
@@ -293,6 +295,22 @@ describe("generateNextWorkout", () => {
     expect(exerciseNames.some((name) => rowNames.includes(name))).toBe(true);
   });
 
+  it("does not pair two row-family exercises in the same superset", () => {
+    // DB renegade row and Push-up to renegade row share the "row" family; they must
+    // not appear together in the same non-finisher section.
+    const draft = generateNextWorkout([], "2026-05-06", 123, profile);
+    const nonFinisherSections = draft.sections.filter((s) => s.kind !== "finisher");
+    const rowNames = new Set([
+      "Cable row", "DB single-arm row", "Chest-supported DB row", "Barbell bent-over row",
+      "T-bar row", "DB bent-over row", "DB renegade row", "Push-up to renegade row",
+      "Seated cable row", "Machine row", "DB bent-over row", "Cable face pull row",
+    ]);
+    for (const section of nonFinisherSections) {
+      const rowCount = section.exercises.filter((ex) => rowNames.has(ex.name)).length;
+      expect(rowCount).toBeLessThanOrEqual(1);
+    }
+  });
+
   it("does not stack multiple direct curl variations in the same upper session", () => {
     const workouts = [
       workout("w1", "2026-05-18", [
@@ -345,6 +363,40 @@ describe("generateNextWorkout", () => {
     expect(firstExercise?.progression.goal.length).toBeGreaterThan(0);
     expect(firstExercise?.progression.nextStep.length).toBeGreaterThan(0);
     expect(Array.isArray(firstExercise?.progression.recentHistory)).toBe(true);
+  });
+
+  it("derives progression goal reps from logged history rather than the static slot template", () => {
+    // Before the fix: goal text always used the slot's static rep template (e.g. "10/8/8/6"),
+    // ignoring what was actually logged. The workout helper generates 4 sets × 10 reps each
+    // at weight 50 lb. The compound template is [10,8,8,6]; because 10/10/10/10 >= each target,
+    // hitAllPlanned is true, giving "Match or beat … reps". Before the fix that showed the
+    // template reps ("10/8/8/6"); after the fix it must show the actual logged reps "10/10/10/10".
+    //
+    // Seeds old history (3+ weeks ago) so exercises are in `known` but not
+    // recently fatigued. The current week has a separate lower session so the
+    // next slot is Upper A, where Lat pulldown is reliably selected.
+    const workouts = [
+      // Old session — establishes history (50 lb × 10/10/10/10) for upper exercises
+      workout("old", "2026-04-15", [
+        { name: "Lat pulldown", sets: 4 },
+        { name: "Cable row", sets: 4 },
+        { name: "DB lateral raise", sets: 4 },
+      ]),
+      // Current week — lower session, so the next slot is Upper A
+      workout("w1", "2026-05-05", [
+        { name: "Goblet squat", sets: 4 },
+        { name: "DB sumo squat", sets: 3 },
+      ]),
+    ];
+    const draft = generateNextWorkout(workouts, "2026-05-06", 123, profile);
+    const allExercises = draft.sections.flatMap((s) => s.exercises);
+    const latPulldown = allExercises.find((ex) => ex.name === "Lat pulldown");
+
+    expect(latPulldown).toBeDefined();
+    // History has 4 sets × 10 reps at 50 lb; hitAllPlanned=true (10/10/10/10 ≥ template 10/8/8/6).
+    // Goal must show "10/10/10/10" (history), not "10/8/8/6" (static compound template).
+    expect(latPulldown?.progression.goal).toContain("10/10/10/10");
+    expect(latPulldown?.progression.goal).not.toContain("10/8/8/6");
   });
 
   it("adds a mobility warm-up and cooldown based on the session focus", () => {
@@ -1385,7 +1437,15 @@ describe("generateNextWorkout", () => {
     const draft = generateNextWorkout(workouts, "2026-05-09", 9393, profile);
 
     expect(draft.split.title).toBe("Upper B · Upper/Arms");
-    expect(draftExerciseNames(draft)).toContain("Face pull");
+    // Session must cover rear_delts through at least one exercise (primary or secondary)
+    // — Face pull previously satisfied this but the shoulder-deficit guard now permits
+    // a broader session where rear_delts coverage arrives via row/pull compounds.
+    const names = draftExerciseNames(draft);
+    const hasRearDeltWork = names.some((name) => {
+      const ex = findExercise(name);
+      return ex && (ex.primary.includes("rear_delts") || ex.secondary.includes("rear_delts"));
+    });
+    expect(hasRearDeltWork).toBe(true);
   });
 
   it("keeps the 5-day Accessory day's glute/shoulder focus and compound lower lift even when pull deficits are high", () => {
@@ -1559,6 +1619,34 @@ describe("generateNextWorkout", () => {
     expect(draft.split.slotId).toBe("upper_back_shoulder_arms");
     // strictPullBias removes push from the session; when push need = 3, it must not fire.
     expect(draft.split.summary).not.toContain("minimal pressing");
+  });
+
+  it("does not apply strict pull bias when push need is low but shoulders are substantially deficient", () => {
+    // Before the fix: lots of bench/incline press this week raised pushFatigue and reduced
+    // push need below 3 — triggering strictPullBias and stripping all pressing from the
+    // next upper session even though no dedicated shoulder work (overhead, lateral) was done.
+    // With shoulders at a large deficit (12-unit weekly target minus ~2 secondary credits),
+    // the guard must prevent strictPullBias so pressing stays in the session.
+    const workouts = [
+      workout("w1", "2026-07-12", [
+        { name: "Barbell bench press", sets: 5 },
+        { name: "DB incline press", sets: 4 },
+        { name: "Cable triceps pushdown", sets: 3 },
+      ]),  // heavy chest/triceps → high pushFatigue, push need drops below 3
+      workout("w2", "2026-07-13", [
+        { name: "Barbell deadlift", sets: 4 },
+        { name: "DB walking lunge", sets: 3 },
+        { name: "Band-assisted pull-up", sets: 3 },
+      ], { slotId: "lower_glute_ham", title: "Lower A" }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-07-14", 42, profile, {
+      forcedSlotId: "upper_back_shoulder",
+    });
+    // shoulders still largely deficient — must not strip pressing from the session.
+    expect(draft.split.summary).not.toContain("minimal pressing");
+    const names = draftExerciseNames(draft);
+    expect(names.some((name) => movementOf(findExercise(name)!) === "push")).toBe(true);
   });
 
   it("rotates away from a stalled conditioning finisher and notes it in the rationale", () => {

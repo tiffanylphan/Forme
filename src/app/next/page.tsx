@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { MuscleTag } from "@/components/MuscleTag";
 import { computeCoverage, weekContaining } from "@/lib/coverage";
@@ -300,8 +299,6 @@ export default function NextPage() {
   const [focusedMovements, setFocusedMovements] = useState<MovementPattern[]>([]);
   const [focusedMuscles, setFocusedMuscles] = useState<MuscleGroup[]>([]);
   const [showConfigure, setShowConfigure] = useState(false);
-  const router = useRouter();
-
   const baseDraft = useMemo(
     () =>
       generateNextWorkout(workouts, today, seed, profile, {
@@ -429,7 +426,7 @@ export default function NextPage() {
 
   const accept = () => {
     stashDraft({ source: "manual", draft });
-    router.push("/log");
+    window.location.assign("/log");
   };
 
   return (

@@ -253,7 +253,12 @@ const buildProgression = (
   const numericTargets = targets.filter((target): target is number => typeof target === "number");
   const timedTargets = targets.filter((target): target is string => typeof target === "string");
   const lastSummary = summarizePerformance(performance);
-  const plannedRepSummary = numericTargets.join("/");
+  const historyReps = (performance?.reps ?? []).filter((r): r is number => typeof r === "number");
+  const effectiveRepSummary =
+    numericTargets.length > 0 && historyReps.length >= numericTargets.length
+      ? historyReps.slice(0, numericTargets.length)
+      : numericTargets;
+  const plannedRepSummary = effectiveRepSummary.join("/");
 
   if (numericTargets.length === 0 && timedTargets.length > 0) {
     return {
@@ -912,6 +917,7 @@ const adaptSelectedSlot = (
   // Plyo/conditioning in lower sessions can inflate chest/tricep fatigue without representing actual pressing — guard: skip when push is entirely uncovered this week.
   const strictPullBias =
     (need["push"] ?? 0) < 3 &&
+    (muscleDeficits.shoulders ?? 0) < PLANNER_TUNING.splitSelection.adaptiveUpperPullShoulderDeficitThreshold &&
     pushFatigue >= PLANNER_TUNING.splitSelection.adaptiveUpperPullPushFatigueThreshold;
 
   // When shoulders are more deficient than rear delts, don't let the
@@ -2382,6 +2388,7 @@ export function generateNextWorkout(
       (family === "biceps_isolation" ||
         family === "triceps_isolation" ||
         family === "vertical_pull" ||
+        family === "row" ||
         family === "hip_thrust") &&
       picks.some((pick) => familyOf(pick) === family)
     ) {
