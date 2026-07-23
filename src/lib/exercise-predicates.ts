@@ -86,7 +86,7 @@ export const familyOf = (ex: Exercise): string => {
     return "vertical_press";
   if (name.includes("squat") || name.includes("leg press") || name.includes("hack squat"))
     return "squat_pattern";
-  if (name.includes("leg curl")) return "leg_curl";
+  if (name.includes("leg curl") || name.includes("nordic")) return "leg_curl";
   if (name.includes("carry")) return "carry";
   if (ex.pattern === "core") return "core";
   return `${ex.pattern}_${ex.equipment}`;

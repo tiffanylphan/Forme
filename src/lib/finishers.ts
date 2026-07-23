@@ -205,4 +205,20 @@ export const FINISHER_TEMPLATES: FinisherTemplate[] = [
     repScheme: "8 clean-to-press + 10/side chops + 16 climbers",
     tags: ["upper", "core", "conditioning"],
   },
+  {
+    id: "nordic_glute_finisher",
+    label: "Nordic curl and glute bridge",
+    exercises: ["Nordic hamstring curl", "Glute bridge"],
+    rounds: 3,
+    repScheme: "6 Nordic curls (eccentric focus) + 15 glute bridges",
+    tags: ["lower", "conditioning"],
+  },
+  {
+    id: "kb_swing_glute_bridge",
+    label: "KB swing and glute bridge",
+    exercises: ["Kettlebell swing", "Glute bridge"],
+    rounds: 3,
+    repScheme: "12 KB swings + 15 glute bridges, continuous",
+    tags: ["lower", "conditioning"],
+  },
 ];

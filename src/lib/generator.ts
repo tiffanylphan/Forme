@@ -2071,7 +2071,8 @@ export function generateNextWorkout(
       // in the current superset (scored before the first pick is claimed).
       const rdlFamilyClaimed = (claimedFamilies["rdl"] ?? 0) + (pendingRdlPick ? 1 : 0);
       const hingePosteriorTotal = claimedMovements.hinge + rdlFamilyClaimed + (pendingHingePick ? 1 : 0);
-      const isHingeDominantPick = movement === "hinge" || (movement === "single_leg" && family === "rdl");
+      const isHingeDominantPick =
+        movement === "hinge" || (movement === "single_leg" && family === "rdl");
       if (isHingeDominantPick && hingePosteriorTotal >= 2) {
         s -= PLANNER_TUNING.exerciseSelection.posteriorChainOverloadPenalty;
       }
@@ -2425,7 +2426,8 @@ export function generateNextWorkout(
         family === "triceps_isolation" ||
         family === "vertical_pull" ||
         family === "row" ||
-        family === "hip_thrust") &&
+        family === "hip_thrust" ||
+        family === "step_up") &&
       picks.some((pick) => familyOf(pick) === family)
     ) {
       return false;
