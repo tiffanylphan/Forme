@@ -1244,6 +1244,22 @@ const buildSlotRecommendations = (
   });
 };
 
+// Returns true when a slot has at least one primary-driver muscle (large enough target
+// to define the slot's identity) that has already hit or exceeded its weekly volume target.
+// Minor support targets (e.g. glutes: 2 in Upper A) are excluded so saturation from
+// another slot's primary work doesn't block an upper session.
+const slotHasOverTargetMajorMuscle = (
+  slot: SplitSlot,
+  muscleSaturation: Partial<Record<MuscleGroup, number>>,
+): boolean => {
+  const majorThreshold = PLANNER_TUNING.splitSelection.saturationOverTargetMajorMuscleThreshold;
+  return (Object.entries(slot.targetPrimaryStimulus) as [MuscleGroup, number][]).some(
+    ([muscle, target]) =>
+      target >= majorThreshold &&
+      (muscleSaturation[muscle] ?? 0) > PLANNER_TUNING.splitSelection.saturationOverTargetThreshold,
+  );
+};
+
 const getNextSplitSlotIndex = (
   split: SplitSlot[],
   workouts: Workout[],
@@ -1257,9 +1273,13 @@ const getNextSplitSlotIndex = (
   const incompleteIndices = getIncompleteSplitSlotIndices(split, workouts);
 
   if (incompleteIndices.length > 0) {
+    const nonSaturatedIncomplete = incompleteIndices.filter(
+      (i) => !slotHasOverTargetMajorMuscle(split[i], muscleSaturation),
+    );
+    const incompleteToScore = nonSaturatedIncomplete.length > 0 ? nonSaturatedIncomplete : incompleteIndices;
     const bestIncomplete = pickBestSplitSlotIndex(
       split,
-      incompleteIndices,
+      incompleteToScore,
       need,
       muscleDeficits,
       muscleSaturation,
@@ -1268,14 +1288,18 @@ const getNextSplitSlotIndex = (
       recentMuscleFatigue,
     );
     if (bestIncomplete) return bestIncomplete.index;
-    const firstIncompleteIndex = incompleteIndices[0];
+    const firstIncompleteIndex = incompleteToScore[0];
     if (firstIncompleteIndex >= 0) return firstIncompleteIndex;
   }
 
   const allIndices = split.map((_, index) => index);
+  const nonSaturatedAll = allIndices.filter(
+    (i) => !slotHasOverTargetMajorMuscle(split[i], muscleSaturation),
+  );
+  const allToScore = nonSaturatedAll.length > 0 ? nonSaturatedAll : allIndices;
   const bestOverall = pickBestSplitSlotIndex(
     split,
-    allIndices,
+    allToScore,
     need,
     muscleDeficits,
     muscleSaturation,

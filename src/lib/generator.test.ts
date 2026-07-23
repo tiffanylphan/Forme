@@ -1973,6 +1973,66 @@ describe("generateNextWorkout", () => {
     expect(draft.split.title).toBe("Upper A · Back/Shoulders");
   });
 
+  it("does not re-recommend Lower B when a previous-cycle Lower A session is just outside the cross-week window (3-day split)", () => {
+    // Bug: Jul 14 Lower A (6 days before Jul 20 week-start) was pulled into the current-cycle
+    // slot-completion tracking via crossWeekRecencyDays=6, making Lower A appear "done."
+    // Jul 20's Lower B workout had no planSlot + a missed exercise, so it was skipped by the
+    // hasStrugglingLift guard.  Result: only Upper A and Lower B were candidates, and Lower B
+    // won — re-recommending the slot just done.
+    //
+    // Fix: crossWeekRecencyDays=3 excludes sessions from 4+ days before the week-start, so
+    // only Jul 19 (Sunday, 1 day before) is pulled in.  Lower A is then an open candidate and
+    // wins decisively on hamstrings deficit + hinge movement need.
+    const workouts = [
+      workout("w1", "2026-07-14", [
+        { name: "Barbell Romanian deadlift", sets: 4 },
+        { name: "DB split squat to RDL", sets: 3 },
+        { name: "Plank", sets: 3 },
+      ], { slotId: "lower_glute_ham", title: "Lower A · Posterior" }),
+      workout("w2", "2026-07-19", [
+        { name: "Band-assisted pull-up", sets: 4 },
+        { name: "DB overhead press", sets: 3 },
+        { name: "DB reverse fly", sets: 3 },
+        { name: "Kneeling bicep curl", sets: 3 },
+      ], { slotId: "upper_back_shoulder_arms", title: "Upper B · Upper/Arms" }),
+      workout("w3", "2026-07-20", [
+        { name: "Barbell back squat", sets: 4 },
+        { name: "KB gorilla row", sets: 4, progressionStatus: "missed" as const },
+        { name: "Leg press", sets: 3, progressionStatus: "held" as const },
+        { name: "DB walking lunge", sets: 3 },
+        { name: "Barbell push press", sets: 3 },
+      ]),
+    ];
+    // Jul 20 workout has no planSlot and a missed exercise, so the struggling-lift guard skips
+    // it during inference.  With crossWeekRecencyDays=3, Jul 14 (6 days before Jul 20) is
+    // outside the window and Lower A is correctly open for selection.
+    const draft = generateNextWorkout(workouts, "2026-07-21", 42, threeDayProfile);
+    expect(draft.split.slotId).toBe("lower_glute_ham");
+  });
+
+  it("excludes a slot from selection when one of its primary-driver muscles is over the weekly target (3-day split)", () => {
+    // Lower B targets quads (6 sets, weekly target). After an informal quad-only session,
+    // quads exceed the weekly target and Lower B should be filtered out of candidates entirely.
+    // Barbell front squat has primary=[quads, core] — glutes is only secondary — so glutes
+    // saturation stays below 1.0 and Lower A is not wrongly filtered. The held progression
+    // triggers the hasExplicitSlots+hasStrugglingLift guard so slot inference is skipped and
+    // Lower B remains in incompleteIndices for the saturation filter to act on.
+    const workouts = [
+      workout("w1", "2026-07-19", [
+        { name: "Band-assisted pull-up", sets: 4 },
+        { name: "DB overhead press", sets: 3 },
+        { name: "DB reverse fly", sets: 3 },
+      ], { slotId: "upper_back_shoulder_arms", title: "Upper B · Upper/Arms" }),
+      workout("w2", "2026-07-20", [
+        { name: "Barbell front squat", sets: 5, progressionStatus: "held" as const },
+        { name: "Leg extension", sets: 4 },
+        { name: "Goblet squat", sets: 4 },
+      ]),
+    ];
+    const draft = generateNextWorkout(workouts, "2026-07-21", 42, threeDayProfile);
+    expect(draft.split.slotId).toBe("lower_glute_ham");
+  });
+
   it("does not recommend Lower A the day after a lower-heavy trainer workout with no prior history", () => {
     // Trainer workout hits same muscles as Lower A (quads, glutes, hamstrings).
     // The muscle fatigue penalty should outweigh the deficit advantage.

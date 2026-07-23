@@ -82,7 +82,7 @@ export const PLANNER_TUNING = {
     leadCatchupBoost: 3,
     leadSameSidePenalty: 2.5,
     leadCap: 8,
-    crossWeekRecencyDays: 6,
+    crossWeekRecencyDays: 5,
     recentFatigueSlotPenaltyWeight: 0.9,
     lowerBiasFatigueThreshold: 6,
     lowerBiasFatiguePenaltyWeight: 1.6,
