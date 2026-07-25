@@ -245,7 +245,7 @@ export const EXERCISES: Exercise[] = [
   { name: "Tuck jump", primary: ["quads", "core"], secondary: ["glutes", "calves"], equipment: "bodyweight", pattern: "plyo" },
   { name: "Half burpee w/ dumbbell", primary: ["chest", "quads"], secondary: ["shoulders", "core"], equipment: "dumbbell", pattern: "plyo" },
   { name: "DB snatch", primary: ["shoulders", "glutes"], secondary: ["back", "core"], equipment: "dumbbell", pattern: "plyo" },
-  { name: "Wall ball shot", primary: ["quads", "shoulders"], secondary: ["glutes", "core"], equipment: "other", pattern: "conditioning" },
+  { name: "Wall ball shot", primary: ["quads", "shoulders"], secondary: ["glutes", "core"], equipment: "other", pattern: "conditioning", aliases: ["Medicine ball squat and throw", "Med ball squat and throw", "Wall ball", "Medicine ball squat throw"] },
   { name: "Medicine ball slam", primary: ["core", "shoulders"], secondary: ["back", "glutes"], equipment: "other", pattern: "conditioning" },
   { name: "Med ball side slam", primary: ["core"], secondary: ["shoulders", "back"], equipment: "other", pattern: "conditioning", aliases: ["Medicine ball side slam", "Med ball rotational slam"] },
   { name: "Tall-kneeling rotational medicine ball slam", primary: ["core", "shoulders"], secondary: ["back", "glutes"], equipment: "other", pattern: "conditioning" },
