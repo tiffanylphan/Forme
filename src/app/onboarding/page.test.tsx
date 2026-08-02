@@ -30,6 +30,7 @@ describe("OnboardingPage", () => {
       blockedExercises: [],
       allowedExercises: [],
       homeGymEquipment: [],
+      sensitiveMuscles: [],
     });
     useTrainingProfileMock.mockReturnValue({
       ready: true,
@@ -42,6 +43,7 @@ describe("OnboardingPage", () => {
         blockedExercises: [],
         allowedExercises: [],
         homeGymEquipment: [],
+        sensitiveMuscles: [],
       },
     });
 
@@ -63,6 +65,7 @@ describe("OnboardingPage", () => {
       blockedExercises: [],
       allowedExercises: [],
       homeGymEquipment: [],
+      sensitiveMuscles: [],
     });
     expect(routerPushMock).toHaveBeenCalledWith("/next");
   });
@@ -85,6 +88,7 @@ describe("OnboardingPage", () => {
       blockedExercises: ["Hack squat"],
       allowedExercises: [],
       homeGymEquipment: [],
+      sensitiveMuscles: [],
     });
     useTrainingProfileMock.mockReturnValue({
       ready: true,
@@ -97,6 +101,7 @@ describe("OnboardingPage", () => {
         blockedExercises: ["Hack squat"],
         allowedExercises: [],
         homeGymEquipment: [],
+        sensitiveMuscles: [],
       },
     });
 
@@ -104,5 +109,43 @@ describe("OnboardingPage", () => {
 
     expect(screen.queryByText("Unavailable exercises")).not.toBeInTheDocument();
     expect(screen.queryByText(/blocked/i)).not.toBeInTheDocument();
+  });
+
+  it("saves a toggled sensitive muscle", async () => {
+    const user = userEvent.setup();
+    loadTrainingProfileMock.mockReturnValue({
+      goal: "physique",
+      daysPerWeek: 4,
+      equipment: "full_gym",
+      experience: "beginner",
+      intensity: "standard",
+      blockedExercises: [],
+      allowedExercises: [],
+      homeGymEquipment: [],
+      sensitiveMuscles: [],
+    });
+    useTrainingProfileMock.mockReturnValue({
+      ready: true,
+      profile: {
+        goal: "physique",
+        daysPerWeek: 4,
+        equipment: "full_gym",
+        experience: "beginner",
+        intensity: "standard",
+        blockedExercises: [],
+        allowedExercises: [],
+        homeGymEquipment: [],
+        sensitiveMuscles: [],
+      },
+    });
+
+    render(<OnboardingPage />);
+
+    await user.click(screen.getByText("shoulders"));
+    await user.click(screen.getByText("Save profile"));
+
+    expect(saveTrainingProfileMock).toHaveBeenCalledWith(
+      expect.objectContaining({ sensitiveMuscles: ["shoulders"] }),
+    );
   });
 });

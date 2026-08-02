@@ -4,7 +4,8 @@ import { familyOf } from "./exercise-predicates";
 import { FINISHER_TEMPLATES } from "./finishers";
 import { generateNextWorkout } from "./generator";
 import { movementOf } from "./movement";
-import type { TrainingProfile, Workout } from "./types";
+import { PLANNER_TUNING } from "./planner-tuning";
+import type { MuscleGroup, TrainingProfile, Workout } from "./types";
 
 const profile: TrainingProfile = {
   goal: "physique",
@@ -15,6 +16,7 @@ const profile: TrainingProfile = {
   blockedExercises: [],
   allowedExercises: [],
   homeGymEquipment: [],
+  sensitiveMuscles: [],
 };
 
 const threeDayProfile: TrainingProfile = {
@@ -26,6 +28,7 @@ const threeDayProfile: TrainingProfile = {
   blockedExercises: [],
   allowedExercises: [],
   homeGymEquipment: [],
+  sensitiveMuscles: [],
 };
 
 const workout = (
@@ -400,6 +403,26 @@ describe("generateNextWorkout", () => {
     expect(latPulldown?.progression.goal).not.toContain("10/8/8/6");
   });
 
+  it("keeps displayed R1-R4 targets in sync with the progression goal's rep numbers", () => {
+    const workouts = [
+      workout("old", "2026-04-15", [
+        { name: "Lat pulldown", sets: 4 },
+        { name: "Cable row", sets: 4 },
+        { name: "DB lateral raise", sets: 4 },
+      ]),
+      workout("w1", "2026-05-05", [
+        { name: "Goblet squat", sets: 4 },
+        { name: "DB sumo squat", sets: 3 },
+      ]),
+    ];
+    const draft = generateNextWorkout(workouts, "2026-05-06", 123, profile);
+    const allExercises = draft.sections.flatMap((s) => s.exercises);
+    const latPulldown = allExercises.find((ex) => ex.name === "Lat pulldown");
+
+    expect(latPulldown?.targets).toEqual([10, 10, 10, 10]);
+    expect(latPulldown?.progression.goal).toContain("10/10/10/10");
+  });
+
   it("adds a mobility warm-up and cooldown based on the session focus", () => {
     const draft = generateNextWorkout([], "2026-05-06", 123, profile);
 
@@ -591,9 +614,22 @@ describe("generateNextWorkout", () => {
   });
 
   it("can surface circuits that are a weaker slot-bias fit when shuffled enough", () => {
-    const seed = 4242;
+    const seed = 21;
+    // The default physique/strength full-gym fixtures deterministically land
+    // on slots emphasizing back/glutes/shoulders/core heavily enough that,
+    // under the session-level muscle overlap cap, they conflict with one or
+    // both target templates (Superman hold's back/glutes tags, or
+    // carry_and_crawl's core-heavy 3-move stack). A balanced/home/3-day
+    // profile lands on a slot compatible with both, keeping this test about
+    // finisher redraw diversity rather than overlap capping.
+    const homeBalancedProfile: TrainingProfile = {
+      ...profile,
+      goal: "balanced",
+      daysPerWeek: 3,
+      equipment: "home",
+    };
     const finisherNamesAt = (finisherSeed: number) =>
-      generateNextWorkout([], "2026-05-18", seed, profile, { finisherSeed })
+      generateNextWorkout([], "2026-05-18", seed, homeBalancedProfile, { finisherSeed })
         .sections.find((section) => section.kind === "finisher")
         ?.exercises.map((exercise) => exercise.name) ?? [];
 
@@ -1596,6 +1632,43 @@ describe("generateNextWorkout", () => {
     expect(draft.split.slotId).toBe("upper_back_shoulder_arms");
   });
 
+  it("does not recommend the other upper variant immediately after logging an upper session today (3-day split)", () => {
+    const workouts = [
+      workout("w1", "2026-08-01", [
+        { name: "Lat pulldown", sets: 4 },
+        { name: "DB prone press", sets: 4 },
+      ], { slotId: "upper_back_shoulder_arms", title: "Upper B · Upper/Arms" }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-08-01", 42, threeDayProfile);
+    expect(draft.split.slotId).not.toBe("upper_back_shoulder");
+    expect(draft.split.slotId).not.toBe("upper_back_shoulder_arms");
+  });
+
+  it("only lists a muscle as avoided in the last-48h rationale if this session's own exercises don't touch it", () => {
+    const workouts = [
+      workout("w1", "2026-08-01", [
+        { name: "Lat pulldown", sets: 4 },
+        { name: "DB prone press", sets: 4 },
+      ], { slotId: "upper_back_shoulder_arms", title: "Upper B · Upper/Arms" }),
+    ];
+
+    const draft = generateNextWorkout(workouts, "2026-08-01", 42, threeDayProfile);
+    const touchedMuscles = new Set(
+      draft.sections.flatMap((section) =>
+        section.exercises.flatMap((ex) => [...ex.primary, ...ex.secondary]),
+      ),
+    );
+    const avoidLine = draft.rationale.find((line) =>
+      line.startsWith("Avoiding muscles trained in the last 48h:"),
+    );
+    if (avoidLine) {
+      touchedMuscles.forEach((muscle) => {
+        expect(avoidLine).not.toContain(muscle.replace("_", " "));
+      });
+    }
+  });
+
   it("does not strip push from Upper B when plyo/conditioning moves in a lower session inflated chest/tricep fatigue but push is entirely uncovered this week", () => {
     // Lower B (Jul 8) has plyo/conditioning exercises whose chest/tricep primary/secondary
     // inflate pushFatigue above the strictPullBias threshold — but no push-pattern
@@ -2312,5 +2385,169 @@ describe("generateNextWorkout", () => {
       .find((ex) => movementOf(findExercise(ex.name)!) === "push");
 
     expect(familyOf(findExercise(firstPush?.name ?? "")!)).toBe("vertical_press");
+  });
+
+  it("caps how many exercises in one session load the same muscle group", () => {
+    const weightOf = (
+      ex: { primary: MuscleGroup[]; secondary: MuscleGroup[] },
+      muscle: MuscleGroup,
+    ) => (ex.primary.includes(muscle) ? 1 : ex.secondary.includes(muscle) ? 0.5 : 0);
+
+    for (let seed = 0; seed < 30; seed += 1) {
+      const draft = generateNextWorkout([], "2026-05-22", seed, profile, {
+        forcedSlotId: "upper_back_shoulder_arms",
+      });
+      const allExercises = draft.sections.flatMap((section) => section.exercises);
+      const totals = new Map<MuscleGroup, number>();
+      allExercises.forEach((ex) => {
+        [...ex.primary, ...ex.secondary].forEach((muscle) => {
+          totals.set(muscle, (totals.get(muscle) ?? 0) + weightOf(ex, muscle));
+        });
+      });
+      totals.forEach((total) => {
+        expect(total).toBeLessThanOrEqual(PLANNER_TUNING.muscleOverlap.capCount);
+      });
+    }
+  });
+
+  it("tightens a muscle's session cap once one of its exercises is in a watch/stalled trend state", () => {
+    const weightOf = (
+      ex: { primary: MuscleGroup[]; secondary: MuscleGroup[] },
+      muscle: MuscleGroup,
+    ) => (ex.primary.includes(muscle) ? 1 : ex.secondary.includes(muscle) ? 0.5 : 0);
+
+    const workouts = [
+      workout("w1", "2026-05-15", [
+        { name: "SA press to windmill", sets: 3, progressionStatus: "missed" },
+      ]),
+    ];
+
+    let sawFlaggedSession = false;
+    for (let seed = 0; seed < 30; seed += 1) {
+      const draft = generateNextWorkout(workouts, "2026-05-22", seed, profile, {
+        forcedSlotId: "upper_back_shoulder_arms",
+      });
+      const allExercises = draft.sections.flatMap((section) => section.exercises);
+      if (!allExercises.some((ex) => ex.name === "SA press to windmill")) continue;
+      sawFlaggedSession = true;
+      const shouldersTotal = allExercises.reduce(
+        (sum, ex) => sum + weightOf(ex, "shoulders"),
+        0,
+      );
+      expect(shouldersTotal).toBeLessThanOrEqual(
+        PLANNER_TUNING.muscleOverlap.capCount -
+          PLANNER_TUNING.muscleOverlap.rebuildMuscleCapReduction,
+      );
+    }
+    expect(sawFlaggedSession).toBe(true);
+  });
+
+  it("tightens a muscle's session cap when the user flags it as sensitive", () => {
+    const weightOf = (
+      ex: { primary: MuscleGroup[]; secondary: MuscleGroup[] },
+      muscle: MuscleGroup,
+    ) => (ex.primary.includes(muscle) ? 1 : ex.secondary.includes(muscle) ? 0.5 : 0);
+
+    const sensitiveProfile: TrainingProfile = {
+      ...profile,
+      sensitiveMuscles: ["shoulders"],
+    };
+
+    for (let seed = 0; seed < 30; seed += 1) {
+      const draft = generateNextWorkout([], "2026-05-22", seed, sensitiveProfile, {
+        forcedSlotId: "upper_back_shoulder_arms",
+      });
+      const allExercises = draft.sections.flatMap((section) => section.exercises);
+      const shouldersTotal = allExercises.reduce(
+        (sum, ex) => sum + weightOf(ex, "shoulders"),
+        0,
+      );
+      expect(shouldersTotal).toBeLessThanOrEqual(
+        PLANNER_TUNING.muscleOverlap.capCount -
+          PLANNER_TUNING.muscleOverlap.sensitiveMuscleCapReduction,
+      );
+    }
+  });
+
+  it("sequences a watch-state section earlier while keeping the main lift first and the finisher last", () => {
+    const workouts = [
+      workout("w1", "2026-05-15", [
+        { name: "Superman hold", sets: 3, progressionStatus: "missed" },
+      ]),
+    ];
+
+    let sawEarlierMove = false;
+    for (let seed = 0; seed < 30; seed += 1) {
+      const flaggedDraft = generateNextWorkout(workouts, "2026-05-22", seed, profile, {
+        forcedSlotId: "upper_back_shoulder_arms",
+      });
+      const controlDraft = generateNextWorkout([], "2026-05-22", seed, profile, {
+        forcedSlotId: "upper_back_shoulder_arms",
+      });
+      const flaggedIndex = flaggedDraft.sections.findIndex((section) =>
+        section.exercises.some((ex) => ex.name === "Superman hold"),
+      );
+      const controlIndex = controlDraft.sections.findIndex((section) =>
+        section.exercises.some((ex) => ex.name === "Superman hold"),
+      );
+      if (flaggedIndex === -1 || controlIndex === -1) continue;
+
+      expect(flaggedIndex).toBeLessThanOrEqual(controlIndex);
+      if (flaggedIndex < controlIndex) sawEarlierMove = true;
+
+      // The main-lift section never gets displaced, and the finisher always
+      // stays last, regardless of which sections get pulled forward.
+      expect(flaggedDraft.sections[0]?.kind).not.toBe("finisher");
+      expect(flaggedIndex).toBeGreaterThan(0);
+      const finisherIndex = flaggedDraft.sections.findIndex(
+        (section) => section.kind === "finisher",
+      );
+      if (finisherIndex !== -1) {
+        expect(finisherIndex).toBe(flaggedDraft.sections.length - 1);
+      }
+    }
+    expect(sawEarlierMove).toBe(true);
+  });
+
+  it("populates DraftExercise.trend from the exercise's stall state", () => {
+    // A single missed session gives "watch" (mild penalty, survives selection).
+    const watchWorkouts = [
+      workout("w1", "2026-05-15", [
+        { name: "SA press to windmill", sets: 3, progressionStatus: "missed" },
+      ]),
+    ];
+    const watchDraft = generateNextWorkout(watchWorkouts, "2026-05-22", 0, profile, {
+      forcedSlotId: "upper_back_shoulder_arms",
+    });
+    const watchExercise = watchDraft.sections
+      .flatMap((section) => section.exercises)
+      .find((ex) => ex.name === "SA press to windmill");
+    expect(watchExercise?.trend).toBe("watch");
+
+    // Two held/missed in a row gives "stalled", and the stalled lift's own
+    // penalty is large enough that it gets rotated out of the session
+    // entirely (see "rotates away from a stalled lift toward a nearby
+    // substitute") — so its replacement should carry trend "none", not
+    // "stalled", since the replacement itself has no stall history.
+    const stalledWorkouts = [
+      workout("w1", "2026-05-05", [
+        { name: "Barbell hip thrust", sets: 4, progressionStatus: "held" },
+        { name: "DB Bulgarian split squat", sets: 3 },
+      ], { slotId: "lower_glute_ham", title: "Lower A" }),
+      workout("w2", "2026-05-06", [
+        { name: "Cable row", sets: 4 },
+        { name: "DB overhead press", sets: 3 },
+      ], { slotId: "upper_back_shoulder", title: "Upper A" }),
+      workout("w3", "2026-05-07", [
+        { name: "Barbell hip thrust", sets: 4, progressionStatus: "missed" },
+        { name: "DB Romanian deadlift", sets: 3 },
+      ]),
+    ];
+    const stalledDraft = generateNextWorkout(stalledWorkouts, "2026-05-08", 9494, profile);
+    const allExercises = stalledDraft.sections.flatMap((section) => section.exercises);
+    expect(allExercises.every((ex) => ex.name !== "Barbell hip thrust")).toBe(true);
+    allExercises.forEach((ex) => {
+      expect(["none", "watch", "stalled"]).toContain(ex.trend);
+    });
   });
 });

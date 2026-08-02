@@ -19,8 +19,9 @@ import {
   saveTrainingProfile,
   useTrainingProfile,
 } from "@/lib/profile";
+import { formatMuscle } from "@/lib/format";
 import type { HomeGymEquipmentType, TrainingProfile } from "@/lib/types";
-import { HOME_GYM_EQUIPMENT_OPTIONS } from "@/lib/types";
+import { HOME_GYM_EQUIPMENT_OPTIONS, MUSCLE_GROUPS } from "@/lib/types";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -139,6 +140,26 @@ export default function OnboardingPage() {
               selected={draft.intensity}
               onSelect={(intensity) =>
                 setDraft((prev) => ({ ...prev, intensity }))
+              }
+            />
+
+            <MultiToggle
+              label="Sensitive muscles / joints (limits volume, doesn't exclude)"
+              options={MUSCLE_GROUPS.map((value) => ({
+                value,
+                text: formatMuscle(value),
+              }))}
+              selected={draft.sensitiveMuscles ?? []}
+              onToggle={(value) =>
+                setDraft((prev) => {
+                  const current = prev.sensitiveMuscles ?? [];
+                  return {
+                    ...prev,
+                    sensitiveMuscles: current.includes(value)
+                      ? current.filter((v) => v !== value)
+                      : [...current, value],
+                  };
+                })
               }
             />
           </section>

@@ -95,6 +95,8 @@ export type TrainingProfile = {
   blockedExercises: string[];
   allowedExercises: string[];
   homeGymEquipment: HomeGymEquipmentType[];
+  /** Muscles to limit (not exclude) session volume on — e.g. a nerve/joint sensitivity. */
+  sensitiveMuscles: MuscleGroup[];
 };
 
 export type SetEntry = {

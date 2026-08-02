@@ -25,6 +25,7 @@ const profile: TrainingProfile = {
   blockedExercises: [],
   allowedExercises: [],
   homeGymEquipment: [],
+  sensitiveMuscles: [],
 };
 
 describe("LogPage with real stash/pop cycle", () => {

@@ -185,6 +185,19 @@ export const PLANNER_TUNING = {
     randomnessWeight: 2.0,
   },
 
+  // Hard cap on how many exercises in one session may touch the same muscle
+  // group (primary or secondary), independent of exerciseSelection's
+  // continuous overlap-penalty budget above. rebuildMuscleCapReduction
+  // tightens the cap for a muscle already touched by a watch/stalled-state
+  // exercise; sensitiveMuscleCapReduction does the same for a user-flagged
+  // sensitive muscle (TrainingProfile.sensitiveMuscles).
+  muscleOverlap: {
+    capCount: 5,
+    rebuildMuscleCapReduction: 1,
+    sensitiveMuscleCapReduction: 1,
+    minCap: 1,
+  },
+
   // How wide the random draw over candidate finisher templates is — a larger
   // spread pulls more templates into the weighted draw instead of collapsing
   // to whichever 1-3 templates score closest to the top.

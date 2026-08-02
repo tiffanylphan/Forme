@@ -65,7 +65,7 @@ import {
   getRecentProgressionStatuses,
   getStallState,
 } from "./progression";
-import type { ExerciseHistoryEntry } from "./progression";
+import type { ExerciseHistoryEntry, StallState } from "./progression";
 import type {
   Exercise,
   GoalMode,
@@ -98,6 +98,7 @@ export type DraftExercise = {
   suggestedDuration: number | null;
   unit: WeightUnit;
   isFamiliar: boolean;
+  trend: StallState;
   progression: {
     lastSummary: string | null;
     goal: string;
@@ -344,6 +345,26 @@ const buildProgression = (
     nextStep: "Start conservative and leave 1-2 reps in reserve on each set.",
     recentHistory,
   };
+};
+
+// Keeps the displayed R1-R4 targets consistent with the rep numbers baked
+// into buildProgression's goal text, which already substitutes last-logged
+// reps for the static slot template once enough history exists. Must not be
+// used as the `targets` passed into buildProgression itself — that function's
+// progressed/held/missed classification depends on comparing performance
+// against the static template, not against itself.
+const resolveDisplayTargets = (
+  targets: (number | string)[],
+  workouts: Workout[],
+  exerciseName: string,
+): (number | string)[] => {
+  const performance = lastPerformance(exerciseName, workouts);
+  const numericTargets = targets.filter((t): t is number => typeof t === "number");
+  const historyReps = (performance?.reps ?? []).filter((r): r is number => typeof r === "number");
+  if (numericTargets.length === 0 || historyReps.length < numericTargets.length) return targets;
+  const effective = historyReps.slice(0, numericTargets.length);
+  let cursor = 0;
+  return targets.map((t) => (typeof t === "number" ? effective[cursor++] : t));
 };
 
 
@@ -759,7 +780,7 @@ const inferCompletedSlotIds = (
     a.date > b.date ? 1 : a.date < b.date ? -1 : a.createdAt - b.createdAt,
   );
 
-  sorted.forEach((workout) => {
+  sorted.forEach((workout, index) => {
     const explicitSlotId = workout.planSlot?.slotId;
     if (explicitSlotId && split.some((slot) => slot.id === explicitSlotId)) {
       completed.add(explicitSlotId);
@@ -770,6 +791,24 @@ const inferCompletedSlotIds = (
       explicitSlotId &&
       (explicitSlotId === PHYSIQUE_UPPER_A_SLOT.id || explicitSlotId === PHYSIQUE_UPPER_B_SLOT.id)
     ) {
+      // The current split may have swapped in the other upper variant (see
+      // resolveSplitVariants) since this workout was logged. Only credit the
+      // swapped-in slot on this workout's behalf if nothing has been logged
+      // since (this is the most recent workout overall) — that's the "you
+      // just did an upper session, don't immediately recommend the other
+      // upper variant too" case. If a different session happened after this
+      // one (e.g. a Lower day), the swapped-in upper variant is a genuinely
+      // separate, not-yet-done session and should stay incomplete.
+      const currentUpperSlot =
+        index === sorted.length - 1
+          ? split.find(
+              (slot) => slot.id === PHYSIQUE_UPPER_A_SLOT.id || slot.id === PHYSIQUE_UPPER_B_SLOT.id,
+            )
+          : undefined;
+      if (currentUpperSlot) {
+        completed.add(currentUpperSlot.id);
+        available.delete(currentUpperSlot.id);
+      }
       return;
     }
     const hasStrugglingLift = workout.exercises.some(
@@ -1538,11 +1577,12 @@ export function buildDraftExercise(
     secondary: ex.secondary,
     pattern: ex.pattern,
     movement: movementOf(ex),
-    targets,
+    targets: resolveDisplayTargets(targets, workouts, ex.name),
     suggestedWeight: capSuggestedWeight(last?.weight ?? null, ex, environment),
     suggestedDuration: ex.tracksDuration ? lastWorkingDuration(ex.name, workouts) : null,
     unit: last?.unit ?? "lb",
     isFamiliar: knownNames.has(ex.name),
+    trend: getStallState(ex.name, workouts),
     progression: buildProgression(ex, targets, workouts),
   };
 }
@@ -1764,6 +1804,54 @@ export function generateNextWorkout(
   >;
   MOVEMENT_PATTERNS.forEach((mp) => (claimedMovements[mp] = 0));
 
+  // Hard cap on how many exercises in one session may load the same muscle
+  // group, independent of plannedSessionStress's continuous soft budget
+  // above. Counted in exercise-equivalents: a muscle tagged primary counts
+  // as a full exercise, secondary counts as half — otherwise every
+  // lower-body compound's incidental secondary core/hamstring engagement
+  // would exhaust the cap on its own, blocking legitimate primary-focus
+  // volume (e.g. a squat/deadlift/hinge day intentionally hitting glutes as
+  // primary 4+ times). flaggedClaimedMuscles tracks muscles already touched
+  // by a watch/stalled-state exercise, so their cap can be tightened — a
+  // lift that just reset to baseline shouldn't get stacked alongside a pile
+  // of other work on the same muscle. pendingPicks holds picks made earlier
+  // in the same in-progress batch (superset/circuit/main pairing) that
+  // haven't been claim()'d yet, so scoring later picks in that batch isn't
+  // blind to earlier ones — mirrors pendingRdlPick/pendingHingePick.
+  const claimedMuscleCounts: Partial<Record<MuscleGroup, number>> = {};
+  const flaggedClaimedMuscles = new Set<MuscleGroup>();
+  let pendingPicks: Exercise[] = [];
+
+  const muscleWeightsOf = (ex: Exercise): Map<MuscleGroup, number> => {
+    const weights = new Map<MuscleGroup, number>();
+    ex.secondary.forEach((m) => weights.set(m, 0.5));
+    ex.primary.forEach((m) => weights.set(m, 1));
+    return weights;
+  };
+
+  const effectiveMuscleCap = (m: MuscleGroup): number => {
+    let cap = PLANNER_TUNING.muscleOverlap.capCount;
+    if (flaggedClaimedMuscles.has(m)) cap -= PLANNER_TUNING.muscleOverlap.rebuildMuscleCapReduction;
+    if (activeProfile.sensitiveMuscles?.includes(m)) {
+      cap -= PLANNER_TUNING.muscleOverlap.sensitiveMuscleCapReduction;
+    }
+    return Math.max(PLANNER_TUNING.muscleOverlap.minCap, cap);
+  };
+
+  const muscleOverlapOverage = (ex: Exercise, extraPending: Exercise[] = []): MuscleGroup[] => {
+    const weights = muscleWeightsOf(ex);
+    return [...weights.entries()]
+      .filter(([m, weight]) => {
+        const pendingWeight = extraPending.reduce((sum, p) => {
+          const pWeight = muscleWeightsOf(p).get(m) ?? 0;
+          return sum + pWeight;
+        }, 0);
+        const current = (claimedMuscleCounts[m] ?? 0) + pendingWeight;
+        return current + weight > effectiveMuscleCap(m);
+      })
+      .map(([m]) => m);
+  };
+
   const scoreExercise = (ex: Exercise, plannedRounds = 1): number => {
     const movement = movementOf(ex);
     if (!movement) return -10; // plyo/conditioning/calf — never a planned pick
@@ -1777,6 +1865,7 @@ export function generateNextWorkout(
     ) {
       return -10;
     }
+    if (muscleOverlapOverage(ex, pendingPicks).length > 0) return -10;
     const stimulus = estimateExerciseStimulus(ex);
     const projectedStress = estimatePlannedExerciseStress(ex, plannedRounds);
     const projectedSessionTotal =
@@ -2130,6 +2219,7 @@ export function generateNextWorkout(
     for (const ex of EXERCISES) {
       if (used.has(ex.name)) continue;
       if (!filter(ex)) continue;
+      if (muscleOverlapOverage(ex).length > 0) continue;
       let s = 0;
       if (movementOf(ex) === "carry_core") s += 4;
       if (isAccessibleConditioningFinisher(ex)) s += 5;
@@ -2244,6 +2334,11 @@ export function generateNextWorkout(
     if (kneeFamily && kneeFamily !== family) {
       claimedFamilies[kneeFamily] = (claimedFamilies[kneeFamily] ?? 0) + 1;
     }
+    const flagged = stalledExerciseNames.has(ex.name) || watchedExerciseNames.has(ex.name);
+    muscleWeightsOf(ex).forEach((weight, muscle) => {
+      claimedMuscleCounts[muscle] = (claimedMuscleCounts[muscle] ?? 0) + weight;
+      if (flagged) flaggedClaimedMuscles.add(muscle);
+    });
   };
 
   const claimWithStress = (
@@ -2269,11 +2364,16 @@ export function generateNextWorkout(
       secondary: ex.secondary,
       pattern: ex.pattern,
       movement: movementOf(ex),
-      targets,
+      targets: resolveDisplayTargets(targets, workouts, ex.name),
       suggestedWeight: capSuggestedWeight(last?.weight ?? null, ex, activeProfile.equipment),
       suggestedDuration: ex.tracksDuration ? lastWorkingDuration(ex.name, workouts) : null,
       unit: last?.unit ?? "lb",
       isFamiliar: known.has(ex.name),
+      trend: stalledExerciseNames.has(ex.name)
+        ? "stalled"
+        : watchedExerciseNames.has(ex.name)
+          ? "watch"
+          : "none",
       progression: buildProgression(ex, targets, workouts),
     };
   };
@@ -2447,9 +2547,11 @@ export function generateNextWorkout(
 
     // Signal to scoreExercise that the first pick is hinge- or rdl-family, so the
     // posterior-chain overload penalty fires when scoring second-pick candidates
-    // (before the first pick is claimed).
+    // (before the first pick is claimed). pendingPicks does the same for the
+    // muscle-overlap cap, so the second pick isn't blind to the first's muscles.
     pendingRdlPick = familyOf(first.exercise) === "rdl";
     pendingHingePick = movementOf(first.exercise) === "hinge";
+    pendingPicks = [first.exercise];
     let second = pickForMovement(
       allowed.filter((movement) => movement !== first.movement),
       rounds,
@@ -2468,6 +2570,7 @@ export function generateNextWorkout(
     }
     pendingRdlPick = false;
     pendingHingePick = false;
+    pendingPicks = [];
     if (!second) return false;
 
     claimWithStress(first.exercise, rounds);
@@ -2497,6 +2600,7 @@ export function generateNextWorkout(
     const availableMovements = sortedByNeed(allowed);
 
     for (const movement of availableMovements) {
+      pendingPicks = picks.map((existing) => existing.exercise);
       const pick = pickForMovement(
         [movement],
         rounds,
@@ -2512,6 +2616,7 @@ export function generateNextWorkout(
     }
 
     if (picks.length < 3) {
+      pendingPicks = picks.map((existing) => existing.exercise);
       const fallbackPick = pickForMovement(
         allowed,
         rounds,
@@ -2525,6 +2630,7 @@ export function generateNextWorkout(
       if (fallbackPick) picks.push(fallbackPick);
     }
 
+    pendingPicks = [];
     if (picks.length < 3) return false;
 
     picks.forEach((pick) => {
@@ -2596,6 +2702,9 @@ export function generateNextWorkout(
   const secondaryMovements = accessoryMovements.filter(
     (movement) => movement !== compoundPick?.movement,
   );
+  // Signal the muscle-overlap cap about compoundPick before it's claimed, so
+  // secondaryPick candidates aren't scored blind to its muscles.
+  pendingPicks = compoundPick ? [compoundPick.exercise] : [];
   let secondaryPick = lowerBiasSlot
     ? pickForMovement(
       secondaryMovements,
@@ -2647,6 +2756,7 @@ export function generateNextWorkout(
         !(compoundPick?.exercise.equipment === "barbell" && ex.equipment === "barbell"),
     );
   }
+  pendingPicks = [];
 
   if (compoundPick && secondaryPick && hardMode) {
     claimWithStress(compoundPick.exercise, compoundTargets.length);
@@ -2888,11 +2998,27 @@ export function generateNextWorkout(
     ) {
       return false;
     }
-    return exercises.every(
-      (exercise) =>
-        !used.has(exercise.name) &&
-        environmentAllowsExercise(exercise, activeProfile),
-    );
+    if (
+      !exercises.every(
+        (exercise) =>
+          !used.has(exercise.name) &&
+          environmentAllowsExercise(exercise, activeProfile),
+      )
+    ) {
+      return false;
+    }
+    // Hard-excludes a template if any of its exercises would push a muscle
+    // group past its session cap, counting both already-claimed exercises
+    // (main lifts/prior sections) and exercises earlier in this same
+    // template's list — a 3-move all-core template needs enough session
+    // headroom on core for all 3, not just for whichever one is checked
+    // first.
+    const seenInTemplate: Exercise[] = [];
+    for (const exercise of exercises) {
+      if (muscleOverlapOverage(exercise, seenInTemplate).length > 0) return false;
+      seenInTemplate.push(exercise);
+    }
+    return true;
   };
   const templateScore = (template: FinisherTemplate): number => {
     let score = 0;
@@ -2983,6 +3109,7 @@ export function generateNextWorkout(
     const finisherCandidates = EXERCISES.filter((ex) => {
       if (used.has(ex.name)) return false;
       if (!environmentAllowsExercise(ex, activeProfile)) return false;
+      if (muscleOverlapOverage(ex).length > 0) return false;
       if (strictPullCatchUpUpperSlot) {
         if (isPushLeaningFinisher(ex) || isLowerFatiguingFinisher(ex)) return false;
       }
@@ -3042,6 +3169,7 @@ export function generateNextWorkout(
       if (finisherNames.has(ex.name)) continue;
       const family = familyOf(ex);
       if (finisherFamilies.has(family)) continue;
+      if (muscleOverlapOverage(ex, finisherPicks).length > 0) continue;
       if (
         finisherPicks.length > 0 &&
         movementOf(ex) !== "carry_core" &&
@@ -3208,8 +3336,18 @@ export function generateNextWorkout(
     );
   }
   if (recent.size > 0) {
+    // Only claim a muscle was "avoided" if this session's own selected
+    // exercises don't actually touch it — recent.size > 0 alone doesn't mean
+    // the session succeeded in avoiding those muscles (a slot's allowed
+    // movements can make some of them unavoidable).
+    const touchedMuscles = new Set(
+      sections.flatMap((section) =>
+        section.exercises.flatMap((ex) => [...ex.primary, ...ex.secondary]),
+      ),
+    );
     const list = [...recent]
       .filter((m) => MUSCLE_GROUPS.includes(m as (typeof MUSCLE_GROUPS)[number]))
+      .filter((m) => !touchedMuscles.has(m))
       .map((m) => m.replace("_", " "));
     if (list.length > 0) {
       rationale.push(
@@ -3239,6 +3377,26 @@ export function generateNextWorkout(
     ["Easy breathing x 1 min", "Light walk x 2 min"],
   );
 
+  // Move watch/stalled-trend sections earlier so recovery-focused lifts land
+  // near the start of the session, when form quality matters most — but
+  // never displace the opening main-lift section, and never move anything
+  // past the finisher (which always stays last, see the fill-in comment
+  // above). Array.prototype.filter is a stable partition, so relative order
+  // within the flagged and non-flagged groups is preserved.
+  const sectionHasFlaggedExercise = (section: DraftSection): boolean =>
+    section.exercises.some((ex) => ex.trend === "watch" || ex.trend === "stalled");
+  const reorderedSections = ((): DraftSection[] => {
+    if (sections.length === 0) return sections;
+    const finisherIndex = sections.findIndex((section) => section.kind === "finisher");
+    const anchorEnd = finisherIndex === -1 ? sections.length : finisherIndex;
+    const fixed = sections.slice(0, 1);
+    const movable = sections.slice(1, anchorEnd);
+    const tail = sections.slice(anchorEnd);
+    const flagged = movable.filter(sectionHasFlaggedExercise);
+    const rest = movable.filter((section) => !sectionHasFlaggedExercise(section));
+    return [...fixed, ...flagged, ...rest, ...tail];
+  })();
+
   return {
     split: {
       slotId: slot.id,
@@ -3250,7 +3408,7 @@ export function generateNextWorkout(
       targetPrimarySets: slot.targetPrimaryStimulus,
     },
     slotRecommendations,
-    sections,
+    sections: reorderedSections,
     rationale,
     mobility,
     cooldown,

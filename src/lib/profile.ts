@@ -5,12 +5,13 @@ import type {
   ExperienceLevel,
   GoalMode,
   HomeGymEquipmentType,
+  MuscleGroup,
   SessionIntensity,
   TrainingDaysPerWeek,
   TrainingEnvironment,
   TrainingProfile,
 } from "./types";
-import { HOME_GYM_EQUIPMENT_OPTIONS } from "./types";
+import { HOME_GYM_EQUIPMENT_OPTIONS, MUSCLE_GROUPS } from "./types";
 
 const STORAGE_KEY = "workout.training-profile.v1";
 const CHANGE_EVENT = "training-profile:changed";
@@ -37,6 +38,7 @@ export const DEFAULT_PROFILE: TrainingProfile = {
   blockedExercises: [],
   allowedExercises: [],
   homeGymEquipment: [],
+  sensitiveMuscles: [],
 };
 
 const EMPTY_SNAPSHOT = { profile: null, ready: false } as const;
@@ -96,6 +98,11 @@ const normalizeProfile = (raw: unknown): TrainingProfile | null => {
             HOME_GYM_EQUIPMENT_OPTIONS.includes(value as HomeGymEquipmentType),
         )
       : DEFAULT_PROFILE.homeGymEquipment,
+    sensitiveMuscles: Array.isArray(candidate.sensitiveMuscles)
+      ? candidate.sensitiveMuscles.filter((value): value is MuscleGroup =>
+          MUSCLE_GROUPS.includes(value as (typeof MUSCLE_GROUPS)[number]),
+        )
+      : DEFAULT_PROFILE.sensitiveMuscles,
   };
 };
 

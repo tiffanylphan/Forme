@@ -22,6 +22,7 @@ describe("profile storage", () => {
       blockedExercises: ["Hack squat"],
       allowedExercises: [],
       homeGymEquipment: ["cable", "barbell"],
+      sensitiveMuscles: ["shoulders"],
     });
 
     expect(loadTrainingProfile()).toEqual({
@@ -33,12 +34,31 @@ describe("profile storage", () => {
       blockedExercises: ["Hack squat"],
       allowedExercises: [],
       homeGymEquipment: ["cable", "barbell"],
+      sensitiveMuscles: ["shoulders"],
     });
   });
 
   it("returns null for malformed stored data", () => {
     localStorage.setItem("workout.training-profile.v1", JSON.stringify({ bad: true }));
     expect(loadTrainingProfile()).toBeNull();
+  });
+
+  it("filters invalid entries out of sensitiveMuscles on load", () => {
+    localStorage.setItem(
+      "workout.training-profile.v1",
+      JSON.stringify({
+        goal: "strength",
+        daysPerWeek: 3,
+        equipment: "home",
+        experience: "intermediate",
+        intensity: "hard",
+        blockedExercises: [],
+        allowedExercises: [],
+        homeGymEquipment: [],
+        sensitiveMuscles: ["shoulders", "not_a_muscle", 123],
+      }),
+    );
+    expect(loadTrainingProfile()?.sensitiveMuscles).toEqual(["shoulders"]);
   });
 
   it("formats profile labels", () => {
