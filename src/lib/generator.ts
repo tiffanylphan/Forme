@@ -3152,37 +3152,52 @@ export function generateNextWorkout(
     ({ score }) => score >= bestTemplateScore - PLANNER_TUNING.finisherVariety.templateShortlistSpread,
   );
   let chosenTemplate: FinisherTemplate | undefined;
+  // When the shortlist has only one entry and it's already been excluded
+  // (i.e. it's the finisher currently on screen), there is no genuine
+  // curated alternative — reusing it anyway makes every Shuffle click a
+  // no-op. Hold onto it as a last resort and let the ad-hoc per-exercise
+  // fallback below take a real shot at variety instead.
+  let fallbackSingletonTemplate: FinisherTemplate | undefined;
   if (templateShortlist.length > 0) {
     // Every template in the shortlist already cleared the score-proximity
     // gate, so treat them as equally valid picks — weighting again within
     // that "good enough" set just collapses variety back onto the top 1-2.
     const excluded = new Set(overrides?.excludeFinisherTemplateIds ?? []);
     const drawPool = templateShortlist.filter(({ template }) => !excluded.has(template.id));
-    const pool = drawPool.length > 0 ? drawPool : templateShortlist;
-    chosenTemplate = pool[Math.floor(finisherRng() * pool.length)]?.template;
+    if (drawPool.length > 0) {
+      chosenTemplate = drawPool[Math.floor(finisherRng() * drawPool.length)]?.template;
+    } else if (templateShortlist.length > 1) {
+      chosenTemplate = templateShortlist[Math.floor(finisherRng() * templateShortlist.length)]?.template;
+    } else {
+      fallbackSingletonTemplate = templateShortlist[0].template;
+    }
   }
 
-  if (chosenTemplate) {
-    const templateExercises = chosenTemplate.exercises
+  const applyChosenTemplate = (template: FinisherTemplate) => {
+    const templateExercises = template.exercises
       .map(findExerciseByName)
       .filter((exercise): exercise is Exercise => Boolean(exercise));
     templateExercises.forEach((exercise) => {
       claimWithStress(
         exercise,
-        chosenTemplate.rounds,
+        template.rounds,
         PLANNER_TUNING.fatigueBudget.finisherStressMultiplier,
       );
       if (movementOf(exercise) === "carry_core") pushMovement("carry_core");
     });
     sections.push({
       kind: "finisher",
-      templateId: chosenTemplate.id,
-      rounds: chosenTemplate.rounds,
-      repScheme: `${chosenTemplate.repScheme} · ${chosenTemplate.label}`,
+      templateId: template.id,
+      rounds: template.rounds,
+      repScheme: `${template.repScheme} · ${template.label}`,
       exercises: templateExercises.map((exercise) =>
-        makeDraftEx(exercise, templateTargetSet(chosenTemplate, exercise)),
+        makeDraftEx(exercise, templateTargetSet(template, exercise)),
       ),
     });
+  };
+
+  if (chosenTemplate) {
+    applyChosenTemplate(chosenTemplate);
   } else {
     const finisherCandidates = EXERCISES.filter((ex) => {
       if (used.has(ex.name)) return false;
@@ -3234,7 +3249,7 @@ export function generateNextWorkout(
         (projectedSessionTotal - sessionFatigueBudget) *
         PLANNER_TUNING.fatigueBudget.finisherBudgetPenaltyMultiplier;
     }
-    return s + (finisherNoise.get(ex.name) ?? 0) * 0.5;
+    return s + (finisherNoise.get(ex.name) ?? 0) * PLANNER_TUNING.finisherVariety.adHocNoiseWeight;
   };
 
   const remainingFinisherCandidates = [...finisherCandidates];
@@ -3276,6 +3291,8 @@ export function generateNextWorkout(
   if (finisherPicks.length === 0) {
     const fin = pickBestFinisher((ex) => {
       if (!environmentAllowsExercise(ex, activeProfile)) return false;
+      if (lowerBiasSlot && isPushLeaningFinisher(ex)) return false;
+      if (upperBiasSlot && isLowerFatiguingFinisher(ex)) return false;
       if (strictPullCatchUpUpperSlot) {
         if (isPushLeaningFinisher(ex) || isLowerFatiguingFinisher(ex)) return false;
       }
@@ -3300,6 +3317,11 @@ export function generateNextWorkout(
       repScheme: finisherLabel(finisherPicks),
       exercises: finisherPicks.map((fin) => makeDraftEx(fin, finisherTargetSet(fin, finisherRounds))),
     });
+  } else if (fallbackSingletonTemplate) {
+    // The ad-hoc fallback found nothing usable — re-show the excluded
+    // singleton template rather than leaving the session without a
+    // finisher section at all.
+    applyChosenTemplate(fallbackSingletonTemplate);
   }
   }
 

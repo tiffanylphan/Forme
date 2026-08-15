@@ -744,6 +744,59 @@ describe("generateNextWorkout", () => {
     expect(redrawTemplateId).not.toBe(baselineTemplateId);
   });
 
+  it("still varies the finisher across repeated shuffles when only one curated template ever applies", () => {
+    // Regression for a real report: "shuffling finishers doesn't work
+    // anymore". For this slot/profile the body-region gate (added to fix
+    // Issue 7 — an all-push circuit filling a lower-focused session) leaves
+    // exactly one template ("wall_ball_sprint") in the shortlist, because
+    // the only other applicable template ("nordic_glute_finisher") is
+    // all-lower-fatiguing and this is an upper-biased slot. Excluding that
+    // singleton after it's shown (as the real Shuffle button does) used to
+    // fall back to re-drawing the same excluded template every time —
+    // shuffling produced no visible change no matter how many times it was
+    // clicked. This simulates the actual page.tsx shuffle flow: record the
+    // shown finisher, exclude it, redraw with a fresh finisherSeed, repeat.
+    const seed = 456;
+    let finisherSeed = seed;
+    let excluded: string[] = [];
+    const keyOf = (draft: ReturnType<typeof generateNextWorkout>) => {
+      const section = draft.sections.find((s) => s.kind === "finisher");
+      return section?.templateId ?? section?.exercises.map((e) => e.name).sort().join("+");
+    };
+
+    let draft = generateNextWorkout([], "2026-05-18", seed, profile, {
+      finisherSeed,
+      forcedSlotId: "upper_back_shoulder_arms",
+    });
+    const found = new Set<string>();
+    const firstKey = keyOf(draft);
+    expect(firstKey).toBeTruthy();
+    found.add(firstKey!);
+
+    for (let i = 0; i < 20; i += 1) {
+      const currentTemplateId = draft.sections.find((s) => s.kind === "finisher")?.templateId;
+      if (currentTemplateId) {
+        excluded = [currentTemplateId, ...excluded.filter((id) => id !== currentTemplateId)].slice(0, 3);
+      }
+      finisherSeed = seed + i + 1;
+      draft = generateNextWorkout([], "2026-05-18", seed, profile, {
+        finisherSeed,
+        forcedSlotId: "upper_back_shoulder_arms",
+        excludeFinisherTemplateIds: excluded.length > 0 ? excluded : undefined,
+      });
+      const key = keyOf(draft);
+      if (key) found.add(key);
+    }
+
+    expect(found.size).toBeGreaterThanOrEqual(4);
+
+    const finisherExercises = draft.sections.find((s) => s.kind === "finisher")?.exercises ?? [];
+    const resolved = finisherExercises
+      .map((ex) => findExercise(ex.name))
+      .filter((ex): ex is Exercise => Boolean(ex));
+    expect(resolved.every((ex) => isLowerFatiguingFinisher(ex))).toBe(false);
+  });
+
   it("advances to the next slot when the current week already has the prior sessions logged", () => {
     const workouts = [
       workout("w1", "2026-05-05", [

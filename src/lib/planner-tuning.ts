@@ -205,6 +205,7 @@ export const PLANNER_TUNING = {
   // to whichever 1-3 templates score closest to the top.
   finisherVariety: {
     templateShortlistSpread: 2.5,
+    adHocNoiseWeight: 1.5,
   },
 
   // Total per-session recovery budget and how finishers count against it.
