@@ -492,13 +492,29 @@ export default function LogPage() {
     );
   };
 
+  // Exercises sharing a group can have uneven set counts (e.g. a compound
+  // exercise with 4 sets grouped with a 3-set accessory), so "round N" only
+  // applies to exercises that actually have a set at that index — an
+  // exercise with fewer sets is left untouched when a later round is
+  // removed, rather than having an unrelated set stripped out by position.
+  //
+  // block.rounds is Math.max(routineGroup.rounds, maxSets) (see buildBlocks),
+  // so a plan-hydrated group's routineGroup.rounds acts as a floor. Without
+  // decrementing it here, removing a round below that floor is a no-op on
+  // the rendered round count: the round stays on screen with nothing left to
+  // remove, and its "Remove round" button becomes permanently dead.
   const removeRound = (groupId: string, roundIdx: number) => {
     setSaveError(null);
     setExercises((prev) =>
       prev.map((ex) => {
         if (ex.supersetGroup !== groupId) return ex;
-        if (ex.sets.length <= 1) return ex;
-        return { ...ex, sets: ex.sets.filter((_, i) => i !== roundIdx) };
+        const routineGroup = ex.routineGroup
+          ? { ...ex.routineGroup, rounds: Math.max(1, ex.routineGroup.rounds - 1) }
+          : ex.routineGroup;
+        if (roundIdx >= ex.sets.length || ex.sets.length <= 1) {
+          return { ...ex, routineGroup };
+        }
+        return { ...ex, routineGroup, sets: ex.sets.filter((_, i) => i !== roundIdx) };
       }),
     );
   };
@@ -1258,7 +1274,27 @@ function SupersetBlockView({
             <div className="space-y-1">
               {lanes.map((ex, i) => {
                 const set = ex.sets[roundIdx];
-                if (!set) return null;
+                if (!set) {
+                  // Keep this exercise's row visible (rather than
+                  // vanishing) so it stays clear which exercise a round
+                  // belongs to when set counts differ across the group.
+                  return (
+                    <div
+                      key={ex.id}
+                      className="grid grid-cols-[20px_1fr] items-center gap-2 py-1"
+                    >
+                      <span
+                        className="text-[11px] font-semibold"
+                        style={{ color: color.text }}
+                      >
+                        {String.fromCharCode(65 + i)}
+                      </span>
+                      <span className="text-[12px] italic text-text-subtle">
+                        {ex.exerciseName} has no round {roundIdx + 1}
+                      </span>
+                    </div>
+                  );
+                }
                 const isDuration = findExercise(ex.exerciseName)?.tracksDuration === true;
                 return (
                   <div
