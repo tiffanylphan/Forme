@@ -154,7 +154,7 @@ export const getExerciseCoaching = (exercise: Exercise): ExerciseCoaching => {
   if (name.includes("lateral raise") || name.includes("front raise") || name.includes("sunrise raise") || name.includes("prone press")) {
     return {
       works: musclesSummary(exercise),
-      setup: "Choose a load you can move without body English.",
+      setup: "Choose a load light enough to lift with strict form, not momentum.",
       cues: ["Lift with soft elbows", "Stop before shrugging", "Lower slowly"],
       mistakes: ["Swinging", "Shrugging to the ears", "Using too much weight"],
       why: "High-value shoulder isolation for cap and shape.",
