@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateProgressionStatus, getStallState } from "./progression";
+import { evaluateProgressionStatus, getExerciseHistory, getStallState } from "./progression";
 import type { Workout } from "./types";
 
 const workout = (
@@ -206,5 +206,34 @@ describe("evaluateProgressionStatus", () => {
     ];
 
     expect(getStallState("Cable row", workouts)).toBe("stalled");
+  });
+});
+
+describe("getExerciseHistory", () => {
+  it("summarizes a logged set using its actual unit, not a hardcoded lb", () => {
+    const workouts: Workout[] = [
+      {
+        id: "w1",
+        date: "2026-05-05",
+        source: "manual",
+        createdAt: 1,
+        updatedAt: 1,
+        exercises: [
+          {
+            id: "w1-ex",
+            exerciseName: "Goblet squat",
+            supersetGroup: null,
+            sets: [
+              { id: "w1-s1", reps: 10, weight: 16, unit: "kg" },
+              { id: "w1-s2", reps: 10, weight: 16, unit: "kg" },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const [entry] = getExerciseHistory("Goblet squat", workouts);
+    expect(entry.summary).toContain("kg");
+    expect(entry.summary).not.toContain("lb");
   });
 });

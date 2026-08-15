@@ -187,6 +187,32 @@ const lastWorkingWeight = (
   return null;
 };
 
+const previousWorkingWeight = (
+  name: string,
+  workouts: Workout[],
+): { weight: number; unit: WeightUnit; date: string } | null => {
+  const sorted = [...workouts].sort((a, b) =>
+    a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt,
+  );
+  let skippedMostRecent = false;
+  for (const w of sorted) {
+    for (const e of w.exercises) {
+      if (e.exerciseName !== name) continue;
+      const weighted = e.sets.filter(
+        (s): s is typeof s & { weight: number } => typeof s.weight === "number",
+      );
+      if (weighted.length === 0) continue;
+      if (!skippedMostRecent) {
+        skippedMostRecent = true;
+        break;
+      }
+      const last = weighted[weighted.length - 1];
+      return { weight: last.weight, unit: last.unit, date: w.date };
+    }
+  }
+  return null;
+};
+
 const lastWorkingDuration = (name: string, workouts: Workout[]): number | null => {
   const sorted = [...workouts].sort((a, b) =>
     a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt,
@@ -246,6 +272,19 @@ const buildProgression = (
   workouts: Workout[],
 ): DraftExercise["progression"] => {
   const performance = lastPerformance(ex.name, workouts);
+  const previousWeight = previousWorkingWeight(ex.name, workouts);
+  // Only treat this as a deliberate, recent reset — not just "whatever the
+  // last two logged occurrences happened to be" — so a comeback session
+  // after a long layoff doesn't get told it "recently" dropped load.
+  const daysSincePreviousWeight =
+    performance && previousWeight
+      ? (Date.parse(performance.date) - Date.parse(previousWeight.date)) / (1000 * 60 * 60 * 24)
+      : Infinity;
+  const justReducedLoad =
+    performance?.weight != null &&
+    previousWeight != null &&
+    performance.weight < previousWeight.weight &&
+    daysSincePreviousWeight <= 14;
   const recentHistory = getExerciseHistory(ex.name, workouts, undefined, 3);
   const recentStatuses = getRecentProgressionStatuses(ex.name, workouts, undefined, 3);
   const latestStatus = recentStatuses[0];
@@ -318,6 +357,15 @@ const buildProgression = (
       const actual = performance.reps[index];
       return typeof actual === "number" && actual >= target;
     });
+
+  if (performance?.weight != null && hitAllPlanned && justReducedLoad) {
+    return {
+      lastSummary,
+      goal: `Consolidate at ${performance.weight} ${performance.unit} with ${plannedRepSummary} reps.`,
+      nextStep: `You recently dropped load here — hold this weight for one more clean session before adding back.`,
+      recentHistory,
+    };
+  }
 
   if (performance?.weight != null && hitAllPlanned) {
     return {
@@ -1969,6 +2017,25 @@ export function generateNextWorkout(
 
     s += deficitClosureScore * PLANNER_TUNING.exerciseSelection.deficitClosureWeight;
     s += deficitMagnitudeScore * PLANNER_TUNING.exerciseSelection.deficitMagnitudeWeight;
+    // Deficit-magnitude scoring above sums primary AND secondary muscle tags,
+    // so a near-capped muscle's exercise can still score well if it carries an
+    // under-target muscle as a secondary tag. This penalty looks only at each
+    // candidate's own primary muscles' weekly coverage (no cross-candidate
+    // comparison needed) so a glute-primary pick can't out-rank a hamstring-
+    // primary pick just because it also happens to hit hamstrings secondarily.
+    let nearCapPenalty = 0;
+    ex.primary.forEach((m) => {
+      const saturation = muscleSaturation[m];
+      if (
+        saturation !== undefined &&
+        saturation >= PLANNER_TUNING.exerciseSelection.nearCapSaturationThreshold
+      ) {
+        nearCapPenalty +=
+          (saturation - PLANNER_TUNING.exerciseSelection.nearCapSaturationThreshold) *
+          PLANNER_TUNING.exerciseSelection.nearCapPenaltyWeight;
+      }
+    });
+    s -= nearCapPenalty;
     s -= Math.min(PLANNER_TUNING.exerciseSelection.recoveryPenaltyCap, recoveryPenalty);
     s -= Math.min(PLANNER_TUNING.exerciseSelection.overlapPenaltyCap, sessionOverlapPenalty);
     if (projectedSessionTotal > sessionFatigueBudget) {
@@ -2989,6 +3056,17 @@ export function generateNextWorkout(
       .map(findExerciseByName)
       .filter((exercise): exercise is Exercise => Boolean(exercise));
     if (exercises.length !== template.exercises.length) return false;
+    // Almost every template carries the generic "conditioning" tag, which
+    // bypasses the lower/upper tag gates above — reject a template whose
+    // exercises are ALL off-theme for this session's body region so an
+    // all-push circuit can't fill a lower-focused session's finisher slot
+    // (and vice versa).
+    if (lowerBiasSlot && exercises.every((exercise) => isPushLeaningFinisher(exercise))) {
+      return false;
+    }
+    if (upperBiasSlot && exercises.every((exercise) => isLowerFatiguingFinisher(exercise))) {
+      return false;
+    }
     if (
       strictPullCatchUpUpperSlot &&
       (template.tags.includes("lower") ||
@@ -3110,6 +3188,8 @@ export function generateNextWorkout(
       if (used.has(ex.name)) return false;
       if (!environmentAllowsExercise(ex, activeProfile)) return false;
       if (muscleOverlapOverage(ex).length > 0) return false;
+      if (lowerBiasSlot && isPushLeaningFinisher(ex)) return false;
+      if (upperBiasSlot && isLowerFatiguingFinisher(ex)) return false;
       if (strictPullCatchUpUpperSlot) {
         if (isPushLeaningFinisher(ex) || isLowerFatiguingFinisher(ex)) return false;
       }

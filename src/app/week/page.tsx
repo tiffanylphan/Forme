@@ -63,7 +63,8 @@ export default function WeekPage() {
           const done = coverage.muscleStats[muscle]?.primaryStimulus ?? 0;
           const pct = Math.min(100, Math.round((done / target) * 100));
           const remaining = Math.max(0, target - done);
-          return { muscle, target, done, pct, remaining };
+          const overPct = target > 0 && done > target ? Math.round((done / target) * 100) : null;
+          return { muscle, target, done, pct, remaining, overPct };
         }),
     [coverage.muscleStats, weeklyTargets],
   );
@@ -211,6 +212,15 @@ export default function WeekPage() {
 
             if (upper + lower === 0) return null;
 
+            const PUSH_MUSCLES: MuscleGroup[] = ["chest", "shoulders", "triceps"];
+            const PULL_MUSCLES: MuscleGroup[] = ["back", "rear_delts", "biceps"];
+            const musclesUnderTarget = (muscles: MuscleGroup[]) =>
+              muscles.filter((m) => {
+                const target = weeklyTargets[m] ?? 0;
+                const done = coverage.muscleStats[m]?.primaryStimulus ?? 0;
+                return target > 0 && done < target;
+              });
+
             type Pair = {
               left: string; leftSets: number; leftBar: string; leftText: string;
               right: string; rightSets: number; rightBar: string; rightText: string;
@@ -226,8 +236,18 @@ export default function WeekPage() {
                 flag: pull === 0
                   ? "No pulling yet this week."
                   : push >= pull
-                    ? `${(push / pull).toFixed(1)}:1 — add ~${Math.round(push - pull)} pull sets to reach 1:1.`
-                    : `${(pull / push).toFixed(1)}:1 — add ~${Math.round(pull - push)} push sets to reach 1:1.`,
+                    ? (() => {
+                        const under = musclesUnderTarget(PULL_MUSCLES);
+                        return under.length > 0
+                          ? `${(push / pull).toFixed(1)}:1 — add ${under.map(formatMuscle).join("/")} sets to close the gap.`
+                          : `${(push / pull).toFixed(1)}:1 by set count, but pull muscles are already meeting their weekly targets.`;
+                      })()
+                    : (() => {
+                        const under = musclesUnderTarget(PUSH_MUSCLES);
+                        return under.length > 0
+                          ? `${(pull / push).toFixed(1)}:1 — add ${under.map(formatMuscle).join("/")} sets to close the gap.`
+                          : `${(pull / push).toFixed(1)}:1 by set count, but push muscles are already meeting their weekly targets.`;
+                      })(),
               },
               {
                 left: "Knee", leftSets: squat, leftBar: "#c5e8dc", leftText: "#085041",
@@ -336,9 +356,11 @@ export default function WeekPage() {
                       <div className="flex items-center gap-2">
                         <MuscleTag muscle={row.muscle} size="md" />
                         <span className="text-[12px] text-text-subtle">
-                          {row.remaining === 0
-                            ? "On target"
-                            : `${row.remaining.toFixed(1)} stimulus left`}
+                          {row.overPct != null && row.overPct > 120
+                            ? `Over target (${row.overPct}%)`
+                            : row.remaining === 0
+                              ? "On target"
+                              : `${row.remaining.toFixed(1)} stimulus left`}
                         </span>
                       </div>
                       <span className="font-mono text-[13px] text-text">

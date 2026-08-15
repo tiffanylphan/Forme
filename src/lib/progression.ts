@@ -18,6 +18,11 @@ const maxWeightedLoad = (sets: SetEntry[]): number | null => {
   return weights.length > 0 ? Math.max(...weights) : null;
 };
 
+const maxWeightedSet = (sets: SetEntry[]): SetEntry | null => {
+  const weighted = sets.filter((s): s is SetEntry & { weight: number } => typeof s.weight === "number");
+  return weighted.length > 0 ? weighted.reduce((max, s) => (s.weight > max.weight ? s : max)) : null;
+};
+
 const totalVolume = (sets: SetEntry[]): number =>
   sets.reduce(
     (sum, s) =>
@@ -42,14 +47,14 @@ const totalDistance = (sets: SetEntry[]): number =>
   );
 
 export const summarizeExerciseLog = (exercise: ExerciseLog): string => {
-  const load = maxWeightedLoad(exercise.sets);
+  const maxSet = maxWeightedSet(exercise.sets);
   const reps = exercise.sets
     .map((set) => (typeof set.reps === "number" ? set.reps.toString() : null))
     .filter((value): value is string => Boolean(value));
   const duration = totalDuration(exercise.sets);
   const distance = totalDistance(exercise.sets);
 
-  if (load != null && reps.length > 0) return `${load} lb x ${reps.join("/")}`;
+  if (maxSet != null && reps.length > 0) return `${maxSet.weight} ${maxSet.unit} x ${reps.join("/")}`;
   if (reps.length > 0) return `${reps.join("/")} reps`;
   if (distance > 0) return `${distance} m`;
   if (duration > 0) return `${duration}s`;

@@ -121,6 +121,8 @@ export const PLANNER_TUNING = {
     deficitClosureWeight: 8.5,
     deficitMagnitudeCap: 18,
     deficitMagnitudeWeight: 0.10,
+    nearCapSaturationThreshold: 0.9,
+    nearCapPenaltyWeight: 5,
     recoveryPenaltyCap: 7.5,
     overlapPenaltyCap: 4.5,
     armBiasBudgetPenaltyMultiplier: 0.3,
