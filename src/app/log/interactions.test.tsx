@@ -348,6 +348,138 @@ describe("LogPage interactions", () => {
     expect(screen.getByText("Round 4")).toBeInTheDocument();
   });
 
+  it("keeps every exercise's row visible per round when set counts differ within a circuit", async () => {
+    popEditWorkoutMock.mockReturnValue({
+      id: "workout-1",
+      date: "2026-05-06",
+      source: "manual" as const,
+      createdAt: 10,
+      updatedAt: 11,
+      exercises: [
+        {
+          id: "ex1",
+          exerciseName: "Cable row",
+          supersetGroup: "ssgrp1",
+          sets: [
+            { id: "a1", reps: 10, weight: 70, unit: "lb" as const },
+            { id: "a2", reps: 10, weight: 70, unit: "lb" as const },
+            { id: "a3", reps: 10, weight: 70, unit: "lb" as const },
+            { id: "a4", reps: 10, weight: 70, unit: "lb" as const },
+          ],
+        },
+        {
+          id: "ex2",
+          exerciseName: "DB lateral raise",
+          supersetGroup: "ssgrp1",
+          sets: [
+            { id: "b1", reps: 15, weight: 10, unit: "lb" as const },
+            { id: "b2", reps: 15, weight: 10, unit: "lb" as const },
+            { id: "b3", reps: 15, weight: 10, unit: "lb" as const },
+          ],
+        },
+        {
+          id: "ex3",
+          exerciseName: "Lat pulldown",
+          supersetGroup: "ssgrp1",
+          sets: [
+            { id: "c1", reps: 12, weight: 60, unit: "lb" as const },
+            { id: "c2", reps: 12, weight: 60, unit: "lb" as const },
+            { id: "c3", reps: 12, weight: 60, unit: "lb" as const },
+          ],
+        },
+      ],
+    });
+    getWorkoutMock.mockReturnValue(null);
+
+    render(<LogPage />);
+    await screen.findByText("Round 4");
+
+    // Only Cable row has a 4th real set; the other two exercises must still
+    // show a labeled row for round 4 instead of silently disappearing, so
+    // it's clear which exercise round 4 does (and doesn't) belong to.
+    expect(screen.getByText("DB lateral raise has no round 4")).toBeInTheDocument();
+    expect(screen.getByText("Lat pulldown has no round 4")).toBeInTheDocument();
+  });
+
+  it("actually removes a round from a routine-hydrated group instead of leaving a phantom round behind", async () => {
+    const user = userEvent.setup();
+    popEditWorkoutMock.mockReturnValue(null);
+    popDraftMock.mockReturnValue({
+      source: "manual",
+      draft: {
+        split: {
+          slotId: "upper_back_shoulder",
+          title: "Upper A · Back/Shoulders",
+          summary: "Upper session theme with back, shoulders, and glute support.",
+          sessionIndex: 2,
+          totalSessions: 4,
+          targetPrimarySets: { back: 8, shoulders: 5 },
+        },
+        mobility: { title: "5-minute warm-up", items: [], complementary: [] },
+        cooldown: { title: "Cooldown", items: [], complementary: [] },
+        rationale: [],
+        sections: [
+          {
+            kind: "compound",
+            rounds: 4,
+            repScheme: "10 / 8 / 8 / 6 — build weight",
+            exercises: [
+              {
+                name: "Cable row",
+                primary: ["back"],
+                secondary: ["biceps"],
+                pattern: "pull",
+                movement: "pull",
+                targets: [10, 8, 8, 6],
+                suggestedWeight: 70,
+                unit: "lb",
+                isFamiliar: true,
+              },
+            ],
+          },
+          {
+            kind: "accessory",
+            rounds: 3,
+            repScheme: "12–15 reps · short rest",
+            exercises: [
+              {
+                name: "DB lateral raise",
+                primary: ["shoulders"],
+                secondary: ["rear_delts"],
+                pattern: "push",
+                movement: "push",
+                targets: [15, 12, 12],
+                suggestedWeight: 10,
+                unit: "lb",
+                isFamiliar: true,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    getWorkoutMock.mockReturnValue(null);
+
+    render(<LogPage />);
+    await screen.findByText("Round 4");
+    expect(screen.getByDisplayValue("6")).toBeInTheDocument();
+
+    const removeRoundButtons = screen.getAllByText("Remove round");
+    await user.click(removeRoundButtons[removeRoundButtons.length - 1]);
+
+    // Cable row's round-4 set (reps 6) is gone, and — critically — "Round 4"
+    // itself must disappear rather than sticking around as an empty,
+    // permanently un-removable round because routineGroup.rounds (the
+    // planned round count) never got decremented alongside the sets.
+    expect(screen.queryByDisplayValue("6")).not.toBeInTheDocument();
+    expect(screen.queryByText("Round 4")).not.toBeInTheDocument();
+
+    // DB lateral raise already had no round 4 of its own, so its real data
+    // (rounds 1-3) must be untouched by removing Cable row's round 4.
+    expect(screen.getByDisplayValue("15")).toBeInTheDocument();
+    expect(screen.getAllByDisplayValue("12")).toHaveLength(2);
+  });
+
   it("auto-clears draft metadata after removing the last exercise", async () => {
     const user = userEvent.setup();
     popEditWorkoutMock.mockReturnValue(null);
