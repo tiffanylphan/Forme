@@ -90,6 +90,56 @@ describe("WorkoutDetailPage", () => {
     expect(routerPushMock).toHaveBeenCalledWith("/log");
   });
 
+  it("shows more than 3 past sessions of an exercise's progression history", async () => {
+    useParamsMock.mockReturnValue({ id: "workout-current" });
+    const pastWorkouts = [60, 61, 62, 63, 64, 65].map((weight, i) => ({
+      id: `workout-past-${i}`,
+      date: `2026-04-${String(i + 1).padStart(2, "0")}`,
+      source: "manual",
+      createdAt: i,
+      updatedAt: i,
+      exercises: [
+        {
+          id: `past-${i}`,
+          exerciseName: "Cable row",
+          progressionStatus: "progressed",
+          supersetGroup: null,
+          sets: [{ id: `past-${i}-s1`, reps: 10, weight, unit: "lb" }],
+        },
+      ],
+    }));
+    useWorkoutsMock.mockReturnValue({
+      ready: true,
+      workouts: [
+        ...pastWorkouts,
+        {
+          id: "workout-current",
+          date: "2026-05-06",
+          source: "manual",
+          createdAt: 100,
+          updatedAt: 100,
+          exercises: [
+            {
+              id: "current",
+              exerciseName: "Cable row",
+              progressionStatus: "progressed",
+              supersetGroup: null,
+              sets: [{ id: "current-s1", reps: 10, weight: 70, unit: "lb" }],
+            },
+          ],
+        },
+      ],
+    });
+
+    render(<WorkoutDetailPage />);
+
+    // Most recent 3 sessions (weights 65, 64, 63) were visible even under the old 3-entry cap.
+    expect(screen.getByText(/65 lb x 10/)).toBeInTheDocument();
+    // The 4th-6th most recent sessions were previously cut off — they must now be visible too.
+    expect(screen.getByText(/62 lb x 10/)).toBeInTheDocument();
+    expect(screen.getByText(/60 lb x 10/)).toBeInTheDocument();
+  });
+
   it("deletes a workout after confirmation", async () => {
     const user = userEvent.setup();
     vi.stubGlobal("confirm", vi.fn(() => true));

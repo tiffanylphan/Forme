@@ -44,6 +44,8 @@ const formatSet = (s: SetEntry): string => {
   return reps ?? weight ?? "—";
 };
 
+const HISTORY_DISPLAY_LIMIT = 30;
+
 const PROGRESSION_STYLES: Record<
   NonNullable<ExerciseLog["progressionStatus"]>,
   { bg: string; text: string; label: string }
@@ -82,7 +84,12 @@ export default function WorkoutDetailPage() {
     return new Map(
       workout.exercises.map((exercise) => [
         exercise.exerciseName,
-        getExerciseHistory(exercise.exerciseName, workouts, workout.id, 3),
+        getExerciseHistory(
+          exercise.exerciseName,
+          workouts,
+          workout.id,
+          HISTORY_DISPLAY_LIMIT,
+        ),
       ]),
     );
   }, [workout, workouts]);
