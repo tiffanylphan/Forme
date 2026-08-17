@@ -50,6 +50,17 @@ export const hasSecondary = (ex: Exercise, muscle: MuscleGroup): boolean =>
 export const hasAnyMuscle = (ex: Exercise, muscles: MuscleGroup[]): boolean =>
   muscles.some((muscle) => hasPrimary(ex, muscle) || hasSecondary(ex, muscle));
 
+export type MuscleFilter = {
+  include?: MuscleGroup[];
+  exclude?: MuscleGroup[];
+};
+
+export const matchesMuscleFilter = (ex: Exercise, filter: MuscleFilter): boolean => {
+  if (filter.include?.length && !hasAnyMuscle(ex, filter.include)) return false;
+  if (filter.exclude?.length && hasAnyMuscle(ex, filter.exclude)) return false;
+  return true;
+};
+
 export const familyOf = (ex: Exercise): string => {
   const name = ex.name.toLowerCase();
   if (name.includes("hip thrust") || name.includes("glute bridge")) return "hip_thrust";

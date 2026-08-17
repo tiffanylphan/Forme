@@ -1,3 +1,4 @@
+import type { Coverage } from "./coverage";
 import type { MovementPattern, MuscleGroup, TrainingProfile, Workout } from "./types";
 
 export type SplitSlot = {
@@ -312,6 +313,38 @@ export function getWeeklyTargetStimulus(
   });
 
   return totals;
+}
+
+export type MuscleTargetRow = {
+  muscle: MuscleGroup;
+  target: number;
+  done: number;
+  pct: number;
+  remaining: number;
+  overPct: number | null;
+};
+
+export function buildMuscleTargetRows(
+  targetPrimaryStimulus: Partial<Record<MuscleGroup, number>>,
+  coverage: Coverage,
+): MuscleTargetRow[] {
+  return (Object.entries(targetPrimaryStimulus) as [MuscleGroup, number][])
+    .filter(([, target]) => typeof target === "number" && target > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([muscle, target]) => {
+      const done = coverage.muscleStats[muscle]?.primaryStimulus ?? 0;
+      const pct = Math.min(100, Math.round((done / target) * 100));
+      const remaining = Math.max(0, target - done);
+      const overPct = target > 0 && done > target ? Math.round((done / target) * 100) : null;
+      return { muscle, target, done, pct, remaining, overPct };
+    });
+}
+
+export function getMuscleTargetRows(
+  profile: TrainingProfile,
+  coverage: Coverage,
+): MuscleTargetRow[] {
+  return buildMuscleTargetRows(getWeeklyTargetStimulus(profile, coverage.workouts), coverage);
 }
 
 export const getWeeklyTargetSets = getWeeklyTargetStimulus;

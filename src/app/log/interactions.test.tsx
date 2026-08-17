@@ -17,6 +17,7 @@ vi.mock("@/lib/storage", () => ({
   loadWorkouts: () => [],
   popEditWorkout: () => popEditWorkoutMock(),
   upsertWorkout: (workout: unknown) => upsertWorkoutMock(workout),
+  useWorkouts: () => ({ workouts: [], ready: true }),
 }));
 
 describe("LogPage interactions", () => {

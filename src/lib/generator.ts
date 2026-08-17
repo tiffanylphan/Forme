@@ -1441,8 +1441,15 @@ const maybeOverrideForCriticalGap = (
       recentMuscleFatigue,
     );
 
-    split.forEach((slot, index) => {
-      if (!slot.allowedMovements.includes(movement)) return;
+    const eligible = split
+      .map((slot, index) => ({ slot, index }))
+      .filter(({ slot }) => slot.allowedMovements.includes(movement));
+    const nonSaturatedEligible = eligible.filter(
+      ({ slot }) => !slotHasOverTargetMajorMuscle(slot, muscleSaturation),
+    );
+    const candidates = nonSaturatedEligible.length > 0 ? nonSaturatedEligible : eligible;
+
+    candidates.forEach(({ slot, index }) => {
       let score = scoreSplitSlot(
         slot,
         index,
@@ -2036,6 +2043,41 @@ export function generateNextWorkout(
       }
     });
     s -= nearCapPenalty;
+
+    // Steeper, tiered penalty for a candidate that touches a muscle already OVER its
+    // real weekly target (muscleSaturation >= 1.0) — checked across BOTH primary and
+    // secondary tags, unlike nearCapPenalty above. A compound that re-stresses an
+    // already-maxed muscle only as a secondary tag would otherwise slip through.
+    // Capped so this term alone can never push a legal candidate below pickBest's
+    // -10 exclusion floor on its own — worst case it becomes the "least bad" pick
+    // for a movement rather than removing the movement's section entirely.
+    let overTargetPenalty = 0;
+    const touchedMuscles: [MuscleGroup, number][] = [
+      ...ex.primary.map((m): [MuscleGroup, number] => [m, 1]),
+      ...ex.secondary.map((m): [MuscleGroup, number] => [
+        m,
+        PLANNER_TUNING.exerciseSelection.overTargetSecondaryWeight,
+      ]),
+    ];
+    touchedMuscles.forEach(([m, weight]) => {
+      const saturation = muscleSaturation[m];
+      if (saturation === undefined) return;
+      if (saturation >= PLANNER_TUNING.exerciseSelection.overTargetHighThreshold) {
+        const excess = saturation - PLANNER_TUNING.exerciseSelection.overTargetHighThreshold;
+        overTargetPenalty +=
+          weight *
+          (PLANNER_TUNING.exerciseSelection.overTargetHighPenalty +
+            excess * PLANNER_TUNING.exerciseSelection.overTargetHighPenaltyScale);
+      } else if (saturation >= PLANNER_TUNING.exerciseSelection.overTargetThreshold) {
+        const excess = saturation - PLANNER_TUNING.exerciseSelection.overTargetThreshold;
+        overTargetPenalty +=
+          weight *
+          (PLANNER_TUNING.exerciseSelection.overTargetPenalty +
+            excess * PLANNER_TUNING.exerciseSelection.overTargetPenaltyScale);
+      }
+    });
+    s -= Math.min(PLANNER_TUNING.exerciseSelection.overTargetPenaltyCap, overTargetPenalty);
+
     s -= Math.min(PLANNER_TUNING.exerciseSelection.recoveryPenaltyCap, recoveryPenalty);
     s -= Math.min(PLANNER_TUNING.exerciseSelection.overlapPenaltyCap, sessionOverlapPenalty);
     if (projectedSessionTotal > sessionFatigueBudget) {

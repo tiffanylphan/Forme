@@ -13,7 +13,7 @@ import {
   weekContaining,
 } from "@/lib/coverage";
 import { formatMuscle, todayISO } from "@/lib/format";
-import { getWeeklyTargetStimulus } from "@/lib/splits";
+import { getMuscleTargetRows, getWeeklyTargetStimulus } from "@/lib/splits";
 import {
   MOVEMENT_BLURBS,
   MOVEMENT_COLORS,
@@ -55,18 +55,8 @@ export default function WeekPage() {
     [profile, coverage.workouts],
   );
   const targetRows = useMemo(
-    () =>
-      Object.entries(weeklyTargets)
-        .filter((entry): entry is [MuscleGroup, number] => typeof entry[1] === "number" && entry[1] > 0)
-        .sort((a, b) => b[1] - a[1])
-        .map(([muscle, target]) => {
-          const done = coverage.muscleStats[muscle]?.primaryStimulus ?? 0;
-          const pct = Math.min(100, Math.round((done / target) * 100));
-          const remaining = Math.max(0, target - done);
-          const overPct = target > 0 && done > target ? Math.round((done / target) * 100) : null;
-          return { muscle, target, done, pct, remaining, overPct };
-        }),
-    [coverage.muscleStats, weeklyTargets],
+    () => (profile ? getMuscleTargetRows(profile, coverage) : []),
+    [profile, coverage],
   );
   const muscleMapRows = useMemo(
     () =>

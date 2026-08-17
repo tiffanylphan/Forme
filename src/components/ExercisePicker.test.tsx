@@ -55,4 +55,55 @@ describe("ExercisePicker", () => {
     expect(onRemove).toHaveBeenCalledWith("Cable row");
   });
 
+  it("cycles a muscle chip through include, exclude, and back to unselected", async () => {
+    const user = userEvent.setup();
+    render(<ExercisePicker open onClose={() => {}} onPick={() => {}} />);
+
+    const chip = screen.getByTestId("muscle-chip-hamstrings");
+    expect(chip).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(chip); // -> include
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+    expect(chip).toHaveStyle({ background: "#1a1a18" });
+
+    await user.click(chip); // -> exclude
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+    expect(chip).toHaveStyle({ textDecoration: "line-through" });
+
+    await user.click(chip); // -> unselected
+    expect(chip).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("combines an include and an exclude muscle filter", async () => {
+    const user = userEvent.setup();
+    render(<ExercisePicker open onClose={() => {}} onPick={() => {}} />);
+
+    // DB Romanian deadlift hits hamstrings (primary) and glutes (primary) —
+    // including hamstrings but excluding glutes should hide it, while an
+    // exercise like Leg curl (hamstrings only) should remain visible.
+    await user.click(screen.getByTestId("muscle-chip-hamstrings")); // include
+    const glutesChip = screen.getByTestId("muscle-chip-glutes");
+    await user.click(glutesChip); // include
+    await user.click(glutesChip); // exclude
+
+    expect(screen.queryByText("DB Romanian deadlift")).not.toBeInTheDocument();
+    expect(screen.getByText("Leg curl")).toBeInTheDocument();
+  });
+
+  it("shows an over-target legend for an active muscle chip when target rows are supplied", async () => {
+    const user = userEvent.setup();
+    render(
+      <ExercisePicker
+        open
+        onClose={() => {}}
+        onPick={() => {}}
+        muscleTargetRows={[
+          { muscle: "glutes", target: 17, done: 21.6, pct: 100, remaining: 0, overPct: 127 },
+        ]}
+      />,
+    );
+
+    await user.click(screen.getByTestId("muscle-chip-glutes"));
+    expect(screen.getByText(/Over target \(127%\)/)).toBeInTheDocument();
+  });
 });

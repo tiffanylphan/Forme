@@ -14,6 +14,7 @@ vi.mock("@/lib/storage", () => ({
   loadWorkouts: () => [],
   popEditWorkout: () => popEditWorkoutMock(),
   upsertWorkout: () => {},
+  useWorkouts: () => ({ workouts: [], ready: true }),
 }));
 
 const profile: TrainingProfile = {

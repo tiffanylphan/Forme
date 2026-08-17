@@ -14,6 +14,7 @@ import {
   stashDraft,
 } from "@/lib/generator";
 import { familyOf } from "@/lib/exercise-predicates";
+import { buildMuscleTargetRows } from "@/lib/splits";
 import {
   FOCUSABLE_MUSCLES,
   movementOf,
@@ -720,24 +721,7 @@ function WeeklyTargetCard({
   embedded?: boolean;
 }) {
   const rows = useMemo(
-    () =>
-      Object.entries(targetPrimaryStimulus)
-        .filter((entry): entry is [MuscleGroup, number] => {
-          const [, target] = entry;
-          return typeof target === "number" && target > 0;
-        })
-        .sort((a, b) => b[1] - a[1])
-        .map(([muscle, target]) => {
-          const done = coverage.muscleStats[muscle]?.primaryStimulus ?? 0;
-          const pct = Math.min(100, Math.round((done / target) * 100));
-          return {
-            muscle,
-            target,
-            done,
-            pct,
-            remaining: Math.max(0, target - done),
-          };
-        }),
+    () => buildMuscleTargetRows(targetPrimaryStimulus, coverage),
     [coverage, targetPrimaryStimulus],
   );
   const [expanded, setExpanded] = useState(false);

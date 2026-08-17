@@ -6,14 +6,17 @@ import { useRouter } from "next/navigation";
 import { ExercisePicker } from "@/components/ExercisePicker";
 import { InputClearButton } from "@/components/InputClearButton";
 import { MuscleTag } from "@/components/MuscleTag";
+import { computeCoverage, weekContaining } from "@/lib/coverage";
 import { formatExerciseEquipment, getExerciseCoaching } from "@/lib/exerciseCoaching";
 import { findExercise } from "@/lib/exercises";
 import { movementOf } from "@/lib/movement";
 import { SUPERSET_COLORS } from "@/lib/colors";
 import { formatDate, todayISO, uid } from "@/lib/format";
 import { popDraft } from "@/lib/generator";
+import { useTrainingProfile } from "@/lib/profile";
 import { evaluateProgressionStatus } from "@/lib/progression";
-import { getWorkout, loadWorkouts, popEditWorkout, upsertWorkout } from "@/lib/storage";
+import { getMuscleTargetRows } from "@/lib/splits";
+import { getWorkout, loadWorkouts, popEditWorkout, upsertWorkout, useWorkouts } from "@/lib/storage";
 import type { WorkoutDraft } from "@/lib/generator";
 import type {
   ExerciseLog,
@@ -304,6 +307,17 @@ export default function LogPage() {
     return savedDraft?.defaultUnit ?? "lb";
   });
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  const { workouts: allWorkouts } = useWorkouts();
+  const { profile } = useTrainingProfile();
+  const coverage = useMemo(
+    () => computeCoverage(allWorkouts, weekContaining(date || todayISO())),
+    [allWorkouts, date],
+  );
+  const muscleTargetRows = useMemo(
+    () => (profile ? getMuscleTargetRows(profile, coverage) : []),
+    [profile, coverage],
+  );
 
   useEffect(() => {
     if (!hydrated || !workoutId) return;
@@ -854,6 +868,7 @@ export default function LogPage() {
         }}
         onRemove={swapExerciseId ? undefined : removeExerciseByName}
         alreadyAddedCounts={addedCounts}
+        muscleTargetRows={muscleTargetRows}
       />
 
       <ExerciseGuideSheet

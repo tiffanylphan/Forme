@@ -2582,6 +2582,63 @@ describe("generateNextWorkout", () => {
     expect(deficientPrimaryPicks / N).toBeGreaterThan(3);
   });
 
+  it("de-prioritizes a candidate that touches an over-target muscle only as a secondary tag", () => {
+    // Leg curl and Nordic hamstring curl are both hinge-pattern, hamstrings-primary
+    // exercises — but Nordic hamstring curl also carries glutes as a SECONDARY tag,
+    // while Leg curl touches no other muscle at all. Heavy hip thrust volume here
+    // pushes glutes well past their weekly target (primary-only, so nearCapPenalty
+    // doesn't apply to either candidate — neither has glutes as primary). Only the
+    // new secondary-tag-aware overTargetPenalty can tell these two apart.
+    const workouts = [
+      workout("w1", "2026-06-22", [
+        { name: "Barbell hip thrust", sets: 20 },
+      ], { slotId: "lower_glute_ham", title: "Lower A" }),
+    ];
+
+    let legCurlPicks = 0;
+    let nordicPicks = 0;
+    const N = 60;
+    for (let seed = 0; seed < N; seed += 1) {
+      const draft = generateNextWorkout(workouts, "2026-06-28", seed, threeDayProfile, {
+        forcedSlotId: "lower_glute_ham",
+      });
+      draft.sections
+        .flatMap((section) => section.exercises)
+        .forEach((ex) => {
+          if (ex.name === "Leg curl") legCurlPicks += 1;
+          if (ex.name === "Nordic hamstring curl") nordicPicks += 1;
+        });
+    }
+
+    expect(legCurlPicks).toBeGreaterThan(nordicPicks * 2);
+  });
+
+  it("still produces a reasonably complete session when every major muscle in the slot is deeply saturated", () => {
+    // Every one of Upper A's major target muscles (back, shoulders, rear_delts) is
+    // pushed to ~3x+ their weekly target here. This is what actually exercises
+    // overTargetPenaltyCap: without the cap, the uncapped penalty could drive every
+    // candidate for a movement below pickBest's -10 floor and starve whole sections.
+    // A real session (fewer picks than an unsaturated baseline, but not empty) is the
+    // correct outcome — it should steer toward whatever isn't saturated (hamstrings,
+    // biceps, core here), not collapse.
+    const workouts = [
+      workout("w1", "2026-06-20", [
+        { name: "Cable row", sets: 20 },
+        { name: "DB overhead press", sets: 20 },
+        { name: "Face pull", sets: 20 },
+        { name: "Barbell hip thrust", sets: 20 },
+        { name: "Butterfly sit-up", sets: 20 },
+      ]),
+    ];
+    const draft = generateNextWorkout(workouts, "2026-06-21", 1, profile, {
+      forcedSlotId: "upper_back_shoulder",
+    });
+    const totalExercises = draft.sections.reduce((count, section) => count + section.exercises.length, 0);
+
+    expect(draft.sections.length).toBeGreaterThanOrEqual(3);
+    expect(totalExercises).toBeGreaterThanOrEqual(5);
+  });
+
   it("prefers a vertical press compound anchor over a familiar shoulder isolation exercise", () => {
     const oldWorkout = workout("old", "2026-04-01", [
       { name: "DB prone press", sets: 4 },
@@ -2770,5 +2827,33 @@ describe("generateNextWorkout", () => {
     allExercises.forEach((ex) => {
       expect(["none", "watch", "stalled"]).toContain(ex.trend);
     });
+  });
+
+  it("does not let a critical-gap override re-select a slot saturated on its own major muscle", () => {
+    // maybeOverrideForCriticalGap used to scan every slot offering a critically-missing
+    // movement (0 days hit this week) and pick the highest scorer without excluding
+    // saturated ones — unlike getNextSplitSlotIndex, which already filters via
+    // slotHasOverTargetMajorMuscle. Heavy hip thrust/hyperextension/RDL volume here
+    // pushes glutes well past their weekly target; before the fix this scenario picked
+    // "glute_shoulder_accessory" (glutes target 8, a major muscle) via the pull-gap
+    // override anyway. Found via a 5000-fixture before/after diff against the fix.
+    const fiveDayProfile: TrainingProfile = { ...profile, daysPerWeek: 5 };
+    const workouts = [
+      workout("w1", "2026-08-01", [
+        { name: "Push-up", sets: 16 },
+        { name: "Hyperextension", sets: 15 },
+      ]),
+      workout("w2", "2026-08-03", [
+        { name: "Barbell hip thrust", sets: 16 },
+      ]),
+      workout("w3", "2026-08-05", [
+        { name: "DB Romanian deadlift", sets: 10 },
+        { name: "Face pull", sets: 10 },
+        { name: "Leg curl", sets: 17 },
+      ]),
+    ];
+    const draft = generateNextWorkout(workouts, "2026-08-08", 42, fiveDayProfile);
+    expect(draft.split.slotId).not.toBe("glute_shoulder_accessory");
+    expect(draft.split.slotId).toBe("upper_back_shoulder");
   });
 });

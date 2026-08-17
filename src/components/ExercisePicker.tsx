@@ -2,11 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { EXERCISES } from "@/lib/exercises";
+import { matchesMuscleFilter } from "@/lib/exercise-predicates";
 import { MUSCLE_GROUPS, PATTERNS, EQUIPMENT } from "@/lib/types";
 import type { Equipment, MuscleGroup, Pattern } from "@/lib/types";
 import { formatMuscle, normalizeSearch } from "@/lib/format";
+import type { MuscleTargetRow } from "@/lib/splits";
 import { MuscleTag } from "./MuscleTag";
 import { PatternBadge } from "./PatternBadge";
+
+type MuscleFilterState = "include" | "exclude";
 
 type Props = {
   open: boolean;
@@ -15,6 +19,8 @@ type Props = {
   onRemove?: (exerciseName: string) => void;
   // Names already added — surface a count badge on those rows.
   alreadyAddedCounts?: Record<string, number>;
+  // Current weekly stimulus per muscle — drives the over-target badge on muscle chips.
+  muscleTargetRows?: MuscleTargetRow[];
 };
 
 export function ExercisePicker({
@@ -23,9 +29,10 @@ export function ExercisePicker({
   onPick,
   onRemove,
   alreadyAddedCounts = {},
+  muscleTargetRows,
 }: Props) {
   const [search, setSearch] = useState("");
-  const [muscle, setMuscle] = useState<MuscleGroup | null>(null);
+  const [muscleFilter, setMuscleFilter] = useState<Partial<Record<MuscleGroup, MuscleFilterState>>>({});
   const [pattern, setPattern] = useState<Pattern | null>(null);
   const [equip, setEquip] = useState<Equipment | null>(null);
 
@@ -36,6 +43,31 @@ export function ExercisePicker({
       document.body.style.overflow = "";
     };
   }, [open]);
+
+  const cycleMuscle = (m: MuscleGroup) => {
+    setMuscleFilter((prev) => {
+      const next = { ...prev };
+      if (next[m] === undefined) next[m] = "include";
+      else if (next[m] === "include") next[m] = "exclude";
+      else delete next[m];
+      return next;
+    });
+  };
+
+  const includeMuscles = useMemo(
+    () =>
+      (Object.entries(muscleFilter) as [MuscleGroup, MuscleFilterState][])
+        .filter(([, state]) => state === "include")
+        .map(([m]) => m),
+    [muscleFilter],
+  );
+  const excludeMuscles = useMemo(
+    () =>
+      (Object.entries(muscleFilter) as [MuscleGroup, MuscleFilterState][])
+        .filter(([, state]) => state === "exclude")
+        .map(([m]) => m),
+    [muscleFilter],
+  );
 
   const filtered = useMemo(() => {
     const q = normalizeSearch(search);
@@ -51,17 +83,19 @@ export function ExercisePicker({
       }
       if (pattern && ex.pattern !== pattern) return false;
       if (equip && ex.equipment !== equip) return false;
-      if (muscle && !ex.primary.includes(muscle) && !ex.secondary.includes(muscle)) return false;
+      if (!matchesMuscleFilter(ex, { include: includeMuscles, exclude: excludeMuscles })) return false;
       return true;
     });
-  }, [search, muscle, pattern, equip]);
+  }, [search, includeMuscles, excludeMuscles, pattern, equip]);
 
   const clearFilters = () => {
     setSearch("");
-    setMuscle(null);
+    setMuscleFilter({});
     setPattern(null);
     setEquip(null);
   };
+
+  const activeMuscleLegend = [...includeMuscles, ...excludeMuscles];
 
   if (!open) return null;
 
@@ -127,18 +161,30 @@ export function ExercisePicker({
           </div>
           <div className="flex gap-1.5 overflow-x-auto pb-1.5" style={{ scrollbarWidth: "none" }}>
             {MUSCLE_GROUPS.map((m) => {
-              const active = muscle === m;
+              const state = muscleFilter[m];
+              const row = muscleTargetRows?.find((r) => r.muscle === m);
+              const overTarget = row?.overPct != null;
               return (
                 <button
                   key={m}
-                  onClick={() => setMuscle(active ? null : m)}
+                  data-testid={`muscle-chip-${m}`}
+                  onClick={() => cycleMuscle(m)}
+                  aria-pressed={state !== undefined}
                   style={{
-                    background: active ? "#1a1a18" : "#F1EFE8",
-                    color: active ? "#fff" : "#5F5E5A",
+                    background: state === "include" ? "#1a1a18" : state === "exclude" ? "#F3D9D3" : "#F1EFE8",
+                    color: state === "include" ? "#fff" : state === "exclude" ? "#8C3B2E" : "#5F5E5A",
+                    textDecoration: state === "exclude" ? "line-through" : "none",
                   }}
                   className="shrink-0 rounded-full px-3 py-1 text-[12px] font-medium capitalize"
                 >
                   {m.replace("_", " ")}
+                  {overTarget && (
+                    <span
+                      aria-label="over weekly target"
+                      className="ml-1 inline-block h-1.5 w-1.5 rounded-full align-middle"
+                      style={{ background: state === "include" ? "#fff" : "#C4441F" }}
+                    />
+                  )}
                 </button>
               );
             })}
@@ -161,6 +207,25 @@ export function ExercisePicker({
               );
             })}
           </div>
+          {activeMuscleLegend.length > 0 && muscleTargetRows && (
+            <div className="mt-1.5 space-y-0.5">
+              {activeMuscleLegend.map((m) => {
+                const row = muscleTargetRows.find((r) => r.muscle === m);
+                if (!row) return null;
+                const status =
+                  row.overPct != null
+                    ? `Over target (${row.overPct}%)`
+                    : row.remaining === 0
+                      ? "On target"
+                      : `${row.remaining.toFixed(1)} stimulus left`;
+                return (
+                  <p key={m} className="text-[11px] text-text-subtle capitalize">
+                    {m.replace("_", " ")} — {status}
+                  </p>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Active filter row */}
@@ -168,7 +233,7 @@ export function ExercisePicker({
           <span className="text-[12px] text-text-subtle">
             {filtered.length} result{filtered.length !== 1 ? "s" : ""}
           </span>
-          {(search || muscle || pattern || equip) && (
+          {(search || activeMuscleLegend.length > 0 || pattern || equip) && (
             <button
               onClick={clearFilters}
               className="text-[12px] font-medium text-accent underline"
