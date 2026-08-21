@@ -221,4 +221,12 @@ export const FINISHER_TEMPLATES: FinisherTemplate[] = [
     repScheme: "12 KB swings + 15 glute bridges, continuous",
     tags: ["lower", "conditioning"],
   },
+  {
+    id: "stability_ball_core_chain",
+    label: "stability ball core chain",
+    exercises: ["Stability ball tuck", "Plank", "Mountain climber"],
+    rounds: 3,
+    repScheme: "12 tucks + 20 sec plank hold + 16 climbers",
+    tags: ["core", "conditioning"],
+  },
 ];
