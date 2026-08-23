@@ -409,10 +409,20 @@ const resolveDisplayTargets = (
   const performance = lastPerformance(exerciseName, workouts);
   const numericTargets = targets.filter((t): t is number => typeof t === "number");
   const historyReps = (performance?.reps ?? []).filter((r): r is number => typeof r === "number");
-  if (numericTargets.length === 0 || historyReps.length < numericTargets.length) return targets;
-  const effective = historyReps.slice(0, numericTargets.length);
+  if (numericTargets.length === 0 || historyReps.length === 0) return targets;
+  // When history has fewer sets than the scheme (a 3-set log feeding a 4-round
+  // circuit), fill the extra rounds with the last logged rep count, capped by
+  // the template — otherwise the raw template leaks through and prescribes
+  // reps far past what the lifter actually did (15 chin-ups after a 10/8/8).
   let cursor = 0;
-  return targets.map((t) => (typeof t === "number" ? effective[cursor++] : t));
+  return targets.map((t) => {
+    if (typeof t !== "number") return t;
+    const idx = cursor;
+    cursor += 1;
+    return idx < historyReps.length
+      ? historyReps[idx]
+      : Math.min(t, historyReps[historyReps.length - 1]);
+  });
 };
 
 
@@ -1641,19 +1651,20 @@ export function buildDraftExercise(
   environment: TrainingEnvironment = "full_gym",
 ): DraftExercise {
   const last = lastWorkingWeight(ex.name, workouts);
+  const resolvedTargets = resolveDisplayTargets(targets, workouts, ex.name);
   return {
     name: ex.name,
     primary: ex.primary,
     secondary: ex.secondary,
     pattern: ex.pattern,
     movement: movementOf(ex),
-    targets: resolveDisplayTargets(targets, workouts, ex.name),
+    targets: resolvedTargets,
     suggestedWeight: capSuggestedWeight(last?.weight ?? null, ex, environment),
     suggestedDuration: ex.tracksDuration ? lastWorkingDuration(ex.name, workouts) : null,
     unit: last?.unit ?? "lb",
     isFamiliar: knownNames.has(ex.name),
     trend: getStallState(ex.name, workouts),
-    progression: buildProgression(ex, targets, workouts),
+    progression: buildProgression(ex, resolvedTargets, workouts),
   };
 }
 
@@ -2004,13 +2015,21 @@ export function generateNextWorkout(
           0,
         );
       const plannedForMuscle = (plannedPrimaryStimulus[m] ?? 0) + pendingStimulus;
-      // The slot's target only entitles in-session volume while the week still
-      // needs it — once the muscle is over its weekly target, the session gets
-      // the bare base allowance no matter what the slot template says.
+      // The slot's target only entitles what the WEEK still needs: once a
+      // muscle is well into its weekly target (>= half done), the session gets
+      // a light touch even on the muscle's own day, freeing volume for real
+      // gaps (one row, not three, when back has 1 stimulus left). Early in the
+      // week the slot's own plan governs — a fresh back day still pairs a row
+      // with a vertical pull.
+      const weeklyTarget = weeklyMuscleTargets[m] ?? 0;
+      const weeklyPrimaryDone = coverage.muscleStats[m]?.primaryStimulus ?? 0;
+      const slotTarget = slot.targetPrimaryStimulus[m] ?? 0;
       const entitledTarget =
-        (muscleSaturation[m] ?? 0) >= PLANNER_TUNING.exerciseSelection.overTargetThreshold
-          ? 0
-          : slot.targetPrimaryStimulus[m] ?? 0;
+        weeklyTarget > 0 &&
+        weeklyPrimaryDone >=
+          weeklyTarget * PLANNER_TUNING.sessionTarget.remainingEntitlementThreshold
+          ? Math.min(slotTarget, Math.max(0, weeklyTarget - weeklyPrimaryDone))
+          : slotTarget;
       const allowance =
         (entitledTarget * PLANNER_TUNING.sessionTarget.headroomMultiplier +
           PLANNER_TUNING.sessionTarget.baseAllowance) *
@@ -2591,13 +2610,14 @@ export function generateNextWorkout(
     targets: (number | string)[],
   ): DraftExercise => {
     const last = lastWorkingWeight(ex.name, workouts);
+    const resolvedTargets = resolveDisplayTargets(targets, workouts, ex.name);
     return {
       name: ex.name,
       primary: ex.primary,
       secondary: ex.secondary,
       pattern: ex.pattern,
       movement: movementOf(ex),
-      targets: resolveDisplayTargets(targets, workouts, ex.name),
+      targets: resolvedTargets,
       suggestedWeight: capSuggestedWeight(last?.weight ?? null, ex, activeProfile.equipment),
       suggestedDuration: ex.tracksDuration ? lastWorkingDuration(ex.name, workouts) : null,
       unit: last?.unit ?? "lb",
@@ -2607,7 +2627,7 @@ export function generateNextWorkout(
         : watchedExerciseNames.has(ex.name)
           ? "watch"
           : "none",
-      progression: buildProgression(ex, targets, workouts),
+      progression: buildProgression(ex, resolvedTargets, workouts),
     };
   };
 

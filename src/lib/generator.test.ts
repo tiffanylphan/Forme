@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { estimateExerciseStimulus } from "./coverage";
 import { EXERCISES, findExercise } from "./exercises";
 import { familyOf, isLowerFatiguingFinisher, isPushLeaningFinisher } from "./exercise-predicates";
 import { FINISHER_TEMPLATES } from "./finishers";
-import { generateNextWorkout } from "./generator";
+import { buildDraftExercise, generateNextWorkout } from "./generator";
 import { movementOf } from "./movement";
 import { PLANNER_TUNING } from "./planner-tuning";
 import type { Exercise, MuscleGroup, TrainingProfile, Workout } from "./types";
@@ -2859,5 +2860,65 @@ describe("generateNextWorkout", () => {
     const draft = generateNextWorkout(workouts, "2026-08-08", 42, fiveDayProfile);
     expect(draft.split.slotId).not.toBe("glute_shoulder_accessory");
     expect(draft.split.slotId).toBe("upper_back_shoulder");
+  });
+
+  it("caps template rep targets to recent performance when history has fewer sets than the scheme", () => {
+    // A 3-set log (8/8/8) feeding a 4-round tri-set used to skip history
+    // resolution entirely (it required history >= scheme length), letting the
+    // raw 15/12/12/10 template prescribe nearly double the lifter's
+    // demonstrated reps on a hard bodyweight move. The extra round falls back
+    // to the last logged rep count, capped by the template.
+    const workouts = [
+      workout("w1", "2026-05-18", [{ name: "Pike push-up", sets: 3, reps: 8 }]),
+    ];
+    const pike = findExercise("Pike push-up");
+    expect(pike).toBeDefined();
+    const draft = buildDraftExercise(pike!, [15, 12, 12, 10], workouts, new Set(["Pike push-up"]));
+    expect(draft.targets).toEqual([8, 8, 8, 8]);
+    expect(draft.progression.goal).toContain("8/8/8/8");
+  });
+
+  it("gives a nearly-closed muscle a light touch even on its own slot's day", () => {
+    // Mirrors a real report: going into Upper A with back already ~5/7 for
+    // the week, the session used to stack three rows (~10-12 back stimulus
+    // against ~2 remaining). Once a muscle is at least half done for the
+    // week, the session is only entitled to the weekly remainder, so the day
+    // anchors one row plus a vertical pull and spends the rest on real gaps
+    // (shoulders/core). 8 ~= one 4-set row (5.2) + one bodyweight pull.
+    const hardThreeDay: TrainingProfile = {
+      ...threeDayProfile,
+      experience: "intermediate",
+      intensity: "hard",
+    };
+    const workouts = [
+      workout("w1", "2026-08-19", [
+        { name: "Deficit barbell Romanian deadlift", sets: 3 },
+        { name: "Band-assisted pull-up", sets: 3 },
+        { name: "Barbell push press", sets: 3 },
+        { name: "Stability ball hamstring curl", sets: 3 },
+      ]),
+      workout("w2", "2026-08-21", [
+        { name: "DB squat to reverse lunge", sets: 3 },
+        { name: "Kettlebell swing", sets: 3 },
+        { name: "Single-leg DB RDL", sets: 3 },
+        { name: "DB front rack curtsey lunge", sets: 3 },
+        { name: "Prone T raise", sets: 3 },
+      ], { slotId: "lower_glute_ham", title: "Lower A · Posterior" }),
+    ];
+    for (const seed of [11, 137, 424242, 9001, 55555]) {
+      const draft = generateNextWorkout(workouts, "2026-08-22", seed, hardThreeDay, {
+        forcedSlotId: "upper_back_shoulder",
+      });
+      const backStimulus = draft.sections
+        .filter((section) => section.kind !== "finisher")
+        .flatMap((section) => section.exercises)
+        .reduce((sum, ex) => {
+          const meta = findExercise(ex.name);
+          return meta?.primary.includes("back")
+            ? sum + estimateExerciseStimulus(meta).primaryPerSet * ex.targets.length
+            : sum;
+        }, 0);
+      expect(backStimulus, `seed ${seed}: ${backStimulus.toFixed(1)} back stimulus`).toBeLessThanOrEqual(8);
+    }
   });
 });

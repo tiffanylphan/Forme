@@ -212,6 +212,7 @@ export const PLANNER_TUNING = {
     finisherSaturatedMusclePenalty: 4,
     untouchedTargetSecondaryBonus: 1.25,
     saturatedClosureMultiplier: 0.1,
+    remainingEntitlementThreshold: 0.5,
     // Strength programs a narrow set of heavy lifts per session on purpose
     // (deadlift + RDL back-to-back is intended), so its in-session muscle
     // allowance is much wider.
