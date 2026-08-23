@@ -1401,6 +1401,7 @@ const getNextSplitSlotIndex = (
 
 const maybeOverrideForCriticalGap = (
   split: SplitSlot[],
+  incompleteIndices: number[],
   baseIndex: number,
   need: Record<MovementPattern, number>,
   muscleDeficits: MuscleDeficitMap = {},
@@ -1409,6 +1410,11 @@ const maybeOverrideForCriticalGap = (
   weeklyBiasBalance: WeeklyBiasBalance = { lower: 0, upper: 0 },
   recentMuscleFatigue: Partial<Record<MuscleGroup, number>> = {},
 ): number => {
+  // A fresh week (nothing completed yet) has every movement at full need, so
+  // "critical" carries no signal and the base slot order should stand — this
+  // override is a late-week rescue for a movement the remaining slots would
+  // otherwise strand, not a reason to jump the split on day one.
+  if (incompleteIndices.length === 0) return baseIndex;
   const baseSlot = split[baseIndex];
   // Pull/push are ranked above hinge here so that when a lower slot (hinge-dominant)
   // is the base, missing pull/push gets checked before hinge short-circuits the loop.
@@ -1444,10 +1450,19 @@ const maybeOverrideForCriticalGap = (
     const eligible = split
       .map((slot, index) => ({ slot, index }))
       .filter(({ slot }) => slot.allowedMovements.includes(movement));
-    const nonSaturatedEligible = eligible.filter(
+    // Prefer incomplete slots — forcing a completed slot repeats a session theme
+    // and strands another slot — but fall back to completed ones when no
+    // incomplete slot can cover the critical movement. Saturation filtering
+    // happens inside that pool so it can't push the pick back onto a repeat.
+    const incompleteSet = new Set(incompleteIndices);
+    const incompleteEligible = eligible.filter(
+      ({ index }) => incompleteSet.size === 0 || incompleteSet.has(index),
+    );
+    const pool = incompleteEligible.length > 0 ? incompleteEligible : eligible;
+    const nonSaturatedEligible = pool.filter(
       ({ slot }) => !slotHasOverTargetMajorMuscle(slot, muscleSaturation),
     );
-    const candidates = nonSaturatedEligible.length > 0 ? nonSaturatedEligible : eligible;
+    const candidates = nonSaturatedEligible.length > 0 ? nonSaturatedEligible : pool;
 
     candidates.forEach(({ slot, index }) => {
       let score = scoreSplitSlot(
@@ -1699,9 +1714,15 @@ export function generateNextWorkout(
   // Movement patterns from the most recent session — used to avoid recommending
   // the same movement category back-to-back regardless of weekly volume targets.
   const lastSessionMovements = new Set<MovementPattern>();
+  const lastSessionExerciseNames = new Set<string>();
   const lastWorkout = [...workouts].sort(compareWorkoutsDesc)[0];
   if (lastWorkout) {
     lastWorkout.exercises.forEach((logEx) => {
+      // The exact-repeat penalty is about back-to-back sessions; a lift last
+      // done ~a week ago is a progression re-visit, not a repeat.
+      if (isWithinPastDays(lastWorkout.date, todayISO, 2)) {
+        lastSessionExerciseNames.add(logEx.exerciseName);
+      }
       const ex = EXERCISES.find((e) => e.name === logEx.exerciseName);
       if (ex) {
         const movement = movementOf(ex);
@@ -1745,6 +1766,7 @@ export function generateNextWorkout(
   const weeklyBiasBalance = summarizeWeeklyBiasBalance(split, recentWorkoutsForSlotSelection);
   const sessionIndex = maybeOverrideForCriticalGap(
     split,
+    incompleteIndices,
     maybeOverrideForStalledBias(
       split,
       getNextSplitSlotIndex(
@@ -1875,6 +1897,9 @@ export function generateNextWorkout(
   // blind to earlier ones — mirrors pendingRdlPick/pendingHingePick.
   const claimedMuscleCounts: Partial<Record<MuscleGroup, number>> = {};
   const flaggedClaimedMuscles = new Set<MuscleGroup>();
+  // Primary stimulus already planned into this session, per muscle — the
+  // basis for the sessionTarget slot-overshoot penalty in scoreExercise.
+  const plannedPrimaryStimulus: Partial<Record<MuscleGroup, number>> = {};
   let pendingPicks: Exercise[] = [];
 
   const muscleWeightsOf = (ex: Exercise): Map<MuscleGroup, number> => {
@@ -1907,20 +1932,24 @@ export function generateNextWorkout(
       .map(([m]) => m);
   };
 
+  // Absolute exclusions return this rather than -10: soft penalties can push a
+  // legitimate candidate's score below -10, which would let a hard-blocked
+  // exercise (e.g. a second hip thrust) win the pick.
+  const HARD_BLOCK_SCORE = -1000;
   const scoreExercise = (ex: Exercise, plannedRounds = 1): number => {
     const movement = movementOf(ex);
-    if (!movement) return -10; // plyo/conditioning/calf — never a planned pick
-    if (!environmentAllowsExercise(ex, activeProfile)) return -10;
-    if (!goalAllows(ex, activeProfile.goal)) return -10;
-    if (!slot.allowedMovements.includes(movement) && !(slot.supplementalMovements ?? []).includes(movement)) return -10;
+    if (!movement) return HARD_BLOCK_SCORE; // plyo/conditioning/calf — never a planned pick
+    if (!environmentAllowsExercise(ex, activeProfile)) return HARD_BLOCK_SCORE;
+    if (!goalAllows(ex, activeProfile.goal)) return HARD_BLOCK_SCORE;
+    if (!slot.allowedMovements.includes(movement) && !(slot.supplementalMovements ?? []).includes(movement)) return HARD_BLOCK_SCORE;
     const family = familyOf(ex);
     if (
       (family === "biceps_isolation" || family === "triceps_isolation" || family === "hip_thrust" || family === "rdl") &&
       (claimedFamilies[family] ?? 0) > 0
     ) {
-      return -10;
+      return HARD_BLOCK_SCORE;
     }
-    if (muscleOverlapOverage(ex, pendingPicks).length > 0) return -10;
+    if (muscleOverlapOverage(ex, pendingPicks).length > 0) return HARD_BLOCK_SCORE;
     const stimulus = estimateExerciseStimulus(ex);
     const projectedStress = estimatePlannedExerciseStress(ex, plannedRounds);
     const projectedSessionTotal =
@@ -1948,6 +1977,9 @@ export function generateNextWorkout(
     let deficitMagnitudeScore = 0;
     let recoveryPenalty = 0;
     let sessionOverlapPenalty = 0;
+    // Uncapped, unlike sessionOverlapPenalty — it must be able to outweigh the
+    // deficit bonuses of a muscle the session has already served.
+    let sessionTargetPenalty = 0;
 
     ex.primary.forEach((m) => {
       const deficit = muscleDeficits[m] ?? 0;
@@ -1958,9 +1990,61 @@ export function generateNextWorkout(
         : slot.focusMuscles.includes(m)
           ? PLANNER_TUNING.exerciseSelection.primaryFocusMultiplier
           : 1;
-      deficitClosureScore += closure * weight * focusMultiplier;
+      // Session-level slot-target discipline. Weekly deficits stay large all
+      // session (closure is per-set-saturating), so without this a session
+      // keeps stacking lifts on whichever muscles have the biggest weekly gap
+      // regardless of the slot's own plan. Once a muscle's planned-in-session
+      // primary stimulus reaches the slot target plus headroom, its deficit
+      // bonuses collapse and further stimulus is penalized. Pending
+      // (unclaimed) superset picks count so a pair can't sneak past.
+      const pendingStimulus = pendingPicks
+        .filter((pending) => pending.primary.includes(m))
+        .reduce(
+          (sum, pending) => sum + estimateExerciseStimulus(pending).primaryPerSet * plannedRounds,
+          0,
+        );
+      const plannedForMuscle = (plannedPrimaryStimulus[m] ?? 0) + pendingStimulus;
+      // The slot's target only entitles in-session volume while the week still
+      // needs it — once the muscle is over its weekly target, the session gets
+      // the bare base allowance no matter what the slot template says.
+      const entitledTarget =
+        (muscleSaturation[m] ?? 0) >= PLANNER_TUNING.exerciseSelection.overTargetThreshold
+          ? 0
+          : slot.targetPrimaryStimulus[m] ?? 0;
+      const allowance =
+        (entitledTarget * PLANNER_TUNING.sessionTarget.headroomMultiplier +
+          PLANNER_TUNING.sessionTarget.baseAllowance) *
+        (activeProfile.goal === "strength"
+          ? PLANNER_TUNING.sessionTarget.strengthAllowanceMultiplier
+          : 1);
+      // A muscle's deficit bonuses collapse once its in-session allowance is
+      // spent — the per-set-saturating closure would otherwise stay maximal
+      // all session no matter how much this draft already gave the muscle.
+      const disciplineMultiplier =
+        plannedForMuscle >= allowance
+          ? PLANNER_TUNING.sessionTarget.saturatedClosureMultiplier
+          : 1;
+      const overshoot = plannedForMuscle + stimulus.primaryPerSet * plannedRounds - allowance;
+      if (overshoot > 0) {
+        sessionTargetPenalty += Math.min(
+          PLANNER_TUNING.sessionTarget.overshootPenaltyCap,
+          overshoot * PLANNER_TUNING.sessionTarget.overshootPenaltyWeight,
+        );
+      }
+      // A slot-targeted muscle with zero coverage all week and nothing planned
+      // yet is this session's responsibility — without a nudge, tiny targets
+      // (e.g. adductors: 2) can go completely untouched for an entire week.
+      if (
+        (slot.targetPrimaryStimulus[m] ?? 0) > 0 &&
+        (coverage.muscleStats[m]?.primaryStimulus ?? 0) +
+          (coverage.muscleStats[m]?.secondaryStimulus ?? 0) === 0 &&
+        plannedForMuscle === 0
+      ) {
+        s += PLANNER_TUNING.sessionTarget.untouchedTargetPrimaryBonus;
+      }
+      deficitClosureScore += closure * weight * focusMultiplier * disciplineMultiplier;
       const magnitude = Math.min(deficit, PLANNER_TUNING.exerciseSelection.deficitMagnitudeCap);
-      deficitMagnitudeScore += magnitude * weight * focusMultiplier;
+      deficitMagnitudeScore += magnitude * weight * focusMultiplier * disciplineMultiplier;
       recoveryPenalty +=
         (recentStress[m] ?? 0) *
         stimulus.recoveryPerSet *
@@ -1995,6 +2079,16 @@ export function generateNextWorkout(
         weight *
         focusMultiplier *
         PLANNER_TUNING.exerciseSelection.secondaryClosureWeight;
+      // Secondary-tag counterpart of the untouched-slot-target nudge — small
+      // targets like adductors are mostly served by secondary tags.
+      if (
+        (slot.targetPrimaryStimulus[m] ?? 0) > 0 &&
+        (coverage.muscleStats[m]?.primaryStimulus ?? 0) +
+          (coverage.muscleStats[m]?.secondaryStimulus ?? 0) === 0 &&
+        (plannedPrimaryStimulus[m] ?? 0) === 0
+      ) {
+        s += PLANNER_TUNING.sessionTarget.untouchedTargetSecondaryBonus;
+      }
       const magnitude = Math.min(deficit, PLANNER_TUNING.exerciseSelection.deficitMagnitudeCap);
       deficitMagnitudeScore +=
         magnitude *
@@ -2024,6 +2118,7 @@ export function generateNextWorkout(
 
     s += deficitClosureScore * PLANNER_TUNING.exerciseSelection.deficitClosureWeight;
     s += deficitMagnitudeScore * PLANNER_TUNING.exerciseSelection.deficitMagnitudeWeight;
+    s -= sessionTargetPenalty;
     // Deficit-magnitude scoring above sums primary AND secondary muscle tags,
     // so a near-capped muscle's exercise can still score well if it carries an
     // under-target muscle as a secondary tag. This penalty looks only at each
@@ -2081,10 +2176,14 @@ export function generateNextWorkout(
     s -= Math.min(PLANNER_TUNING.exerciseSelection.recoveryPenaltyCap, recoveryPenalty);
     s -= Math.min(PLANNER_TUNING.exerciseSelection.overlapPenaltyCap, sessionOverlapPenalty);
     if (projectedSessionTotal > sessionFatigueBudget) {
+      // carry_core shares the reduced multiplier: end-of-session core work is
+      // as cheap as upper support, and billing it at the default rate made
+      // rows systematically out-rank planks in late fill-in slots.
       const budgetPenaltyMultiplier =
         armBiasSlot && isDirectArmFocus(ex)
           ? PLANNER_TUNING.exerciseSelection.armBiasBudgetPenaltyMultiplier
-          : lowerBiasSlot && (movement === "pull" || movement === "push")
+          : lowerBiasSlot &&
+              (movement === "pull" || movement === "push" || movement === "carry_core")
             ? PLANNER_TUNING.exerciseSelection.lowerBiasUpperMovementBudgetPenaltyMultiplier
             : PLANNER_TUNING.exerciseSelection.defaultBudgetPenaltyMultiplier;
       s -= (projectedSessionTotal - sessionFatigueBudget) * budgetPenaltyMultiplier;
@@ -2097,13 +2196,21 @@ export function generateNextWorkout(
       if (movement === "push" && ex.primary.includes("triceps")) {
         s -= PLANNER_TUNING.exerciseSelection.physiquePushTricepsPenalty;
       }
-      if (movement === "hinge" && ex.primary.includes("glutes")) {
-        s += PLANNER_TUNING.exerciseSelection.physiqueHingeGluteBonus;
+      // Glute-emphasis bonuses only apply while glutes are still under their
+      // weekly target — a physique bias toward glutes must not keep piling
+      // direct glute work onto an already-saturated week.
+      const glutesOverTarget =
+        (muscleSaturation.glutes ?? 0) >=
+        PLANNER_TUNING.exerciseSelection.overTargetThreshold;
+      if (!glutesOverTarget) {
+        if (movement === "hinge" && ex.primary.includes("glutes")) {
+          s += PLANNER_TUNING.exerciseSelection.physiqueHingeGluteBonus;
+        }
+        if (movement === "single_leg" && ex.primary.includes("glutes")) {
+          s += PLANNER_TUNING.exerciseSelection.physiqueSingleLegGluteBonus;
+        }
+        if (isDirectGluteFocus(ex)) s += PLANNER_TUNING.exerciseSelection.physiqueDirectGluteBonus;
       }
-      if (movement === "single_leg" && ex.primary.includes("glutes")) {
-        s += PLANNER_TUNING.exerciseSelection.physiqueSingleLegGluteBonus;
-      }
-      if (isDirectGluteFocus(ex)) s += PLANNER_TUNING.exerciseSelection.physiqueDirectGluteBonus;
       if (movement === "pull" && ex.primary.includes("back")) {
         s += PLANNER_TUNING.exerciseSelection.physiquePullBackBonus;
       }
@@ -2287,6 +2394,16 @@ export function generateNextWorkout(
     if (lowerBiasSlot && recentLowerFamilies.has(family)) {
       s -= PLANNER_TUNING.exerciseSelection.recentLowerFamilyRepeatPenalty;
     }
+    // The exact same lift two sessions in a row is monotonous and re-fatigues
+    // the same tissue; daily core work is fine, and strength deliberately
+    // repeats its mains, so those are exempt/damped.
+    if (lastSessionExerciseNames.has(ex.name) && movement !== "carry_core") {
+      s -=
+        PLANNER_TUNING.sessionTarget.lastSessionExercisePenalty *
+        (activeProfile.goal === "strength"
+          ? PLANNER_TUNING.sessionTarget.strengthClaimedOrderMultiplier
+          : 1);
+    }
     ex.primary.forEach((m) => {
       if (slot.focusMuscles.includes(m)) s += PLANNER_TUNING.exerciseSelection.focusPrimaryBonus;
       const target = slot.targetPrimaryStimulus[m] ?? 0;
@@ -2339,6 +2456,9 @@ export function generateNextWorkout(
       if (activeProfile.equipment === "home" && isHomeConditioningFriendly(ex)) s += 2;
       ex.primary.forEach((m) => {
         if (recent.has(m)) s -= 1;
+        if ((muscleSaturation[m] ?? 0) >= PLANNER_TUNING.exerciseSelection.overTargetThreshold) {
+          s -= PLANNER_TUNING.sessionTarget.finisherSaturatedMusclePenalty;
+        }
       });
       if (known.has(ex.name)) s += 0.4;
       s += rng() * 0.5;
@@ -2460,6 +2580,10 @@ export function generateNextWorkout(
       plannedSessionStress,
       estimatePlannedExerciseStress(ex, rounds, multiplier),
     );
+    const perSet = estimateExerciseStimulus(ex).primaryPerSet;
+    ex.primary.forEach((muscle) => {
+      plannedPrimaryStimulus[muscle] = (plannedPrimaryStimulus[muscle] ?? 0) + perSet * rounds;
+    });
   };
 
   const makeDraftEx = (
@@ -2598,10 +2722,26 @@ export function generateNextWorkout(
   const movementNoise: Partial<Record<MovementPattern, number>> = {};
   MOVEMENT_PATTERNS.forEach((mp) => (movementNoise[mp] = rng()));
 
+  // Order candidate movements by weekly need, biased toward the slot's own
+  // preferred movements and away from movements already claimed this session.
+  // On a fresh week every movement's need ties at 3, so without the bias the
+  // tie-break is pure noise and a lower slot's supersets chase pull/push
+  // support as readily as the lower work the slot was designed around.
+  const claimedOrderPenalty =
+    PLANNER_TUNING.sessionTarget.claimedMovementOrderPenalty *
+    (activeProfile.goal === "strength"
+      ? PLANNER_TUNING.sessionTarget.strengthClaimedOrderMultiplier
+      : 1);
+  const movementOrderScore = (m: MovementPattern): number =>
+    (need[m] ?? 0) +
+    (slot.preferredMovements.includes(m)
+      ? PLANNER_TUNING.sessionTarget.preferredMovementOrderBias
+      : 0) -
+    (claimedMovements[m] ?? 0) * claimedOrderPenalty;
   const sortedByNeed = (candidates: MovementPattern[]): MovementPattern[] =>
     [...candidates].sort(
       (a, b) =>
-        need[b] - need[a] +
+        movementOrderScore(b) - movementOrderScore(a) +
         ((movementNoise[b] ?? 0) - (movementNoise[a] ?? 0)) * 0.01,
     );
 
@@ -2762,15 +2902,26 @@ export function generateNextWorkout(
     targets: (number | string)[],
     filter?: (ex: Exercise) => boolean,
   ): boolean => {
-    const pick = pickForMovement(allowed, rounds, filter);
-    if (!pick) return false;
-    claimWithStress(pick.exercise, rounds);
-    pushMovement(pick.movement);
+    // Fill-in blocks want the best remaining exercise overall, so compare
+    // candidates across all allowed movements at once — pickForMovement's
+    // first-movement-with-any-pick semantics would let a mediocre pick from a
+    // high-need movement shadow a clearly better pick from the next one.
+    const allowedSet = new Set(allowed);
+    const exercise = pickBest(
+      (ex) => {
+        const m = movementOf(ex);
+        return m !== null && allowedSet.has(m) && (filter ? filter(ex) : true);
+      },
+      rounds,
+    );
+    if (!exercise) return false;
+    claimWithStress(exercise, rounds);
+    pushMovement(movementOf(exercise));
     sections.push({
       kind: "accessory",
       rounds,
       repScheme,
-      exercises: [makeDraftEx(pick.exercise, targets)],
+      exercises: [makeDraftEx(exercise, targets)],
     });
     return true;
   };
@@ -3015,8 +3166,11 @@ export function generateNextWorkout(
     );
 
   if (totalExercises() < 5) {
+    // Core is eligible here when the session has none yet: on a slot whose
+    // lower/support targets are already spent, the honest fifth exercise is
+    // core work, not another lift stacked onto an over-served muscle.
     addAccessoryBlock(
-      accessoryMovements,
+      hasCarryCore() ? accessoryMovements : [...accessoryMovements, "carry_core"],
       accessoryRounds,
       "12–15 reps — finishing volume",
       accessoryRounds === 5
@@ -3127,6 +3281,21 @@ export function generateNextWorkout(
     ) {
       return false;
     }
+    // Trainer-equivalent compound families the session already claimed must
+    // not reappear via a finisher circuit — "Glute bridge" after a hip-thrust
+    // variant is the same movement again. Arm isolation is deliberately not
+    // gated: an arm burnout circuit after direct arm work is a normal finisher.
+    if (
+      exercises.some((exercise) => {
+        const family = familyOf(exercise);
+        return (
+          (family === "hip_thrust" || family === "rdl") &&
+          (claimedFamilies[family] ?? 0) > 0
+        );
+      })
+    ) {
+      return false;
+    }
     // Hard-excludes a template if any of its exercises would push a muscle
     // group past its session cap, counting both already-claimed exercises
     // (main lifts/prior sections) and exercises earlier in this same
@@ -3160,6 +3329,19 @@ export function generateNextWorkout(
     const templateExercises = template.exercises
       .map(findExerciseByName)
       .filter((exercise): exercise is Exercise => Boolean(exercise));
+    // A finisher shouldn't keep feeding a muscle that is already past its
+    // weekly target (e.g. a swing + glute-bridge circuit on a glute-saturated
+    // week) — steer the draw toward circuits that spend the effort elsewhere.
+    templateExercises.forEach((exercise) => {
+      exercise.primary.forEach((muscle) => {
+        if (
+          (muscleSaturation[muscle] ?? 0) >=
+          PLANNER_TUNING.exerciseSelection.overTargetThreshold
+        ) {
+          score -= PLANNER_TUNING.sessionTarget.finisherSaturatedMusclePenalty;
+        }
+      });
+    });
     if (pullCatchUpUpperSlot) {
       score -= templateExercises.filter((exercise) => isPushLeaningFinisher(exercise)).length * 4;
       score -= templateExercises.filter((exercise) => isLowerFatiguingFinisher(exercise)).length * 2.5;
@@ -3208,10 +3390,13 @@ export function generateNextWorkout(
     const drawPool = templateShortlist.filter(({ template }) => !excluded.has(template.id));
     if (drawPool.length > 0) {
       chosenTemplate = drawPool[Math.floor(finisherRng() * drawPool.length)]?.template;
-    } else if (templateShortlist.length > 1) {
-      chosenTemplate = templateShortlist[Math.floor(finisherRng() * templateShortlist.length)]?.template;
     } else {
-      fallbackSingletonTemplate = templateShortlist[0].template;
+      // Every shortlisted template is excluded (all currently/recently shown),
+      // so redrawing among them makes Shuffle a visible no-op — same trap as
+      // the singleton case regardless of shortlist size. Park one as a last
+      // resort and give the ad-hoc path a shot at genuine variety.
+      fallbackSingletonTemplate =
+        templateShortlist[Math.floor(finisherRng() * templateShortlist.length)]?.template;
     }
   }
 
@@ -3241,10 +3426,10 @@ export function generateNextWorkout(
   if (chosenTemplate) {
     applyChosenTemplate(chosenTemplate);
   } else {
-    const finisherCandidates = EXERCISES.filter((ex) => {
+    const adHocEligible = (ex: Exercise, enforceMuscleCap: boolean): boolean => {
       if (used.has(ex.name)) return false;
       if (!environmentAllowsExercise(ex, activeProfile)) return false;
-      if (muscleOverlapOverage(ex).length > 0) return false;
+      if (enforceMuscleCap && muscleOverlapOverage(ex).length > 0) return false;
       if (lowerBiasSlot && isPushLeaningFinisher(ex)) return false;
       if (upperBiasSlot && isLowerFatiguingFinisher(ex)) return false;
       if (strictPullCatchUpUpperSlot) {
@@ -3252,7 +3437,17 @@ export function generateNextWorkout(
       }
       if (allowConditioningFinisher) return isPreferredAccessibleFinisher(ex);
       return movementOf(ex) === "carry_core" || isAccessibleMetabolicFinisher(ex);
-    });
+    };
+    const cappedCandidates = EXERCISES.filter((ex) => adHocEligible(ex, true));
+    // A full session can have every muscle at its overlap cap, which would
+    // leave the ad-hoc path empty and force re-showing an excluded template —
+    // the "shuffle does nothing" trap. Finishers run at reduced stress, so
+    // fall back to ignoring the cap rather than repeating what the user just
+    // asked to replace.
+    const finisherCandidates =
+      cappedCandidates.length > 0
+        ? cappedCandidates
+        : EXERCISES.filter((ex) => adHocEligible(ex, false));
     const preferredFinisherCount = hardMode ? 3 : 3;
   const finisherPicks: Exercise[] = [];
   const finisherNames = new Set<string>();

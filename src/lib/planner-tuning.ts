@@ -67,7 +67,7 @@ export const PLANNER_TUNING = {
     preferredNeedTopWeight: 3,
     preferredNeedSecondWeight: 1.25,
     allowedNeedWeight: 0.5,
-    slotOrderPenalty: 0.1,
+    slotOrderPenalty: 1,
     saturationHighThreshold: 0.9,
     saturationMediumThreshold: 0.7,
     saturationHighPenalty: 10,
@@ -193,6 +193,35 @@ export const PLANNER_TUNING = {
     targetReachedPenalty: 0.35,
     focusSecondaryBonus: 0.15,
     randomnessWeight: 2.0,
+  },
+
+  // Session-level slot-target discipline. The over-target penalties in
+  // exerciseSelection compare against WEEKLY coverage, so on a fresh week
+  // nothing stops a single session from stacking several lifts on the same
+  // muscle far past the slot's own plan (e.g. a posterior day spending half
+  // its volume on quads and upper-back support). This penalizes the primary
+  // stimulus a pick would add beyond the slot target plus headroom.
+  sessionTarget: {
+    headroomMultiplier: 1.25,
+    baseAllowance: 2.5,
+    // Penalty stays small (cap below the -10 family hard-blocks) — the real
+    // discipline is collapsing a saturated muscle's deficit bonuses instead.
+    overshootPenaltyWeight: 2.5,
+    overshootPenaltyCap: 15,
+    untouchedTargetPrimaryBonus: 2.5,
+    finisherSaturatedMusclePenalty: 4,
+    untouchedTargetSecondaryBonus: 1.25,
+    saturatedClosureMultiplier: 0.1,
+    // Strength programs a narrow set of heavy lifts per session on purpose
+    // (deadlift + RDL back-to-back is intended), so its in-session muscle
+    // allowance is much wider.
+    strengthAllowanceMultiplier: 2,
+    preferredMovementOrderBias: 0.5,
+    claimedMovementOrderPenalty: 0.6,
+    lastSessionExercisePenalty: 6,
+    // Strength deliberately repeats movements (deadlift + RDL in one session),
+    // so the claimed-movement ordering demotion is mostly disabled there.
+    strengthClaimedOrderMultiplier: 0,
   },
 
   // Hard cap on how many exercises in one session may touch the same muscle

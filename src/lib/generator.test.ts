@@ -2748,9 +2748,13 @@ describe("generateNextWorkout", () => {
   });
 
   it("sequences a watch-state section earlier while keeping the main lift first and the finisher last", () => {
+    // DB prone press: reliably picked in upper_back_shoulder_arms supersets
+    // (index >= 2) so the watch-state pull-forward is actually observable —
+    // an exercise the slot only ever picks at index 1 or in the finisher
+    // can't demonstrate the move.
     const workouts = [
       workout("w1", "2026-05-15", [
-        { name: "Superman hold", sets: 3, progressionStatus: "missed" },
+        { name: "DB prone press", sets: 3, progressionStatus: "missed" },
       ]),
     ];
 
@@ -2763,10 +2767,10 @@ describe("generateNextWorkout", () => {
         forcedSlotId: "upper_back_shoulder_arms",
       });
       const flaggedIndex = flaggedDraft.sections.findIndex((section) =>
-        section.exercises.some((ex) => ex.name === "Superman hold"),
+        section.exercises.some((ex) => ex.name === "DB prone press"),
       );
       const controlIndex = controlDraft.sections.findIndex((section) =>
-        section.exercises.some((ex) => ex.name === "Superman hold"),
+        section.exercises.some((ex) => ex.name === "DB prone press"),
       );
       if (flaggedIndex === -1 || controlIndex === -1) continue;
 
