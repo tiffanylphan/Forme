@@ -76,6 +76,53 @@ describe("LogPage interactions", () => {
     expect(saved?.exercises[0]?.sets[0]?.reps).toBeNull();
   });
 
+  it("persists the selected session effort rating on save", async () => {
+    const user = userEvent.setup();
+    popEditWorkoutMock.mockReturnValue(null);
+    popDraftMock.mockReturnValue(null);
+    getWorkoutMock.mockReturnValue(null);
+    let persistedWorkout: Record<string, unknown> | null = null;
+    upsertWorkoutMock.mockImplementation((savedWorkout) => {
+      persistedWorkout = savedWorkout as Record<string, unknown>;
+    });
+
+    render(<LogPage />);
+
+    await user.click(screen.getByText("+ Add exercise"));
+    await user.type(screen.getByPlaceholderText("Search exercises…"), "cable row");
+    await user.click(screen.getByText("Cable row"));
+
+    const brutalChip = screen.getByRole("button", { name: "Brutal" });
+    expect(brutalChip).toHaveAttribute("aria-pressed", "false");
+    await user.click(brutalChip);
+    expect(brutalChip).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByText("Save"));
+
+    expect((persistedWorkout as Record<string, unknown> | null)?.sessionEffort).toBe("brutal");
+  });
+
+  it("saving without an effort rating leaves sessionEffort undefined", async () => {
+    const user = userEvent.setup();
+    popEditWorkoutMock.mockReturnValue(null);
+    popDraftMock.mockReturnValue(null);
+    getWorkoutMock.mockReturnValue(null);
+    let persistedWorkout: Record<string, unknown> | null = null;
+    upsertWorkoutMock.mockImplementation((savedWorkout) => {
+      persistedWorkout = savedWorkout as Record<string, unknown>;
+    });
+
+    render(<LogPage />);
+
+    await user.click(screen.getByText("+ Add exercise"));
+    await user.type(screen.getByPlaceholderText("Search exercises…"), "cable row");
+    await user.click(screen.getByText("Cable row"));
+    await user.click(screen.getByText("Save"));
+
+    expect(upsertWorkoutMock).toHaveBeenCalled();
+    expect((persistedWorkout as Record<string, unknown> | null)?.sessionEffort).toBeUndefined();
+  });
+
   it("shows an error instead of navigating when save verification fails", async () => {
     const user = userEvent.setup();
     popEditWorkoutMock.mockReturnValue(null);

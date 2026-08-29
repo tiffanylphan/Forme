@@ -171,7 +171,7 @@ describe("WeekPage", () => {
     // Pull (6 sets) outweighs push (2 sets) by set count, and the push
     // muscles (shoulders/triceps) are genuinely under their weekly targets —
     // the recommendation should name them specifically, not say "push sets".
-    expect(screen.getByText(/add shoulders\/triceps sets to close the gap/)).toBeInTheDocument();
+    expect(screen.getByText(/add chest\/shoulders\/triceps sets to close the gap/)).toBeInTheDocument();
   });
 
   it("notes when a set-count imbalance doesn't reflect a real muscle-level gap", () => {
@@ -203,7 +203,7 @@ describe("WeekPage", () => {
               id: "e1",
               exerciseName: "DB flat bench press",
               supersetGroup: null,
-              sets: Array.from({ length: 20 }, (_, i) => ({
+              sets: Array.from({ length: 32 }, (_, i) => ({
                 id: `p${i}`,
                 reps: 10,
                 weight: 60,
@@ -218,6 +218,19 @@ describe("WeekPage", () => {
                 id: `s${i}`,
                 reps: 12,
                 weight: 70,
+                unit: "lb" as const,
+              })),
+            },
+            {
+              // biceps carries a weekly target now, so cover it directly —
+              // this test is about the "no real gap" branch, not biceps.
+              id: "e4",
+              exerciseName: "Cable curl",
+              supersetGroup: null,
+              sets: Array.from({ length: 6 }, (_, i) => ({
+                id: `c${i}`,
+                reps: 12,
+                weight: 20,
                 unit: "lb" as const,
               })),
             },

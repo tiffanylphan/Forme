@@ -86,6 +86,8 @@ export const HOME_GYM_EQUIPMENT_OPTIONS: HomeGymEquipmentType[] = [
   "pullup_bar",
 ];
 
+export type MuscleEmphasisLevel = "high" | "normal" | "low";
+
 export type TrainingProfile = {
   goal: GoalMode;
   daysPerWeek: TrainingDaysPerWeek;
@@ -97,6 +99,13 @@ export type TrainingProfile = {
   homeGymEquipment: HomeGymEquipmentType[];
   /** Muscles to limit (not exclude) session volume on — e.g. a nerve/joint sensitivity. */
   sensitiveMuscles: MuscleGroup[];
+  /**
+   * Per-muscle weekly-target emphasis. "high" scales a muscle's split targets
+   * up (~1.5x), "low" scales them down (~0.5x); unset/"normal" leaves the
+   * split's baseline untouched. Optional for backward compatibility with
+   * stored profiles.
+   */
+  muscleEmphasis?: Partial<Record<MuscleGroup, MuscleEmphasisLevel>>;
 };
 
 export type SetEntry = {
@@ -126,6 +135,9 @@ export type ExerciseLog = {
 
 export type WorkoutSource = "manual" | "class";
 
+/** One-tap post-session effort rating — the user's own read on the session. */
+export type SessionEffort = "easy" | "right" | "brutal";
+
 export type Workout = {
   id: string;
   date: string; // YYYY-MM-DD
@@ -136,6 +148,8 @@ export type Workout = {
     title: string;
   };
   notes?: string;
+  /** Optional one-tap effort rating captured when the workout is saved. */
+  sessionEffort?: SessionEffort;
   createdAt: number;
   updatedAt: number;
 };

@@ -5,6 +5,7 @@ import type {
   ExperienceLevel,
   GoalMode,
   HomeGymEquipmentType,
+  MuscleEmphasisLevel,
   MuscleGroup,
   SessionIntensity,
   TrainingDaysPerWeek,
@@ -39,6 +40,7 @@ export const DEFAULT_PROFILE: TrainingProfile = {
   allowedExercises: [],
   homeGymEquipment: [],
   sensitiveMuscles: [],
+  muscleEmphasis: {},
 };
 
 const EMPTY_SNAPSHOT = { profile: null, ready: false } as const;
@@ -103,7 +105,28 @@ const normalizeProfile = (raw: unknown): TrainingProfile | null => {
           MUSCLE_GROUPS.includes(value as (typeof MUSCLE_GROUPS)[number]),
         )
       : DEFAULT_PROFILE.sensitiveMuscles,
+    muscleEmphasis: normalizeMuscleEmphasis(candidate.muscleEmphasis),
   };
+};
+
+const EMPHASIS_LEVELS: MuscleEmphasisLevel[] = ["high", "normal", "low"];
+
+const normalizeMuscleEmphasis = (
+  raw: unknown,
+): Partial<Record<MuscleGroup, MuscleEmphasisLevel>> => {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Partial<Record<MuscleGroup, MuscleEmphasisLevel>> = {};
+  Object.entries(raw as Record<string, unknown>).forEach(([muscle, level]) => {
+    if (
+      MUSCLE_GROUPS.includes(muscle as (typeof MUSCLE_GROUPS)[number]) &&
+      typeof level === "string" &&
+      EMPHASIS_LEVELS.includes(level as MuscleEmphasisLevel) &&
+      level !== "normal"
+    ) {
+      out[muscle as MuscleGroup] = level as MuscleEmphasisLevel;
+    }
+  });
+  return out;
 };
 
 export const loadTrainingProfile = (): TrainingProfile | null => {

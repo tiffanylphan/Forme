@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { computeCoverage, weekContaining } from "./coverage";
 import type { Coverage } from "./coverage";
-import { buildMuscleTargetRows, getMuscleTargetRows } from "./splits";
+import { buildMuscleTargetRows, getMuscleTargetRows, getSplitTemplate, getWeeklyTargetStimulus } from "./splits";
 import type { TrainingProfile, Workout } from "./types";
 
 const makeCoverage = (muscleStats: Coverage["muscleStats"]): Coverage => ({
@@ -85,5 +85,48 @@ describe("getMuscleTargetRows", () => {
     const back = rows.find((r) => r.muscle === "back");
     expect(back).toBeDefined();
     expect(back!.done).toBeGreaterThan(0);
+  });
+
+  it("scales weekly targets up for high-emphasis muscles and down for low", () => {
+    const base: TrainingProfile = {
+      goal: "physique",
+      daysPerWeek: 3,
+      equipment: "full_gym",
+      experience: "beginner",
+      intensity: "standard",
+      blockedExercises: [],
+      allowedExercises: [],
+      homeGymEquipment: [],
+      sensitiveMuscles: [],
+    };
+    const plain = getWeeklyTargetStimulus(base, []);
+    const emphasized = getWeeklyTargetStimulus(
+      { ...base, muscleEmphasis: { glutes: "high", core: "low" } },
+      [],
+    );
+    expect(emphasized.glutes!).toBeGreaterThanOrEqual(Math.round(plain.glutes! * 1.4));
+    expect(emphasized.core!).toBeLessThanOrEqual(Math.ceil(plain.core! * 0.6));
+    // untouched muscles keep the editorial baseline
+    expect(emphasized.hamstrings).toBe(plain.hamstrings);
+  });
+
+  it("promotes a high-emphasis muscle into slot focus lists where it has a target", () => {
+    const base: TrainingProfile = {
+      goal: "physique",
+      daysPerWeek: 4,
+      equipment: "full_gym",
+      experience: "beginner",
+      intensity: "standard",
+      blockedExercises: [],
+      allowedExercises: [],
+      homeGymEquipment: [],
+      sensitiveMuscles: [],
+      muscleEmphasis: { chest: "high" },
+    };
+    const split = getSplitTemplate(base);
+    const upperA = split.find((slot) => slot.id === "upper_back_shoulder");
+    expect(upperA).toBeDefined();
+    expect(upperA!.targetPrimaryStimulus.chest!).toBeGreaterThanOrEqual(4);
+    expect(upperA!.focusMuscles).toContain("chest");
   });
 });

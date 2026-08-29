@@ -7,6 +7,7 @@ import type {
   MovementPattern,
   MuscleGroup,
   Pattern,
+  SetEntry,
   Workout,
 } from "./types";
 
@@ -184,6 +185,62 @@ export const estimateExerciseStimulus = (exercise: Exercise): ExerciseStimulus =
   return { primaryPerSet: 0.8, secondaryPerSet: 0.3, recoveryPerSet: 0.7 };
 };
 
+const LB_PER_KG = 2.2046226218;
+
+// Normalized to lb so lb-logged history (the common case) compares directly.
+const normalizedSetWeight = (set: SetEntry): number | null =>
+  set.weight == null
+    ? null
+    : set.unit === "kg"
+      ? set.weight * LB_PER_KG
+      : set.weight;
+
+const EFFORT_MIN = 0.7;
+const EFFORT_MAX = 1.25;
+
+// Effort relative to the user's own heaviest logged weight for the exercise
+// within the analyzed workouts. Neutral (1.0) whenever weight can't tell us
+// anything: bodyweight/band sets, duration-only sets, or no reference.
+export function effortFactor(
+  exercise: Exercise,
+  set: SetEntry,
+  referenceWeight: number | null,
+): number {
+  const clamp = (factor: number) =>
+    Math.min(EFFORT_MAX, Math.max(EFFORT_MIN, factor));
+  if (exercise.tracksDuration) return 1;
+  if (set.durationSec != null && set.reps == null) return 1;
+  const weight = normalizedSetWeight(set);
+  if (weight == null || referenceWeight == null || referenceWeight <= 0) {
+    return 1;
+  }
+  const ratio = weight / referenceWeight;
+  const reps = set.reps;
+  if (ratio >= 1 && reps != null && reps >= 1 && reps <= 6) return clamp(1.25);
+  if (ratio < 0.8 && reps != null && reps >= 1 && reps <= 3) return clamp(0.7);
+  if (ratio < 0.6) return clamp(0.7);
+  if (ratio < 0.8) return clamp(0.8);
+  return 1;
+}
+
+// Heaviest normalized weight per canonical exercise name across the workouts.
+function referenceWeightsByExercise(workouts: Workout[]): Map<string, number> {
+  const refs = new Map<string, number>();
+  workouts.forEach((w) => {
+    w.exercises.forEach((logEx) => {
+      const meta = findExercise(logEx.exerciseName);
+      if (!meta) return;
+      logEx.sets.forEach((set) => {
+        const weight = normalizedSetWeight(set);
+        if (weight == null) return;
+        const prev = refs.get(meta.name);
+        if (prev == null || weight > prev) refs.set(meta.name, weight);
+      });
+    });
+  });
+  return refs;
+}
+
 export function distributeRecoveryStress(
   exercise: Exercise,
   baseStress: number,
@@ -215,16 +272,22 @@ export function computeCoverage(
   const muscleStats: Partial<Record<MuscleGroup, MuscleStats>> = {};
   const patternStats: Partial<Record<Pattern, PatternStats>> = {};
   const movementStats: Partial<Record<MovementPattern, MovementStats>> = {};
+  const referenceWeights = referenceWeightsByExercise(inWindow);
 
   inWindow.forEach((w) => {
     w.exercises.forEach((logEx) => {
       const meta = findExercise(logEx.exerciseName);
       if (!meta) return;
       const sets = logEx.sets.length;
+      const reference = referenceWeights.get(meta.name) ?? null;
+      const effortSets = logEx.sets.reduce(
+        (sum, set) => sum + effortFactor(meta, set, reference),
+        0,
+      );
       const stimulus = estimateExerciseStimulus(meta);
-      const primaryStimulus = sets * stimulus.primaryPerSet;
-      const secondaryStimulus = sets * stimulus.secondaryPerSet;
-      const recoveryStress = sets * stimulus.recoveryPerSet;
+      const primaryStimulus = effortSets * stimulus.primaryPerSet;
+      const secondaryStimulus = effortSets * stimulus.secondaryPerSet;
+      const recoveryStress = effortSets * stimulus.recoveryPerSet;
       const distributedStress = distributeRecoveryStress(meta, recoveryStress);
 
       // Pattern

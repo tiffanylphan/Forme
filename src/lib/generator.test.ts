@@ -725,7 +725,13 @@ describe("generateNextWorkout", () => {
       if (key) found.add(key);
     }
 
-    expect(found.size).toBeGreaterThanOrEqual(4);
+    // 3, not 4: the coherence gates added alongside the session-archetype work
+    // (no third posterior hinge via a swing template, trainer-equivalent
+    // family dedup, body-region fit, muscle caps on fuller sessions) each
+    // deliberately shrink the applicable pool for a hinge-heavy Lower A. The
+    // claim under test — the draw surfaces multiple distinct circuits rather
+    // than collapsing onto the single top scorer — holds at 3.
+    expect(found.size).toBeGreaterThanOrEqual(3);
   });
 
   it("excludes the currently-shown finisher template when asked to redraw", () => {
@@ -1158,6 +1164,9 @@ describe("generateNextWorkout", () => {
           "Burpee",
           "Squat thrust",
           "High knees",
+          "Kettlebell swing",
+          "Ski erg",
+          "Flutter kick",
           "Mountain climber",
           "Bear crawl",
           "Bear plank shoulder tap",
@@ -2575,12 +2584,16 @@ describe("generateNextWorkout", () => {
 
     // Without the near-cap penalty, glutes (already at their weekly target)
     // average ~2.1 picks/session here even though hamstrings/adductors sit
-    // well under theirs at ~2.6 combined. The penalty is deliberately
-    // moderate (nearCapPenaltyWeight: 5) — it should shift the balance, not
-    // invert it outright and bury glutes below every other muscle in a slot
-    // whose whole focus is glutes/quads.
+    // well under theirs. The penalty is deliberately moderate
+    // (nearCapPenaltyWeight: 5) — it should shift the balance, not invert it
+    // outright and bury glutes below every other muscle in a slot whose whole
+    // focus is glutes/quads. Since anchors became guaranteed compounds
+    // (isolations like the adductor machine can no longer anchor), absolute
+    // deficient-pick counts dropped; the durable product intent is relative:
+    // deficient muscles clearly out-pick the near-capped one.
     expect(glutePrimaryPicks / N).toBeLessThan(2.0);
-    expect(deficientPrimaryPicks / N).toBeGreaterThan(3);
+    expect(deficientPrimaryPicks / N).toBeGreaterThan(2);
+    expect(deficientPrimaryPicks).toBeGreaterThan(glutePrimaryPicks * 1.5);
   });
 
   it("de-prioritizes a candidate that touches an over-target muscle only as a secondary tag", () => {
@@ -2695,10 +2708,12 @@ describe("generateNextWorkout", () => {
       muscle: MuscleGroup,
     ) => (ex.primary.includes(muscle) ? 1 : ex.secondary.includes(muscle) ? 0.5 : 0);
 
+    // planSlot makes the prior session this slot's keystone source, so the
+    // flagged lift is deterministically re-anchored and the cap is exercised.
     const workouts = [
       workout("w1", "2026-05-15", [
         { name: "SA press to windmill", sets: 3, progressionStatus: "missed" },
-      ]),
+      ], { slotId: "upper_back_shoulder_arms", title: "Upper B · Upper/Arms" }),
     ];
 
     let sawFlaggedSession = false;
@@ -2797,7 +2812,7 @@ describe("generateNextWorkout", () => {
     const watchWorkouts = [
       workout("w1", "2026-05-15", [
         { name: "SA press to windmill", sets: 3, progressionStatus: "missed" },
-      ]),
+      ], { slotId: "upper_back_shoulder_arms", title: "Upper B · Upper/Arms" }),
     ];
     const watchDraft = generateNextWorkout(watchWorkouts, "2026-05-22", 0, profile, {
       forcedSlotId: "upper_back_shoulder_arms",
@@ -2884,7 +2899,9 @@ describe("generateNextWorkout", () => {
     // against ~2 remaining). Once a muscle is at least half done for the
     // week, the session is only entitled to the weekly remainder, so the day
     // anchors one row plus a vertical pull and spends the rest on real gaps
-    // (shoulders/core). 8 ~= one 4-set row (5.2) + one bodyweight pull.
+    // (shoulders/core). 9 ~= one 4-set row (5.2) + one 4-set bodyweight
+    // vertical pull (3.6) — the intended shape — while the pre-fix pile-ups
+    // ran 10.6-11.8.
     const hardThreeDay: TrainingProfile = {
       ...threeDayProfile,
       experience: "intermediate",
@@ -2918,7 +2935,109 @@ describe("generateNextWorkout", () => {
             ? sum + estimateExerciseStimulus(meta).primaryPerSet * ex.targets.length
             : sum;
         }, 0);
-      expect(backStimulus, `seed ${seed}: ${backStimulus.toFixed(1)} back stimulus`).toBeLessThanOrEqual(8);
+      expect(backStimulus, `seed ${seed}: ${backStimulus.toFixed(1)} back stimulus`).toBeLessThanOrEqual(9);
     }
+  });
+
+  it("still runs Lower B late in the week when last week's Lower B falls inside the cross-week window", () => {
+    // Cross-week recency (last Friday's slot counts as done so Monday doesn't
+    // repeat it) used to DELETE the slot from the new week entirely: with
+    // Lower A and Upper done this week and Lower B "done" last Friday, the
+    // planner re-ran Lower A and quads went untrained two weeks straight.
+    const workouts = [
+      workout("w0", "2026-05-15", [
+        { name: "Leg press", sets: 4 },
+        { name: "Cossack squat", sets: 3 },
+      ], { slotId: "lower_glute_quad", title: "Lower B · Quad/Glute" }),
+      workout("w1", "2026-05-18", [
+        { name: "Barbell deadlift", sets: 4 },
+        { name: "Single-leg DB RDL", sets: 3 },
+      ], { slotId: "lower_glute_ham", title: "Lower A · Posterior" }),
+      workout("w2", "2026-05-19", [
+        { name: "Cable row", sets: 4 },
+        { name: "DB overhead press", sets: 3 },
+      ], { slotId: "upper_back_shoulder", title: "Upper A · Back/Shoulders" }),
+      workout("w3", "2026-05-21", [
+        { name: "Lat pulldown", sets: 4 },
+        { name: "Barbell curl", sets: 3 },
+      ], { slotId: "upper_back_shoulder_arms", title: "Upper B · Upper/Arms" }),
+    ];
+    const draft = generateNextWorkout(workouts, "2026-05-22", 42, profile);
+    expect(draft.split.slotId).toBe("lower_glute_quad");
+  });
+
+  it("re-anchors a slot on its previous week's main lift (keystone continuity)", () => {
+    // A program progresses by repeating its main lift week over week —
+    // accessories rotate, the anchor persists unless it stalls.
+    const workouts = [
+      workout("w1", "2026-05-11", [
+        { name: "Barbell deadlift", sets: 4 },
+        { name: "DB front rack curtsey lunge", sets: 3 },
+      ], { slotId: "lower_glute_ham", title: "Lower A · Posterior" }),
+    ];
+    for (const seed of [1, 22, 333]) {
+      const draft = generateNextWorkout(workouts, "2026-05-18", seed, profile, {
+        forcedSlotId: "lower_glute_ham",
+      });
+      expect(draft.sections[0]?.exercises.some((ex) => ex.name === "Barbell deadlift")).toBe(true);
+    }
+  });
+
+  it("scales the session back after a brutal-rated session yesterday", () => {
+    const brutalYesterday: Workout[] = [
+      {
+        ...workout("w1", "2026-05-05", [
+          { name: "Barbell deadlift", sets: 4 },
+          { name: "Single-leg DB RDL", sets: 4 },
+        ], { slotId: "lower_glute_ham", title: "Lower A · Posterior" }),
+        sessionEffort: "brutal",
+      },
+    ];
+    const unrated = [
+      workout("w1", "2026-05-05", [
+        { name: "Barbell deadlift", sets: 4 },
+        { name: "Single-leg DB RDL", sets: 4 },
+      ], { slotId: "lower_glute_ham", title: "Lower A · Posterior" }),
+    ];
+    for (const seed of [7, 77, 777]) {
+      const scaled = generateNextWorkout(brutalYesterday, "2026-05-06", seed, profile);
+      const control = generateNextWorkout(unrated, "2026-05-06", seed, profile);
+      expect(scaled.rationale.some((line) => line.toLowerCase().includes("brutal"))).toBe(true);
+      const count = (draft: typeof scaled) =>
+        draft.sections.reduce((n, section) => n + section.exercises.length, 0);
+      // A 0.85x budget can only shrink or hold the session, never grow it.
+      expect(count(scaled)).toBeLessThanOrEqual(count(control));
+    }
+  });
+
+  it("runs a deload week after four consecutive build weeks", () => {
+    // Four qualifying build weeks (>= 2 sessions each, steady volume), then
+    // generate on week five: the budget is scaled to 0.75x, the rationale
+    // says why, and the heavy 8/6/5/5 anchor scheme is dropped for the week.
+    const history: Workout[] = [];
+    const mondays = ["2026-04-06", "2026-04-13", "2026-04-20", "2026-04-27"];
+    mondays.forEach((monday, wi) => {
+      const wednesday = `${monday.slice(0, 8)}${String(Number(monday.slice(-2)) + 2).padStart(2, "0")}`;
+      history.push(
+        workout(`b${wi}a`, monday, [
+          { name: "Barbell deadlift", sets: 4 },
+          { name: "Single-leg DB RDL", sets: 4 },
+          { name: "Leg curl", sets: 4 },
+        ], { slotId: "lower_glute_ham", title: "Lower A · Posterior" }),
+        workout(`b${wi}b`, wednesday, [
+          { name: "Cable row", sets: 4 },
+          { name: "DB overhead press", sets: 4 },
+          { name: "DB reverse fly", sets: 4 },
+        ], { slotId: "upper_back_shoulder", title: "Upper A · Back/Shoulders" }),
+      );
+    });
+    const hardIntermediate: TrainingProfile = {
+      ...profile,
+      experience: "intermediate",
+      intensity: "hard",
+    };
+    const draft = generateNextWorkout(history, "2026-05-04", 42, hardIntermediate);
+    expect(draft.rationale.some((line) => line.toLowerCase().includes("deload") || line.toLowerCase().includes("backing off") || line.toLowerCase().includes("lighter"))).toBe(true);
+    expect(draft.sections.some((section) => section.repScheme.includes("8 / 6 / 5 / 5"))).toBe(false);
   });
 });

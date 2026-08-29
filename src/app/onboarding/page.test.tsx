@@ -141,7 +141,7 @@ describe("OnboardingPage", () => {
 
     render(<OnboardingPage />);
 
-    await user.click(screen.getByText("shoulders"));
+    await user.click(screen.getAllByText("shoulders")[0]);
     await user.click(screen.getByText("Save profile"));
 
     expect(saveTrainingProfileMock).toHaveBeenCalledWith(

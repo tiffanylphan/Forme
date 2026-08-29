@@ -18,20 +18,20 @@ export const PHYSIQUE_UPPER_A_SLOT: SplitSlot = {
   id: "upper_back_shoulder",
   title: "Upper A · Back/Shoulders",
   summary: "Upper session theme with back, shoulders, and glute support.",
-  focusMuscles: ["back", "shoulders", "rear_delts", "glutes", "core"],
+  focusMuscles: ["back", "shoulders", "rear_delts", "chest", "glutes", "core"],
   preferredMovements: ["pull", "push"],
   allowedMovements: ["pull", "push", "hinge", "carry_core"],
-  targetPrimaryStimulus: { back: 7, shoulders: 5, rear_delts: 4, glutes: 2, core: 3 },
+  targetPrimaryStimulus: { back: 7, shoulders: 5, rear_delts: 4, chest: 3, biceps: 2, triceps: 2, glutes: 2, core: 3 },
 };
 
 export const PHYSIQUE_UPPER_B_SLOT: SplitSlot = {
   id: "upper_back_shoulder_arms",
   title: "Upper B · Upper/Arms",
   summary: "Upper session theme with shoulders, arms, and lower-body support.",
-  focusMuscles: ["back", "shoulders", "rear_delts", "biceps", "triceps", "glutes", "core"],
+  focusMuscles: ["back", "shoulders", "rear_delts", "chest", "biceps", "triceps", "glutes", "core"],
   preferredMovements: ["pull", "push"],
   allowedMovements: ["pull", "push", "single_leg", "carry_core"],
-  targetPrimaryStimulus: { back: 6, shoulders: 5, rear_delts: 4, biceps: 3, triceps: 2, glutes: 2, core: 2 },
+  targetPrimaryStimulus: { back: 6, shoulders: 5, rear_delts: 4, chest: 2, biceps: 3, triceps: 2, glutes: 2, core: 2 },
 };
 
 export const isLowerSlot = (slot: SplitSlot): boolean =>
@@ -45,7 +45,7 @@ export const isUpperSlot = (slot: SplitSlot): boolean =>
 export const compareWorkoutsDesc = (a: Workout, b: Workout): number =>
   a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt;
 
-export const getSplitTemplate = (
+const baseSplitTemplate = (
   profile: TrainingProfile,
 ): SplitSlot[] => {
   if (profile.goal === "physique") {
@@ -70,7 +70,7 @@ export const getSplitTemplate = (
           preferredMovements: ["single_leg", "squat", "hinge"],
           allowedMovements: ["single_leg", "squat", "hinge", "carry_core"],
           supplementalMovements: ["push"],
-          targetPrimaryStimulus: { glutes: 7, quads: 6, hamstrings: 4, adductors: 2, core: 4 },
+          targetPrimaryStimulus: { glutes: 7, quads: 8, hamstrings: 4, adductors: 2, core: 4 },
         },
       ];
     }
@@ -93,7 +93,7 @@ export const getSplitTemplate = (
           focusMuscles: ["glutes", "quads", "hamstrings", "adductors", "shoulders", "core"],
           preferredMovements: ["single_leg", "squat", "hinge"],
           allowedMovements: ["single_leg", "squat", "hinge", "push", "carry_core"],
-          targetPrimaryStimulus: { glutes: 6, quads: 6, hamstrings: 4, adductors: 2, shoulders: 2, core: 4 },
+          targetPrimaryStimulus: { glutes: 6, quads: 8, hamstrings: 4, adductors: 2, shoulders: 2, core: 4 },
         },
         PHYSIQUE_UPPER_B_SLOT,
       ];
@@ -116,7 +116,7 @@ export const getSplitTemplate = (
         focusMuscles: ["glutes", "quads", "hamstrings", "adductors", "core"],
         preferredMovements: ["single_leg", "squat", "hinge"],
         allowedMovements: ["single_leg", "squat", "hinge", "carry_core"],
-        targetPrimaryStimulus: { glutes: 7, quads: 6, hamstrings: 4, adductors: 2, core: 4 },
+        targetPrimaryStimulus: { glutes: 7, quads: 8, hamstrings: 4, adductors: 2, core: 4 },
       },
       PHYSIQUE_UPPER_B_SLOT,
       {
@@ -274,6 +274,46 @@ export const getSplitTemplate = (
     },
   ];
 };
+
+// User-chosen muscle emphasis reshapes the split's baseline targets: "high"
+// scales a muscle's per-slot targets up ~1.5x (and promotes it into the
+// slot's focus list so exercise selection favors it), "low" halves them.
+// The split templates stay the editorial baseline; this is the user's dial.
+const applyMuscleEmphasis = (
+  split: SplitSlot[],
+  profile: TrainingProfile,
+): SplitSlot[] => {
+  const emphasis = profile.muscleEmphasis ?? {};
+  const entries = Object.entries(emphasis).filter(([, level]) => level === "high" || level === "low");
+  if (entries.length === 0) return split;
+  return split.map((slot) => {
+    const targets: Partial<Record<MuscleGroup, number>> = {};
+    (Object.entries(slot.targetPrimaryStimulus) as [MuscleGroup, number][]).forEach(([muscle, target]) => {
+      const level = emphasis[muscle];
+      const scaled =
+        level === "high"
+          ? Math.max(target + 1, Math.round(target * 1.5))
+          : level === "low"
+            ? Math.round(target * 0.5)
+            : target;
+      if (scaled > 0) targets[muscle] = scaled;
+    });
+    const promoted = (Object.keys(emphasis) as MuscleGroup[]).filter(
+      (muscle) =>
+        emphasis[muscle] === "high" &&
+        (targets[muscle] ?? 0) > 0 &&
+        !slot.focusMuscles.includes(muscle),
+    );
+    return {
+      ...slot,
+      targetPrimaryStimulus: targets,
+      focusMuscles: promoted.length > 0 ? [...slot.focusMuscles, ...promoted] : slot.focusMuscles,
+    };
+  });
+};
+
+export const getSplitTemplate = (profile: TrainingProfile): SplitSlot[] =>
+  applyMuscleEmphasis(baseSplitTemplate(profile), profile);
 
 export const resolveSplitVariants = (
   split: SplitSlot[],

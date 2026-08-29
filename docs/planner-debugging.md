@@ -53,10 +53,11 @@ an override mechanism fired *after* `pickBestSplitSlotIndex`. The override pipel
 this order inside `generateNextWorkout`:
 
 1. `getNextSplitSlotIndex` → calls `pickBestSplitSlotIndex` internally
-2. `maybeOverrideForCriticalGap` — forces a slot if a critical movement pattern (need ≥ 3)
-   is absent from the base pick
-3. `maybeOverrideForStalledBias` — forces the preferred bias type when one side has 2+ more
+2. `maybeOverrideForStalledBias` — forces the preferred bias type when one side has 2+ more
    stalled exercises than the other
+3. `maybeOverrideForCriticalGap` — forces a slot if a critical movement pattern (need ≥ 3)
+   is absent from the base pick (runs LAST, skipped entirely on fresh weeks with no
+   completions; squat/single_leg cover each other's gaps)
 
 Add a temporary `console.log` at the return of each function to trace where the index changes.
 
@@ -69,7 +70,8 @@ Add a temporary `console.log` at the return of each function to trace where the 
 
 - For each exercise in recent history, call `getStallState(name, workouts)`.
 - Group stalled exercises by `movementOf(name)` (in `src/lib/movement.ts`).
-- `push`, `pull`, `carry_core` → upper pressure.
+- `push`, `pull` → upper pressure (`carry_core` is deliberately neutral —
+  see `summarizeStalledBiasPressure`).
 - `squat`, `hinge`, `single_leg` → lower pressure.
 - Accessory/isolation exercises (lateral raises, reverse flies) count the same as compounds —
   they can skew the count if a single upper accessory keeps stalling.

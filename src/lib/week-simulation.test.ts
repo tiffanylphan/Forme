@@ -399,18 +399,11 @@ describe("simulated training week", () => {
     assertNoHardBackToBack("physique4", physique4);
   });
 
-  // KNOWN DEFECT (do not silently un-fail): on 5-day physique weeks the
-  // planner picks glute_shoulder_accessory the day after Upper A in ~10/12
-  // seeds, anchoring shoulders on back-to-back days. Diagnosed chain: the
-  // Monday posterior session overshoots quads past the tiny weekly target,
-  // Wednesday's saturation filter then excludes lower_glute_quad
-  // (slotHasOverTargetMajorMuscle), and the accessory slot wins on remaining
-  // glute/shoulder deficits. A hard "hot muscle yesterday" slot filter fixes
-  // this but contradicts intended 3-day behavior (see the cross-week-window
-  // test in generator.test.ts, which expects a glute day 24h after a heavy
-  // squat session) — resolving it needs a sequencing-level design decision,
-  // not a tuning knob. Seed 771 shows a clean ordering exists.
-  it.fails("does not hammer the same muscle hard on consecutive calendar days (5-day physique)", () => {
+  // Formerly a documented defect (accessory day anchored shoulders the day
+  // after Upper A): fixed by the yesterday-hard-dose entitlement rule — a
+  // muscle that took >= one compound's worth of primary stimulus yesterday
+  // gets no in-session entitlement today, regardless of slot.
+  it("does not hammer the same muscle hard on consecutive calendar days (5-day physique)", () => {
     assertNoHardBackToBack("physique5", physique5);
   });
 
@@ -520,7 +513,10 @@ describe("simulated training week", () => {
         expect(
           gluteDose,
           `seed ${seed}: ${w.date} (${w.planSlot?.slotId}) anchored ${gluteDose.toFixed(1)} more glute stimulus onto a saturated muscle`,
-        ).toBeLessThanOrEqual(7);
+          // 7 nominal per-set units × the 1.25 effort ceiling: effort-aware
+          // coverage credits low-rep top sets extra, so the same prescription
+          // can read up to 25% higher without the planner adding volume.
+        ).toBeLessThanOrEqual(8.75);
       });
       for (const row of coverageRows(sim)) {
         if (row.muscle === "glutes" || row.target < 4) continue;
@@ -549,6 +545,64 @@ describe("simulated training week", () => {
           ).toBeGreaterThanOrEqual(0.4);
         }
       }
+    }
+  });
+
+  // Hostile schedules: nothing guarantees the user trains Mon/Wed/Fri. Fully
+  // consecutive training days must not re-hammer yesterday's hard-dosed
+  // muscles (non-finisher primary >= ~one compound's worth on both days).
+  it("avoids hard back-to-back doses on fully consecutive training days", () => {
+    const draftPrimary = (draft: WorkoutDraft, date: string) => {
+      const stripped: WorkoutDraft = { ...draft, sections: draft.sections.filter((s) => s.kind !== "finisher") };
+      return sessionPrimaryStimulus(draftToWorkout(stripped, "probe", date, 1));
+    };
+    const cases: Array<[string, TrainingProfile, string[]]> = [
+      ["physique3 Mon-Wed", physique3, ["2026-05-04", "2026-05-05", "2026-05-06"]],
+      ["physique4 Thu-Sun", physique4, ["2026-05-07", "2026-05-08", "2026-05-09", "2026-05-10"]],
+    ];
+    for (const [label, activeProfile, dates] of cases) {
+      for (const seed of [11, 424242, 9001]) {
+        const sim = runWeek(activeProfile, seed, { dates });
+        for (let i = 1; i < dates.length; i += 1) {
+          const before = draftPrimary(sim.drafts[i - 1], dates[i - 1]);
+          const after = draftPrimary(sim.drafts[i], dates[i]);
+          (Object.entries(before) as [MuscleGroup, number][]).forEach(([muscle, dose]) => {
+            if (muscle === "core" || muscle === "hip_flexors") return;
+            if ((dose ?? 0) < 5.5) return;
+            expect(
+              after[muscle] ?? 0,
+              `${label} seed ${seed}: ${muscle} ${dose?.toFixed(1)} on ${dates[i - 1]} then ${(after[muscle] ?? 0).toFixed(1)} on ${dates[i]}`,
+            ).toBeLessThan(5.5);
+          });
+        }
+      }
+    }
+  });
+
+  // A constrained-equipment week (home, no gym for weeks) must still produce
+  // substantial sessions — deep saturation may not null the stages down to a
+  // one- or two-exercise day.
+  it("keeps every session substantial across two home-equipment weeks", () => {
+    const home = makeProfile({ equipment: "home" });
+    for (const seed of [11, 424242]) {
+      const history: Workout[] = [];
+      const allDates = [
+        ["2026-05-04", "2026-05-05", "2026-05-07", "2026-05-08"],
+        ["2026-05-11", "2026-05-12", "2026-05-14", "2026-05-15"],
+      ];
+      allDates.forEach((dates, wi) => {
+        dates.forEach((date, i) => {
+          const draft = generateNextWorkout(history, date, seed + (wi * 5 + i) * 101, home);
+          const nonFinisher = draft.sections
+            .filter((s) => s.kind !== "finisher")
+            .reduce((n, s) => n + s.exercises.length, 0);
+          expect(
+            nonFinisher,
+            `home seed ${seed} W${wi + 1} ${date}: only ${nonFinisher} working exercises`,
+          ).toBeGreaterThanOrEqual(4);
+          history.push(draftToWorkout(draft, `h${wi}-${i}`, date, 1000 + wi * 10 + i));
+        });
+      });
     }
   });
 });

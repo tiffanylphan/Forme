@@ -73,6 +73,7 @@ export const PLANNER_TUNING = {
     saturationHighPenalty: 10,
     saturationMediumPenalty: 4,
     saturationOverTargetThreshold: 1.0,
+    saturationFilterThreshold: 1.0,
     saturationOverTargetPenalty: 20,
     saturationOverTargetPenaltyScale: 20,
     saturationOverTargetMajorMuscleThreshold: 4,
@@ -186,7 +187,6 @@ export const PLANNER_TUNING = {
     repeatedDeadliftFamilyPenalty: 20,
     posteriorChainOverloadPenalty: 100,
     lowerBiasUpperMovementBudgetPenaltyMultiplier: 0.3,
-    repeatedRdlFamilyPenalty: 6,
     recentLowerFamilyRepeatPenalty: 2.5,
     focusPrimaryBonus: 0.6,
     targetRemainingWeight: 0.1,
@@ -208,9 +208,9 @@ export const PLANNER_TUNING = {
     // discipline is collapsing a saturated muscle's deficit bonuses instead.
     overshootPenaltyWeight: 2.5,
     overshootPenaltyCap: 15,
-    untouchedTargetPrimaryBonus: 2.5,
-    finisherSaturatedMusclePenalty: 4,
-    untouchedTargetSecondaryBonus: 1.25,
+    untouchedTargetPrimaryBonus: 3,
+    finisherSaturatedMusclePenalty: 6,
+    untouchedTargetSecondaryBonus: 2,
     saturatedClosureMultiplier: 0.1,
     remainingEntitlementThreshold: 0.5,
     // Strength programs a narrow set of heavy lifts per session on purpose
@@ -220,6 +220,11 @@ export const PLANNER_TUNING = {
     preferredMovementOrderBias: 0.5,
     claimedMovementOrderPenalty: 0.6,
     lastSessionExercisePenalty: 6,
+    // Core rides along on nearly everything and headlines most finishers, so
+    // the dedicated core/carry block stands down once the week is ~3/4 served.
+    coreBlockSaturationCutoff: 0.75,
+    minSessionExercises: 4,
+    hardDoseYesterdayThreshold: 5.5,
     // Strength deliberately repeats movements (deadlift + RDL in one session),
     // so the claimed-movement ordering demotion is mostly disabled there.
     strengthClaimedOrderMultiplier: 0,

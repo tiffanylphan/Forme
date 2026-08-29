@@ -35,6 +35,7 @@ describe("profile storage", () => {
       allowedExercises: [],
       homeGymEquipment: ["cable", "barbell"],
       sensitiveMuscles: ["shoulders"],
+      muscleEmphasis: {},
     });
   });
 
@@ -66,5 +67,23 @@ describe("profile storage", () => {
     expect(formatEnvironment("full_gym")).toBe("Full gym");
     expect(formatExperience("beginner")).toBe("Beginner");
     expect(formatIntensity("hard")).toBe("Hard");
+  });
+
+  it("keeps only valid non-normal muscle emphasis entries when loading", () => {
+    window.localStorage.setItem(
+      "workout.training-profile.v1",
+      JSON.stringify({
+        ...DEFAULT_PROFILE,
+        muscleEmphasis: {
+          glutes: "high",
+          core: "low",
+          back: "normal",
+          calves: "high",
+          nonsense: "high",
+          quads: "extreme",
+        },
+      }),
+    );
+    expect(loadTrainingProfile()?.muscleEmphasis).toEqual({ glutes: "high", core: "low" });
   });
 });

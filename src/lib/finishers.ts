@@ -10,6 +10,33 @@ export type FinisherTemplate = {
 
 export const FINISHER_TEMPLATES: FinisherTemplate[] = [
   {
+    id: "squat_jump_core_chain",
+    label: "jump and core chain",
+    exercises: ["Squat jump", "Mountain climber", "Bicycle crunch"],
+    rounds: 3,
+    repScheme: "10 jumps + 16 climbers + 16 crunches",
+    tags: ["conditioning", "core"],
+  },
+  {
+    id: "wall_sit_burner",
+    label: "wall-sit burner",
+    exercises: ["Wall sit", "High knees"],
+    rounds: 3,
+    repScheme: "30s wall sit + 20 high knees",
+    // deliberately NOT tagged "conditioning": that tag bypasses the
+    // upper-slot body-region gate, and a legs-only burner must not displace
+    // core work at the end of an upper session.
+    tags: ["lower"],
+  },
+  {
+    id: "kb_swing_skater",
+    label: "swing and skater burner",
+    exercises: ["Kettlebell swing", "Skater hop", "Flutter kick"],
+    rounds: 3,
+    repScheme: "12 swings + 8/side skaters + 20 flutter kicks",
+    tags: ["lower", "conditioning"],
+  },
+  {
     id: "mechanical_pushup_drop",
     label: "mechanical advantage drop set",
     exercises: ["Archer push-up", "Push-up", "Incline push-up"],

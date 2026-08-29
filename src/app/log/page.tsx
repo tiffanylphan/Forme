@@ -21,6 +21,7 @@ import type { WorkoutDraft } from "@/lib/generator";
 import type {
   ExerciseLog,
   MuscleGroup,
+  SessionEffort,
   SetEntry,
   WeightUnit,
   Workout,
@@ -115,9 +116,16 @@ type InitialState = {
   planSlot: Workout["planSlot"];
   pendingDraft: WorkoutDraft | null;
   notes: string;
+  sessionEffort: SessionEffort | undefined;
   isEditing: boolean;
   recovered: boolean;
 };
+
+const EFFORT_OPTIONS: { value: SessionEffort; label: string }[] = [
+  { value: "easy", label: "Easy" },
+  { value: "right", label: "About right" },
+  { value: "brutal", label: "Brutal" },
+];
 
 const LOG_DRAFT_KEY = "workout.log-draft.v1";
 
@@ -134,6 +142,7 @@ type LogDraftSnapshot = {
   planSlot: Workout["planSlot"];
   pendingDraft: WorkoutDraft | null;
   notes: string;
+  sessionEffort?: SessionEffort;
   isEditing: boolean;
   defaultUnit: WeightUnit;
 };
@@ -175,6 +184,7 @@ const resolveInitialState = (): InitialState => {
     planSlot: undefined,
     pendingDraft: null,
     notes: "",
+    sessionEffort: undefined,
     isEditing: false,
     recovered: false,
   });
@@ -192,6 +202,7 @@ const resolveInitialState = (): InitialState => {
       planSlot: editWorkout.planSlot,
       pendingDraft: null,
       notes: editWorkout.notes ?? "",
+      sessionEffort: editWorkout.sessionEffort,
       isEditing: true,
       recovered: false,
     };
@@ -222,6 +233,7 @@ const resolveInitialState = (): InitialState => {
       planSlot: savedDraft.planSlot,
       pendingDraft: savedDraft.pendingDraft,
       notes: savedDraft.notes,
+      sessionEffort: savedDraft.sessionEffort,
       isEditing: savedDraft.isEditing,
       recovered: true,
     };
@@ -301,6 +313,9 @@ export default function LogPage() {
   const [guideExerciseName, setGuideExerciseName] = useState<string | null>(null);
   const [swapExerciseId, setSwapExerciseId] = useState<string | null>(null);
   const [notes, setNotes] = useState(init.notes);
+  const [sessionEffort, setSessionEffort] = useState<SessionEffort | undefined>(
+    init.sessionEffort,
+  );
   const isEditing = init.isEditing;
   const [defaultUnit, setDefaultUnit] = useState<WeightUnit>(() => {
     const savedDraft = loadLogDraft();
@@ -321,7 +336,13 @@ export default function LogPage() {
 
   useEffect(() => {
     if (!hydrated || !workoutId) return;
-    if (!isEditing && exercises.length === 0 && !pendingDraft && notes.trim() === "") {
+    if (
+      !isEditing &&
+      exercises.length === 0 &&
+      !pendingDraft &&
+      notes.trim() === "" &&
+      !sessionEffort
+    ) {
       clearLogDraft();
       return;
     }
@@ -333,10 +354,11 @@ export default function LogPage() {
       planSlot,
       pendingDraft,
       notes,
+      sessionEffort,
       isEditing,
       defaultUnit,
     });
-  }, [hydrated, workoutId, date, exercises, planSlot, pendingDraft, notes, isEditing, defaultUnit]);
+  }, [hydrated, workoutId, date, exercises, planSlot, pendingDraft, notes, sessionEffort, isEditing, defaultUnit]);
 
   useEffect(() => {
     if (isEditing) return;
@@ -584,6 +606,7 @@ export default function LogPage() {
     setSaveError(null);
     setExercises([]);
     setNotes("");
+    setSessionEffort(undefined);
     setPendingDraft(null);
     setPlanSlot(undefined);
     clearLogDraft();
@@ -609,6 +632,7 @@ export default function LogPage() {
       })),
       planSlot,
       notes: notes.trim() || undefined,
+      sessionEffort,
       createdAt: existingCreatedAt,
       updatedAt: now,
     };
@@ -838,6 +862,32 @@ export default function LogPage() {
                   className="right-3 top-3 -translate-y-0"
                 />
               )}
+            </div>
+          </div>
+        )}
+
+        {exercises.length > 0 && (
+          <div className="mt-4">
+            <label className="label-eyebrow mb-1.5 block">How was the effort?</label>
+            <div className="flex gap-2">
+              {EFFORT_OPTIONS.map((option) => {
+                const selected = sessionEffort === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => setSessionEffort(selected ? undefined : option.value)}
+                    className={
+                      selected
+                        ? "rounded-full bg-text px-3 py-1.5 text-[12px] font-medium text-white"
+                        : "rounded-full border border-[#E6E3D8] bg-white px-3 py-1.5 text-[12px] font-medium text-text-muted"
+                    }
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}

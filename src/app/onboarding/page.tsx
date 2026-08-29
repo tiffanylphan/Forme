@@ -22,6 +22,7 @@ import {
 import { formatMuscle } from "@/lib/format";
 import type { HomeGymEquipmentType, TrainingProfile } from "@/lib/types";
 import { HOME_GYM_EQUIPMENT_OPTIONS, MUSCLE_GROUPS } from "@/lib/types";
+import type { MuscleEmphasisLevel, MuscleGroup } from "@/lib/types";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -162,6 +163,21 @@ export default function OnboardingPage() {
                 })
               }
             />
+
+            <EmphasisToggle
+              label="Muscle emphasis (tap to cycle: normal → more → less)"
+              emphasis={draft.muscleEmphasis ?? {}}
+              onCycle={(muscle) =>
+                setDraft((prev) => {
+                  const current = { ...(prev.muscleEmphasis ?? {}) };
+                  const level = current[muscle];
+                  if (level === "high") current[muscle] = "low";
+                  else if (level === "low") delete current[muscle];
+                  else current[muscle] = "high";
+                  return { ...prev, muscleEmphasis: current };
+                })
+              }
+            />
           </section>
 
           <section className="mt-5 rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-4">
@@ -253,6 +269,43 @@ function MultiToggle<T extends string>({
               }`}
             >
               {option.text}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function EmphasisToggle({
+  label,
+  emphasis,
+  onCycle,
+}: {
+  label: string;
+  emphasis: Partial<Record<MuscleGroup, MuscleEmphasisLevel>>;
+  onCycle: (muscle: MuscleGroup) => void;
+}) {
+  return (
+    <div>
+      <p className="label-eyebrow mb-2">{label}</p>
+      <div className="grid grid-cols-2 gap-2">
+        {MUSCLE_GROUPS.map((muscle) => {
+          const level = emphasis[muscle];
+          return (
+            <button
+              key={muscle}
+              onClick={() => onCycle(muscle)}
+              className={`rounded-xl border px-3 py-3 text-left text-[13px] font-medium ${
+                level === "high"
+                  ? "border-text bg-text text-white"
+                  : level === "low"
+                    ? "border-[#E6E3D8] bg-[#F1EFE8] text-text-muted"
+                    : "border-[#E6E3D8] bg-white text-text"
+              }`}
+            >
+              {formatMuscle(muscle)}
+              {level === "high" ? " · more" : level === "low" ? " · less" : ""}
             </button>
           );
         })}

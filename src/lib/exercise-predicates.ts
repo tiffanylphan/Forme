@@ -219,11 +219,20 @@ export const isLowerIsolation = (ex: Exercise): boolean =>
     "Banded fire hydrant",
     "Banded walkout",
     "Glute bridge",
+    "Feet-elevated glute bridge",
     "Bench single-leg hip thrust",
     "Wall sit",
     "Wall sit with adductor squeeze",
     "Banded wall sit abduction pulses",
     "Sissy squat",
+    "Adductor machine",
+    "Cable hip adduction",
+    "Cable kickback",
+    "Donkey kick",
+    "Cable pull-through",
+    "Hyperextension",
+    "Stability ball hamstring curl",
+    "Nordic hamstring curl",
   ].includes(ex.name);
 
 export const isActivationLowerAccessory = (ex: Exercise): boolean =>
@@ -249,8 +258,10 @@ export const isStrongLowerAnchor = (ex: Exercise): boolean => {
 export const isPhysiqueFriendly = (ex: Exercise): boolean => {
   const movement = movementOf(ex);
   if (!movement) return false;
-  if (isChestDominantPush(ex)) return false;
-  if (movement === "push") return isShoulderBiasedPush(ex);
+  // Chest-dominant pressing is no longer hard-banned for physique — the upper
+  // slots carry a small chest baseline (a real trainer keeps some pressing in
+  // a glute-focused program), and physiquePushChestPenalty still biases push
+  // selection toward shoulders rather than outlawing chest work outright.
   return true;
 };
 

@@ -159,6 +159,10 @@ const normalizeWorkout = (raw: unknown, index: number): Workout | null => {
         ? { slotId: slotIdFromTitle(raw.planSlot.title), title: raw.planSlot.title.trim() }
         : undefined,
     notes: typeof raw.notes === "string" ? raw.notes : undefined,
+    sessionEffort:
+      raw.sessionEffort === "easy" || raw.sessionEffort === "right" || raw.sessionEffort === "brutal"
+        ? raw.sessionEffort
+        : undefined,
     createdAt,
     updatedAt,
   };
