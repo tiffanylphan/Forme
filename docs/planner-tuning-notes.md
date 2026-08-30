@@ -171,6 +171,21 @@ What to do:
 - For strength, widen via `strengthAllowanceMultiplier` instead of the shared knobs (deadlift +
   RDL in one session is intended there).
 
+### The guaranteed support press dumps full volume into an already-over-target muscle
+
+Start here:
+
+- `sessionTarget.saturatedSupportSets`
+
+What it governs:
+
+- The strength-pair support lift (the compound kept opposite the main lift for movement
+  balance) is guaranteed a slot, so a week that has already closed its muscles (e.g. shoulders
+  over target from freestyle sessions) would still get four full working sets of pressing.
+  When every non-core primary of the support move is at/past its weekly target, the pattern
+  stays but the dose drops to this many sets, a rationale line explains why, and the muscle is
+  closed for the rest of the draft so accessories don't re-spend the freed allowance on it.
+
 ### Back-to-back training days re-hammer the same muscle
 
 Start here:

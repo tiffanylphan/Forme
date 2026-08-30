@@ -228,6 +228,11 @@ export const PLANNER_TUNING = {
     // Strength deliberately repeats movements (deadlift + RDL in one session),
     // so the claimed-movement ordering demotion is mostly disabled there.
     strengthClaimedOrderMultiplier: 0,
+    // The strength pair always keeps a compound opposite the main lift for
+    // movement balance, but when every primary muscle the support move hits is
+    // already past its weekly target, the pattern stays and the dose drops to
+    // a maintenance touch instead of four full working sets.
+    saturatedSupportSets: 2,
   },
 
   // Hard cap on how many exercises in one session may touch the same muscle

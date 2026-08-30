@@ -3040,4 +3040,59 @@ describe("generateNextWorkout", () => {
     expect(draft.rationale.some((line) => line.toLowerCase().includes("deload") || line.toLowerCase().includes("backing off") || line.toLowerCase().includes("lighter"))).toBe(true);
     expect(draft.sections.some((section) => section.repScheme.includes("8 / 6 / 5 / 5"))).toBe(false);
   });
+
+  it("trims the strength-pair support to a maintenance dose when its muscles are already past the weekly target", () => {
+    const hardIntermediate: TrainingProfile = {
+      ...threeDayProfile,
+      experience: "intermediate",
+      intensity: "hard",
+    };
+    // Mon: freestyle session that pushes shoulders well past the weekly
+    // target (raises + presses). Fri: lower day. Sun: the upper day still
+    // pairs the pull anchor with a press for movement balance — but into a
+    // muscle the week has already closed it should be a light touch, not four
+    // full working sets.
+    const history = [
+      workout("freestyle", "2026-08-24", [
+        { name: "DB lateral raise", sets: 4 },
+        { name: "DB front raise", sets: 4 },
+        { name: "DB Arnold press", sets: 4 },
+        { name: "Kettlebell high pull", sets: 3 },
+      ]),
+      workout(
+        "lower",
+        "2026-08-28",
+        [
+          { name: "Barbell hip thrust", sets: 4 },
+          { name: "DB Romanian deadlift", sets: 4 },
+          { name: "DB walking lunge", sets: 3 },
+        ],
+        { slotId: "lower_glute_ham", title: "Lower A" },
+      ),
+    ];
+    const draft = generateNextWorkout(history, "2026-08-30", 7, hardIntermediate, {
+      forcedSlotId: "upper_back_shoulder",
+    });
+    const pair = draft.sections.find((section) =>
+      section.repScheme.includes("strength pairing"),
+    );
+    expect(pair).toBeDefined();
+    expect(pair!.exercises).toHaveLength(2);
+    const isSaturatedSupport = (name: string): boolean => {
+      const meta = findExercise(name);
+      if (!meta) return false;
+      const primaries = meta.primary.filter((m) => m !== "core" && m !== "hip_flexors");
+      return primaries.length > 0 && primaries.every((m) => m === "shoulders");
+    };
+    const support = pair!.exercises.filter((ex) => isSaturatedSupport(ex.name));
+    expect(support.length).toBe(1);
+    expect(support[0].targets.length).toBe(
+      PLANNER_TUNING.sessionTarget.saturatedSupportSets,
+    );
+    const anchor = pair!.exercises.find((ex) => !isSaturatedSupport(ex.name));
+    expect(anchor!.targets.length).toBe(4);
+    expect(
+      draft.rationale.some((line) => line.includes("movement balance")),
+    ).toBe(true);
+  });
 });

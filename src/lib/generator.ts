@@ -1981,6 +1981,11 @@ export function generateNextWorkout(
   // Primary stimulus already planned into this session, per muscle — the
   // basis for the sessionTarget slot-overshoot penalty in scoreExercise.
   const plannedPrimaryStimulus: Partial<Record<MuscleGroup, number>> = {};
+  // Muscles whose in-session dose was deliberately trimmed to a maintenance
+  // touch (saturated strength-pair support). Trimming frees allowance the
+  // accessory circuits would otherwise re-spend on the very muscle the trim
+  // protected, so scoring treats these as allowance-spent from the start.
+  const saturationClosedMuscles = new Set<MuscleGroup>();
   let pendingPicks: Exercise[] = [];
 
   const muscleWeightsOf = (ex: Exercise): Map<MuscleGroup, number> => {
@@ -2136,10 +2141,17 @@ export function generateNextWorkout(
       // spent — the per-set-saturating closure would otherwise stay maximal
       // all session no matter how much this draft already gave the muscle.
       const disciplineMultiplier =
-        plannedForMuscle >= allowance
+        plannedForMuscle >= allowance || saturationClosedMuscles.has(m)
           ? PLANNER_TUNING.sessionTarget.saturatedClosureMultiplier
           : 1;
-      const overshoot = plannedForMuscle + stimulus.primaryPerSet * plannedRounds - allowance;
+      // A saturation-closed muscle's allowance is spent by definition — every
+      // further set is pure overshoot, matching how a full-volume support lift
+      // would have consumed the allowance before the trim existed.
+      const effectiveAllowance = saturationClosedMuscles.has(m)
+        ? Math.min(allowance, plannedForMuscle)
+        : allowance;
+      const overshoot =
+        plannedForMuscle + stimulus.primaryPerSet * plannedRounds - effectiveAllowance;
       if (overshoot > 0) {
         sessionTargetPenalty += Math.min(
           PLANNER_TUNING.sessionTarget.overshootPenaltyCap,
@@ -3243,10 +3255,38 @@ export function generateNextWorkout(
   }
   pendingPicks = [];
 
+  // The strength-pair support is structurally guaranteed — every session keeps
+  // a compound opposite the main lift for movement balance — so saturation
+  // scoring can only steer WHICH press/pull gets picked, never shrink the dose.
+  // When every non-core muscle the support move primarily hits is already past
+  // its weekly target, keep the pattern but drop it to a maintenance touch.
+  const supportPrimaries = secondaryPick
+    ? secondaryPick.exercise.primary.filter(
+        (m) => m !== "core" && m !== "hip_flexors",
+      )
+    : [];
+  const supportSaturated =
+    supportPrimaries.length > 0 &&
+    supportPrimaries.every((m) => {
+      const target = weeklyMuscleTargets[m] ?? 0;
+      return target > 0 && (coverage.muscleStats[m]?.primaryStimulus ?? 0) >= target;
+    });
+  const supportSets = supportSaturated
+    ? PLANNER_TUNING.sessionTarget.saturatedSupportSets
+    : 4;
+  if (supportSaturated) supportPrimaries.forEach((m) => saturationClosedMuscles.add(m));
+  const supportLabel = supportPrimaries
+    .map((m) => m.replace("_", " "))
+    .join(" and ");
+  const saturatedSupportNote =
+    supportSaturated && secondaryPick
+      ? `${supportLabel.charAt(0).toUpperCase()}${supportLabel.slice(1)} already hit this week's target, so ${secondaryPick.exercise.name} stays for movement balance at a light ${supportSets}-set touch.`
+      : null;
+
   if (compoundPick && secondaryPick && hardMode) {
     claimWithStress(compoundPick.exercise, compoundTargets.length);
     pushMovement(compoundPick.movement);
-    claimWithStress(secondaryPick.exercise, 4);
+    claimWithStress(secondaryPick.exercise, supportSets);
     pushMovement(secondaryPick.movement);
     // Put the barbell exercise first when the need-ranked "compound" is lighter equipment.
     // A barbell deadlift should lead a dumbbell lunge, not follow it — but a
@@ -3262,11 +3302,11 @@ export function generateNextWorkout(
       exercises: [
         makeDraftEx(
           barbellLeads ? secondaryPick.exercise : compoundPick.exercise,
-          barbellLeads ? secondaryTargets.slice(0, 4) : compoundTargets,
+          barbellLeads ? secondaryTargets.slice(0, supportSets) : compoundTargets,
         ),
         makeDraftEx(
           barbellLeads ? compoundPick.exercise : secondaryPick.exercise,
-          barbellLeads ? compoundTargets : secondaryTargets.slice(0, 4),
+          barbellLeads ? compoundTargets : secondaryTargets.slice(0, supportSets),
         ),
       ],
     });
@@ -3282,14 +3322,15 @@ export function generateNextWorkout(
       });
     }
     if (secondaryPick) {
-      claimWithStress(secondaryPick.exercise, secondaryTargets.length);
+      const supportTargets = secondaryTargets.slice(0, supportSets);
+      claimWithStress(secondaryPick.exercise, supportTargets.length);
       pushMovement(secondaryPick.movement);
       sections.push({
         kind: "accessory",
-        rounds: secondaryRounds,
+        rounds: Math.min(secondaryRounds, supportTargets.length),
         repScheme: secondaryRepScheme,
         exercises: [
-          makeDraftEx(secondaryPick.exercise, secondaryTargets),
+          makeDraftEx(secondaryPick.exercise, supportTargets),
         ],
       });
     }
@@ -3916,6 +3957,7 @@ export function generateNextWorkout(
   if (remainingFocus.length > 0) {
     rationale.push(`Still building this slot's focus stimulus: ${remainingFocus.join(", ")}.`);
   }
+  if (saturatedSupportNote) rationale.push(saturatedSupportNote);
   if (recentFocusStress.length > 0) {
     rationale.push(
       `Recent overlap is high for ${recentFocusStress
