@@ -219,3 +219,28 @@ describe("storage", () => {
     expect(normalized[0]?.planSlot?.slotId).toBe(expectedSlotId);
   });
 });
+
+describe("workout source normalization", () => {
+  const row = (source: string) => ({
+    workout_id: "w1",
+    date: "2026-05-16",
+    source,
+    plan_slot: "",
+    exercise: "Cable row",
+    set_number: 1,
+    reps: 10,
+    weight: 70,
+    unit: "lb",
+    duration_sec: "",
+    distance_m: "",
+    progression_status: "baseline",
+    workout_notes: "",
+  });
+
+  it("keeps external sessions external and maps the legacy class value onto it", () => {
+    expect(normalizeWorkouts([row("external")])[0]?.source).toBe("external");
+    expect(normalizeWorkouts([row("class")])[0]?.source).toBe("external");
+    expect(normalizeWorkouts([row("manual")])[0]?.source).toBe("manual");
+    expect(normalizeWorkouts([row("whatever")])[0]?.source).toBe("manual");
+  });
+});

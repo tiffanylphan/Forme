@@ -38,7 +38,7 @@ describe("NextPage", () => {
 
     render(<NextPage />);
 
-    expect(screen.getByText("This week's slot")).toBeInTheDocument();
+    expect(screen.getByText("Today's focus")).toBeInTheDocument();
     expect(screen.getByText("Lower A · Posterior")).toBeInTheDocument();
     expect(screen.getByText("Training profile")).toBeInTheDocument();
     expect(screen.getByText("Physique")).toBeInTheDocument();
@@ -69,12 +69,13 @@ describe("NextPage", () => {
 
     render(<NextPage />);
 
-    // The displayed slot is "Lower A · Posterior", whose own glutes target is 7,
-    // but the weekly total across all 4 physique slots is 7 + 2 + 6 + 2 = 17.
-    // The card's "done" value is the weekly total, so its target must also be
-    // the weekly total (17), not this slot's own target (7).
-    expect(screen.getByText("0.0/17.0")).toBeInTheDocument();
-    expect(screen.queryByText("0.0/7.0")).not.toBeInTheDocument();
+    // The displayed slot is "Lower A · Posterior", which owns only a share of the
+    // week's glute volume. The card's "done" value is the weekly total, so its
+    // target must be the weekly band floor (physique · beginner · 4-day glutes =
+    // 6 sets × 1.3 × 1.25 = 10.0), not this slot's own share of it.
+    // Back shares the same 10.0 floor, so the text can legitimately appear twice.
+    expect(screen.getAllByText("0.0/10.0").length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText("0.0/4.5")).not.toBeInTheDocument();
   });
 
   it("prompts for setup when no training profile exists", () => {

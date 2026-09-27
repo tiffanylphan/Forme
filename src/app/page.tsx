@@ -9,7 +9,7 @@ import {
   weekContaining,
 } from "@/lib/coverage";
 import { findExercise } from "@/lib/exercises";
-import { formatDate, todayISO } from "@/lib/format";
+import { formatDate, formatMuscle, todayISO } from "@/lib/format";
 import { MOVEMENT_COLORS, MOVEMENT_LABELS } from "@/lib/movement";
 import {
   formatEnvironment,
@@ -18,6 +18,7 @@ import {
   formatIntensity,
   useTrainingProfile,
 } from "@/lib/profile";
+import { getMuscleTargetRows } from "@/lib/splits";
 import { useWorkouts } from "@/lib/storage";
 import { MOVEMENT_PATTERNS } from "@/lib/types";
 import type { CoverageScore } from "@/lib/coverage";
@@ -56,6 +57,15 @@ export default function Home() {
   );
 
   const hasWeekData = coverage.workouts.length > 0;
+  const leftToFloor = useMemo(
+    () =>
+      profile
+        ? getMuscleTargetRows(profile, coverage)
+            .filter((row) => row.status === "below")
+            .sort((a, b) => b.remaining - a.remaining)
+        : [],
+    [profile, coverage],
+  );
 
   return (
     <div className="mx-auto max-w-[480px] px-4 pb-16 pt-8">
@@ -135,6 +145,7 @@ export default function Home() {
         </div>
 
         {hasWeekData ? (
+          <>
           <div className="grid grid-cols-3 gap-1.5">
             {MOVEMENT_PATTERNS.map((mp) => {
               const stats = coverage.movementStats[mp];
@@ -161,6 +172,17 @@ export default function Home() {
               );
             })}
           </div>
+          {profile && (
+            <p className="mt-2 text-[12px] text-text-subtle">
+              {leftToFloor.length > 0
+                ? `Left to floor: ${leftToFloor
+                    .slice(0, 4)
+                    .map((row) => `${formatMuscle(row.muscle)} ${row.remaining.toFixed(1)}`)
+                    .join(", ")}${leftToFloor.length > 4 ? ` +${leftToFloor.length - 4} more` : ""}`
+                : "Every floor met this week."}
+            </p>
+          )}
+          </>
         ) : (
           <p className="text-[13px] text-text-subtle">
             No workouts logged this week yet.
@@ -228,8 +250,13 @@ export default function Home() {
                   className="block px-4 pt-3.5 pb-3"
                 >
                   <div className="flex items-baseline justify-between">
-                    <h3 className="text-[15px] font-medium text-text">
+                    <h3 className="flex items-baseline gap-2 text-[15px] font-medium text-text">
                       {formatDate(w.date)}
+                      {w.source === "external" && (
+                        <span className="rounded-full bg-[#F1EFE8] px-2 py-0.5 text-[10px] font-medium text-text-muted">
+                          Outside Forme
+                        </span>
+                      )}
                     </h3>
                     <span className="text-[12px] text-text-subtle">
                       {w.exercises.length} ex · {setCount(w)} sets

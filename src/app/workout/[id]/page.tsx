@@ -167,7 +167,13 @@ export default function WorkoutDetailPage() {
         <p className="mt-1 text-[13px] text-text-subtle">
           {workout.exercises.length} exercise
           {workout.exercises.length !== 1 ? "s" : ""} · {totalSets} sets
+          {workout.planSlot?.title ? ` · ${workout.planSlot.title}` : ""}
         </p>
+        {workout.source === "external" && (
+          <span className="mt-2 inline-block rounded-full bg-[#F1EFE8] px-2 py-0.5 text-[10px] font-medium text-text-muted">
+            Outside Forme
+          </span>
+        )}
         {muscles.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
             {muscles.map((m) => (

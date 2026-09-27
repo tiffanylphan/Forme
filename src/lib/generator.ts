@@ -1,6 +1,7 @@
 import { EXERCISES } from "./exercises";
 import { environmentAllowsExercise } from "./exercise-availability";
 import {
+  directionOf,
   ACCESSORY_MOVEMENTS,
   COMPOUND_MOVEMENTS,
   capSuggestedWeight,
@@ -45,6 +46,13 @@ import {
 } from "./splits";
 import type { SplitSlot } from "./splits";
 export { getWeeklyTargetStimulus, getWeeklyTargetSets } from "./splits";
+import {
+  bandFloors,
+  getWeeklyTargetBand,
+  isMajorTarget,
+  roundHalf,
+  type WeeklyTargetBand,
+} from "./weekly-targets";
 import { FINISHER_TEMPLATES } from "./finishers";
 import { effortAdjustmentReason, effortBudgetMultiplier } from "./session-feedback";
 import { getWeekPhase } from "./periodization";
@@ -55,6 +63,7 @@ import { PLANNER_TUNING } from "./planner-tuning";
 import { DEFAULT_PROFILE } from "./profile";
 import { MOVEMENT_PATTERNS, MUSCLE_GROUPS } from "./types";
 import {
+  type DirectionKey,
   computeCoverage,
   distributeRecoveryStress,
   estimateExerciseStimulus,
@@ -109,16 +118,30 @@ export type DraftExercise = {
   };
 };
 
+export type SessionComposition = {
+  baseSlotId: string;
+  loggedSessions: number;
+  remainingSessions: number;
+  priorWeight: number;
+  todayTargets: Partial<Record<MuscleGroup, number>>;
+  closes: MuscleGroup[];
+  covered: MuscleGroup[];
+  avoid: MuscleGroup[];
+  requiredMovements: MovementPattern[];
+};
+
 export type WorkoutDraft = {
   split: {
     slotId: string;
     title: string;
     summary: string;
+    focusLabel: string | null;
     sessionIndex: number;
     totalSessions: number;
     targetPrimaryStimulus: Partial<Record<MuscleGroup, number>>;
     targetPrimarySets: Partial<Record<MuscleGroup, number>>;
   };
+  composition: SessionComposition | null;
   slotRecommendations: Array<{
     slotId: string;
     title: string;
@@ -147,7 +170,7 @@ export type WorkoutDraft = {
   sections: DraftSection[];
 };
 
-type GeneratorOverrides = {
+export type GeneratorOverrides = {
   forcedSlotId?: string;
   focusedMovements?: MovementPattern[];
   focusedMuscles?: MuscleGroup[];
@@ -953,17 +976,14 @@ const getIncompleteSplitSlotIndices = (
   return [];
 };
 
+// Deficit counts primary AND secondary stimulus against the floor (saturation
+// counts primary only): a muscle that rode along as a secondary all week has
+// less left to close, but hasn't been "trained" for the purpose of over-target
+// penalties.
 const computeMuscleDeficits = (
-  split: SplitSlot[],
+  weeklyTargets: Partial<Record<MuscleGroup, number>>,
   coverage: ReturnType<typeof computeCoverage>,
 ): MuscleDeficitMap => {
-  const weeklyTargets: Partial<Record<MuscleGroup, number>> = {};
-  split.forEach((slot) => {
-    (Object.entries(slot.targetPrimaryStimulus) as [MuscleGroup, number][]).forEach(([muscle, sets]) => {
-      if (sets > 0) weeklyTargets[muscle] = (weeklyTargets[muscle] ?? 0) + sets;
-    });
-  });
-
   const deficits: MuscleDeficitMap = {};
   (Object.entries(weeklyTargets) as [MuscleGroup, number][]).forEach(([muscle, target]) => {
     const primary = coverage.muscleStats[muscle]?.primaryStimulus ?? 0;
@@ -1019,11 +1039,8 @@ const adaptSelectedSlot = (
     (muscleDeficits.shoulders ?? 0) < PLANNER_TUNING.splitSelection.adaptiveUpperPullShoulderDeficitThreshold &&
     pushFatigue >= PLANNER_TUNING.splitSelection.adaptiveUpperPullPushFatigueThreshold;
 
-  // When shoulders are more deficient than rear delts, don't let the
-  // pull-bias allocation cap shoulder work below rear-delt work.
-  const shoulderAllocation =
-    (muscleDeficits.shoulders ?? 0) > (muscleDeficits.rear_delts ?? 0) ? 4 : 3;
-
+  // Targets stay the slot's band shares — composeSessionSlot shapes volume
+  // from the week's actual deficit; this rewrite only steers movement and focus.
   return {
     ...slot,
     summary: strictPullBias
@@ -1034,14 +1051,212 @@ const adaptSelectedSlot = (
       : ["back", "rear_delts", "shoulders", "biceps", "core"],
     preferredMovements: ["pull"],
     allowedMovements: strictPullBias ? ["pull", "carry_core"] : ["pull", "push", "carry_core"],
-    targetPrimaryStimulus:
-      slot.id === PHYSIQUE_UPPER_B_SLOT.id
-        ? strictPullBias
-          ? { back: 8, rear_delts: 4, biceps: 3, core: 3 }
-          : { back: 7, rear_delts: 4, shoulders: shoulderAllocation, biceps: 3, core: 3 }
-        : strictPullBias
-          ? { back: 8, rear_delts: 4, biceps: 2, core: 3 }
-          : { back: 8, rear_delts: 4, shoulders: shoulderAllocation, core: 3 },
+  };
+};
+
+// Movements that can deliver primary stimulus to each muscle — decides whether a
+// muscle absent from the base slot can be added to today's session at all.
+const COMPOSITION_MOVEMENTS: Record<MuscleGroup, MovementPattern[]> = {
+  quads: ["squat", "single_leg"],
+  glutes: ["hinge", "single_leg", "squat"],
+  hamstrings: ["hinge", "single_leg"],
+  adductors: ["squat", "single_leg"],
+  hip_flexors: ["carry_core"],
+  chest: ["push"],
+  shoulders: ["push"],
+  triceps: ["push"],
+  back: ["pull"],
+  rear_delts: ["pull"],
+  biceps: ["pull"],
+  core: ["carry_core"],
+  calves: [],
+};
+
+type CompositionInputs = {
+  band: WeeklyTargetBand;
+  coverage: ReturnType<typeof computeCoverage>;
+  overCeiling: Set<MuscleGroup>;
+  requiredMovements: MovementPattern[];
+  loggedSessions: number;
+  remainingSessions: number;
+  daysPerWeek: number;
+  forced: boolean;
+};
+
+const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
+
+// Reshapes the selected template slot toward this week's remaining distance to
+// the band floor. The template is the prior: with nothing logged the slot
+// passes through untouched, and its share stays a lower bound for any muscle
+// still under its floor, so a clean on-plan week reproduces the template.
+// Reshaping only appears where logged work (whoever programmed it) diverged
+// from the plan: muscles already at their floor drop out, muscles past their
+// ceiling are avoided, and muscles no remaining session will cover are added.
+// Distance is measured on primary stimulus, like saturation and the UI rows,
+// so secondary ride-along volume can't erase a slot's own theme.
+// A user-forced slot keeps its theme; only the ceiling is enforced.
+// id, title and summary are never changed: keystone anchors, slot inference and
+// forced slots all key on them.
+export const composeSessionSlot = (
+  baseSlot: SplitSlot,
+  futureSlots: SplitSlot[],
+  inputs: CompositionInputs,
+): { slot: SplitSlot; composition: SessionComposition } => {
+  const tuning = PLANNER_TUNING.composition;
+  const { band, coverage, overCeiling, requiredMovements, loggedSessions, remainingSessions, daysPerWeek, forced } = inputs;
+  const primaryDone = (muscle: MuscleGroup): number => coverage.muscleStats[muscle]?.primaryStimulus ?? 0;
+  const leftToFloor = (muscle: MuscleGroup): number =>
+    Math.max(0, (band[muscle]?.floor ?? 0) - primaryDone(muscle));
+  const covered = (Object.keys(band) as MuscleGroup[]).filter((muscle) => {
+    const floor = band[muscle]?.floor ?? 0;
+    return floor > 0 && primaryDone(muscle) >= floor;
+  });
+  const baseTargets = baseSlot.targetPrimaryStimulus;
+  const closesOf = (targets: Partial<Record<MuscleGroup, number>>): MuscleGroup[] =>
+    (Object.keys(targets) as MuscleGroup[])
+      .filter((muscle) => leftToFloor(muscle) > 0)
+      .sort((a, b) => (targets[b] ?? 0) - (targets[a] ?? 0))
+      .slice(0, 3);
+
+  if (loggedSessions === 0 && requiredMovements.length === 0) {
+    return {
+      slot: baseSlot,
+      composition: {
+        baseSlotId: baseSlot.id,
+        loggedSessions,
+        remainingSessions,
+        priorWeight: 1,
+        todayTargets: baseTargets,
+        closes: [],
+        covered,
+        avoid: [],
+        requiredMovements: [],
+      },
+    };
+  }
+
+  const avoid = (Object.keys(baseTargets) as MuscleGroup[]).filter((muscle) => overCeiling.has(muscle));
+
+  if (forced) {
+    const today: Partial<Record<MuscleGroup, number>> = {};
+    (Object.entries(baseTargets) as [MuscleGroup, number][]).forEach(([muscle, target]) => {
+      if (!overCeiling.has(muscle) && target > 0) today[muscle] = target;
+    });
+    return {
+      slot: {
+        ...baseSlot,
+        targetPrimaryStimulus: today,
+        focusMuscles: baseSlot.focusMuscles.filter((muscle) => !overCeiling.has(muscle)),
+      },
+      composition: {
+        baseSlotId: baseSlot.id,
+        loggedSessions,
+        remainingSessions,
+        priorWeight: 1,
+        todayTargets: today,
+        closes: closesOf(today),
+        covered,
+        avoid,
+        requiredMovements: [],
+      },
+    };
+  }
+
+  const priorWeight =
+    remainingSessions <= tuning.lateWeekRemaining
+      ? tuning.lastSessionPriorWeight
+      : clamp(1 - loggedSessions / daysPerWeek, tuning.minPriorWeight, 1);
+
+  const future: Partial<Record<MuscleGroup, number>> = {};
+  futureSlots.forEach((slot) => {
+    (Object.entries(slot.targetPrimaryStimulus) as [MuscleGroup, number][]).forEach(([muscle, target]) => {
+      future[muscle] = (future[muscle] ?? 0) + target;
+    });
+  });
+
+  const allowed = new Set<MovementPattern>([
+    ...baseSlot.allowedMovements,
+    ...(baseSlot.supplementalMovements ?? []),
+    ...requiredMovements,
+  ]);
+  const candidates = new Set<MuscleGroup>([
+    ...(Object.keys(baseTargets) as MuscleGroup[]),
+    ...(Object.keys(band) as MuscleGroup[]).filter((muscle) => leftToFloor(muscle) > 0),
+  ]);
+
+  const today: Partial<Record<MuscleGroup, number>> = {};
+  candidates.forEach((muscle) => {
+    if (overCeiling.has(muscle)) {
+      if (!avoid.includes(muscle) && (baseTargets[muscle] ?? 0) > 0) avoid.push(muscle);
+      return;
+    }
+    const left = leftToFloor(muscle);
+    if (left <= 0) return;
+    const baseTarget = baseTargets[muscle] ?? 0;
+    const evenShare = left / remainingSessions;
+    const residual = Math.max(0, left - (future[muscle] ?? 0));
+    const needToday = Math.max(evenShare, residual);
+    const baseShare = Math.min(baseTarget, Math.max(left, tuning.minTarget));
+    const muscleBand = band[muscle];
+    const cap = muscleBand && isMajorTarget(muscleBand) ? tuning.sessionCapMajor : tuning.sessionCapSupport;
+    let value = clamp(Math.max(baseShare, (1 - priorWeight) * needToday), 0, cap);
+    const newcomer = baseTarget <= 0;
+    if (
+      newcomer &&
+      (value < tuning.newcomerMinTarget ||
+        !COMPOSITION_MOVEMENTS[muscle].some((movement) => allowed.has(movement)))
+    ) {
+      value = 0;
+    }
+    if (value >= tuning.minTarget) today[muscle] = roundHalf(value);
+  });
+
+  // Never hand assembly an empty or trivial target map: when the week has
+  // closed nearly everything, fall back to a maintenance dose of the slot's
+  // own top muscles that aren't over ceiling.
+  const total = Object.values(today).reduce((sum, value) => sum + (value ?? 0), 0);
+  if (total < tuning.minComposedTargetTotal) {
+    (Object.entries(baseTargets) as [MuscleGroup, number][])
+      .filter(([muscle]) => !overCeiling.has(muscle))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .forEach(([muscle, target]) => {
+        today[muscle] = Math.max(today[muscle] ?? 0, roundHalf(target));
+      });
+  }
+
+  const newcomers = (Object.keys(today) as MuscleGroup[])
+    .filter((muscle) => (baseTargets[muscle] ?? 0) <= 0 && (today[muscle] ?? 0) >= tuning.focusThreshold)
+    .sort((a, b) => (today[b] ?? 0) - (today[a] ?? 0));
+  const focusMuscles = [
+    ...baseSlot.focusMuscles.filter((muscle) => !overCeiling.has(muscle)),
+    ...newcomers.filter((muscle) => !baseSlot.focusMuscles.includes(muscle)).slice(0, tuning.maxNewcomerFocus),
+  ];
+
+  const withRequired = (movements: MovementPattern[]): MovementPattern[] => [
+    ...movements,
+    ...requiredMovements.filter((movement) => !movements.includes(movement)),
+  ];
+
+  return {
+    slot: {
+      ...baseSlot,
+      targetPrimaryStimulus: today,
+      focusMuscles,
+      allowedMovements: withRequired(baseSlot.allowedMovements),
+      preferredMovements: withRequired(baseSlot.preferredMovements),
+    },
+    composition: {
+      baseSlotId: baseSlot.id,
+      loggedSessions,
+      remainingSessions,
+      priorWeight,
+      todayTargets: today,
+      closes: closesOf(today),
+      covered,
+      avoid,
+      requiredMovements,
+    },
   };
 };
 
@@ -1113,11 +1328,10 @@ const scoreSplitSlot = (
     // Check if any PRIMARY-DRIVER muscle (large enough target to define the slot's identity)
     // is genuinely over its weekly target. Minor support targets (e.g. glutes: 2 in Upper A)
     // are excluded so support muscles saturated by another slot don't penalize this one.
-    const majorThreshold = PLANNER_TUNING.splitSelection.saturationOverTargetMajorMuscleThreshold;
     const maxMajorSat = Math.max(
       0,
-      ...targetedMuscles
-        .filter((m) => (slot.targetPrimaryStimulus[m] ?? 0) >= majorThreshold && muscleSaturation[m] !== undefined)
+      ...slotMajorMuscles(slot)
+        .filter((m) => muscleSaturation[m] !== undefined)
         .map((m) => muscleSaturation[m] as number),
     );
     if (maxMajorSat > PLANNER_TUNING.splitSelection.saturationOverTargetThreshold) {
@@ -1352,21 +1566,25 @@ const buildSlotRecommendations = (
 // to define the slot's identity) that has already hit or exceeded its weekly volume target.
 // Minor support targets (e.g. glutes: 2 in Upper A) are excluded so saturation from
 // another slot's primary work doesn't block an upper session.
+// Template slots carry their major muscles from normalization (share of the
+// weekly floor); hand-built slots fall back to the absolute threshold.
+const slotMajorMuscles = (slot: SplitSlot): MuscleGroup[] => {
+  if (slot.majorMuscles) return slot.majorMuscles;
+  const majorThreshold = PLANNER_TUNING.splitSelection.saturationOverTargetMajorMuscleThreshold;
+  return (Object.entries(slot.targetPrimaryStimulus) as [MuscleGroup, number][])
+    .filter(([, target]) => target >= majorThreshold)
+    .map(([muscle]) => muscle);
+};
+
 const slotHasOverTargetMajorMuscle = (
   slot: SplitSlot,
-  muscleSaturation: Partial<Record<MuscleGroup, number>>,
-): boolean => {
-  const majorThreshold = PLANNER_TUNING.splitSelection.saturationOverTargetMajorMuscleThreshold;
-  // Hard exclusion only for DECISIVE overshoot — the graduated over-target
-  // penalties in scoreSplitSlot own the 1.0-1.3x band. Filtering at exactly
-  // 1.0x let incidental co-primary volume (Monday lunges nudging quads just
-  // past target) delete Wednesday's quad day and force an upper/upper week.
-  return (Object.entries(slot.targetPrimaryStimulus) as [MuscleGroup, number][]).some(
-    ([muscle, target]) =>
-      target >= majorThreshold &&
-      (muscleSaturation[muscle] ?? 0) > PLANNER_TUNING.splitSelection.saturationFilterThreshold,
-  );
-};
+  overCeiling: Set<MuscleGroup>,
+): boolean =>
+  // Hard exclusion only past the band CEILING — the graduated over-target
+  // penalties in scoreSplitSlot own the floor-to-ceiling band. Filtering at
+  // the floor let incidental co-primary volume (Monday lunges nudging quads
+  // just past target) delete Wednesday's quad day and force an upper/upper week.
+  slotMajorMuscles(slot).some((muscle) => overCeiling.has(muscle));
 
 const getNextSplitSlotIndex = (
   split: SplitSlot[],
@@ -1377,24 +1595,27 @@ const getNextSplitSlotIndex = (
   muscleSaturation: Partial<Record<MuscleGroup, number>> = {},
   lastSessionMovements: Set<MovementPattern> = new Set(),
   recentMuscleFatigue: Partial<Record<MuscleGroup, number>> = {},
+  overCeiling: Set<MuscleGroup> = new Set(),
 ): number => {
   const weeklyBiasBalance = summarizeWeeklyBiasBalance(split, workouts);
+  const lastLogged = [...workouts].sort(compareWorkoutsDesc)[0];
+  const lastSlot = lastLogged?.planSlot?.slotId
+    ? split.find((slot) => slot.id === lastLogged.planSlot?.slotId)
+    : undefined;
+  const lastBias = lastSlot ? getSlotBias(lastSlot) : "mixed";
 
-  if (incompleteIndices.length > 0) {
-    const nonSaturatedIncomplete = incompleteIndices.filter(
-      (i) => !slotHasOverTargetMajorMuscle(split[i], muscleSaturation),
-    );
-    let incompleteToScore = nonSaturatedIncomplete.length > 0 ? nonSaturatedIncomplete : incompleteIndices;
+  // A slot whose defining muscles are past the band ceiling is out for the
+  // day. If that empties the incomplete pool, the whole split is re-scored
+  // rather than forcing a session onto muscles that should be left alone.
+  const nonSaturatedIncomplete = incompleteIndices.filter(
+    (i) => !slotHasOverTargetMajorMuscle(split[i], overCeiling),
+  );
+  if (nonSaturatedIncomplete.length > 0) {
+    let incompleteToScore = nonSaturatedIncomplete;
     // The saturation filter must never force back-to-back same-bias sessions:
-    // if it leaves only slots matching yesterday's bias (e.g. Monday's lunges
-    // nudged quads over target, deleting Wednesday's quad day and leaving only
-    // uppers after Tuesday's upper day), restore the alternating candidates
-    // and let the graduated over-target penalties arbitrate on score instead.
-    const lastLogged = [...workouts].sort(compareWorkoutsDesc)[0];
-    const lastSlot = lastLogged?.planSlot?.slotId
-      ? split.find((slot) => slot.id === lastLogged.planSlot?.slotId)
-      : undefined;
-    const lastBias = lastSlot ? getSlotBias(lastSlot) : "mixed";
+    // if it leaves only slots matching yesterday's bias, restore the
+    // alternating candidates and let the graduated over-target penalties
+    // arbitrate on score instead.
     if (
       lastBias !== "mixed" &&
       incompleteToScore.every((i) => getSlotBias(split[i]) === lastBias)
@@ -1413,15 +1634,19 @@ const getNextSplitSlotIndex = (
       recentMuscleFatigue,
     );
     if (bestIncomplete) return bestIncomplete.index;
-    const firstIncompleteIndex = incompleteToScore[0];
-    if (firstIncompleteIndex >= 0) return firstIncompleteIndex;
+    return incompleteToScore[0];
   }
 
   const allIndices = split.map((_, index) => index);
   const nonSaturatedAll = allIndices.filter(
-    (i) => !slotHasOverTargetMajorMuscle(split[i], muscleSaturation),
+    (i) => !slotHasOverTargetMajorMuscle(split[i], overCeiling),
   );
-  const allToScore = nonSaturatedAll.length > 0 ? nonSaturatedAll : allIndices;
+  let allToScore = nonSaturatedAll.length > 0 ? nonSaturatedAll : allIndices;
+  // Re-scoring the whole split must not hand back the theme just trained.
+  if (lastSlot && allToScore.length > 1) {
+    const withoutLast = allToScore.filter((i) => split[i].id !== lastSlot.id);
+    if (withoutLast.length > 0) allToScore = withoutLast;
+  }
   const bestOverall = pickBestSplitSlotIndex(
     split,
     allToScore,
@@ -1447,6 +1672,7 @@ const maybeOverrideForCriticalGap = (
   lastSessionMovements: Set<MovementPattern> = new Set(),
   weeklyBiasBalance: WeeklyBiasBalance = { lower: 0, upper: 0 },
   recentMuscleFatigue: Partial<Record<MuscleGroup, number>> = {},
+  overCeiling: Set<MuscleGroup> = new Set(),
 ): number => {
   // A fresh week (nothing completed yet) has every movement at full need, so
   // "critical" carries no signal and the base slot order should stand — this
@@ -1507,7 +1733,7 @@ const maybeOverrideForCriticalGap = (
     );
     const pool = incompleteEligible.length > 0 ? incompleteEligible : eligible;
     const nonSaturatedEligible = pool.filter(
-      ({ slot }) => !slotHasOverTargetMajorMuscle(slot, muscleSaturation),
+      ({ slot }) => !slotHasOverTargetMajorMuscle(slot, overCeiling),
     );
     const candidates = nonSaturatedEligible.length > 0 ? nonSaturatedEligible : pool;
 
@@ -1741,14 +1967,12 @@ export function generateNextWorkout(
     need[mp] = days === 0 ? 3 : days === 1 ? 1 : 0;
   });
 
-  // Muscle saturation: fraction of each muscle's weekly set target already done.
+  // Weekly targets are the band floors — the standard the week is graded
+  // against, independent of which template slots happen to exist.
+  const weeklyBand = getWeeklyTargetBand(activeProfile);
+  const weeklyMuscleTargets = bandFloors(weeklyBand);
+  // Muscle saturation: fraction of each muscle's weekly floor already done.
   // Used to deprioritize split slots whose primary muscles are already at volume.
-  const weeklyMuscleTargets: Partial<Record<MuscleGroup, number>> = {};
-  split.forEach((s) => {
-    (Object.entries(s.targetPrimaryStimulus) as [MuscleGroup, number][]).forEach(([m, sets]) => {
-      if (sets > 0) weeklyMuscleTargets[m] = (weeklyMuscleTargets[m] ?? 0) + sets;
-    });
-  });
   const muscleSaturation: Partial<Record<MuscleGroup, number>> = {};
   MUSCLE_GROUPS.forEach((m) => {
     const target = weeklyMuscleTargets[m];
@@ -1757,7 +1981,53 @@ export function generateNextWorkout(
       muscleSaturation[m] = done / target;
     }
   });
-  const muscleDeficits = computeMuscleDeficits(split, coverage);
+  // Slot selection reads saturation against the band CEILING: past the floor a
+  // muscle simply stops contributing deficit, and only approaching the ceiling
+  // should actively push a whole session theme away. Exercise selection keeps
+  // the floor-based reading for entitlement and overshoot pricing.
+  const muscleCeilingSaturation: Partial<Record<MuscleGroup, number>> = {};
+  MUSCLE_GROUPS.forEach((m) => {
+    const band = weeklyBand[m];
+    if (band && band.ceiling > 0) {
+      muscleCeilingSaturation[m] = (coverage.muscleStats[m]?.primaryStimulus ?? 0) / band.ceiling;
+    }
+  });
+  const muscleDeficits = computeMuscleDeficits(weeklyMuscleTargets, coverage);
+  // Finer balance axis under the coarse pattern need: once push or pull is
+  // covered for the week, a plane of it still at zero days is worth a nudge.
+  const directionNeed = new Set<DirectionKey>();
+  (["push", "pull"] as const).forEach((pattern) => {
+    if ((need[pattern] ?? 0) !== 0) return;
+    (["horizontal", "vertical"] as const).forEach((direction) => {
+      const key: DirectionKey = `${pattern}_${direction}`;
+      if ((coverage.directionStats[key]?.daysHit.length ?? 0) === 0) directionNeed.add(key);
+    });
+  });
+  const overCeiling = new Set<MuscleGroup>();
+  MUSCLE_GROUPS.forEach((m) => {
+    const band = weeklyBand[m];
+    if (band && (coverage.muscleStats[m]?.primaryStimulus ?? 0) >= band.ceiling) overCeiling.add(m);
+  });
+
+  // How much of the week is left, judged purely from the log: every session
+  // counts the same whoever programmed it, and daysPerWeek is an expectation,
+  // not a commitment. Two workouts on one date are one training day.
+  const loggedSessions = new Set(coverage.workouts.map((workout) => workout.date)).size;
+  const remainingSessions = Math.max(1, activeProfile.daysPerWeek - loggedSessions);
+
+  // With (almost) no sessions left, a pattern still at zero days becomes a
+  // requirement of today's session rather than a preference. squat/single_leg
+  // cover each other, as in maybeOverrideForCriticalGap.
+  const requiredMovements: MovementPattern[] = [];
+  if (remainingSessions <= PLANNER_TUNING.composition.lateWeekRemaining) {
+    MOVEMENT_PATTERNS.forEach((mp) => {
+      if ((need[mp] ?? 0) < 3) return;
+      if (mp === "squat" && (need.single_leg ?? 0) < 3) return;
+      if (mp === "single_leg" && (need.squat ?? 0) < 3) return;
+      need[mp] += PLANNER_TUNING.composition.lateWeekNeedBoost;
+      requiredMovements.push(mp);
+    });
+  }
   const stalledExerciseNames = new Set(
     EXERCISES.filter((exercise) => getStallState(exercise.name, workouts) === "stalled").map(
       (exercise) => exercise.name,
@@ -1844,7 +2114,24 @@ export function generateNextWorkout(
       ? combinedIncompleteIndices
       : getIncompleteSplitSlotIndices(split, coverage.workouts);
   const weeklyBiasBalance = summarizeWeeklyBiasBalance(split, recentWorkoutsForSlotSelection);
-  const sessionIndex = maybeOverrideForCriticalGap(
+  // A cycle with nothing logged starts at the top of the template — the
+  // template is the prior, and band magnitudes must not reorder day one.
+  // The one exception: if the most recent session (however old) already was
+  // that opening theme, continue the rotation from the next slot instead of
+  // repeating it.
+  const isFreshCycle = recentWorkoutsForSlotSelection.length === 0;
+  const lastLoggedOverall = [...workouts].sort(compareWorkoutsDesc)[0];
+  const lastLoggedSlot = lastLoggedOverall
+    ? split.find((candidate) => candidate.id === lastLoggedOverall.planSlot?.slotId)
+    : undefined;
+  const lastLoggedBias: InferredWorkoutBias = lastLoggedOverall
+    ? lastLoggedSlot
+      ? getSlotBias(lastLoggedSlot)
+      : inferWorkoutBias(lastLoggedOverall)
+    : "mixed";
+  const freshStartIndex =
+    split.length > 1 && lastLoggedBias !== "mixed" && getSlotBias(split[0]) === lastLoggedBias ? 1 : 0;
+  const sessionIndex = isFreshCycle ? freshStartIndex : maybeOverrideForCriticalGap(
     split,
     incompleteIndices,
     maybeOverrideForStalledBias(
@@ -1855,14 +2142,15 @@ export function generateNextWorkout(
         incompleteIndices,
         need,
         muscleDeficits,
-        muscleSaturation,
+        muscleCeilingSaturation,
         lastSessionMovements,
         recentMuscleFatigue,
+        overCeiling,
       ),
       incompleteIndices,
       need,
       muscleDeficits,
-      muscleSaturation,
+      muscleCeilingSaturation,
       lastSessionMovements,
       weeklyBiasBalance,
       stalledBiasPressure,
@@ -1870,16 +2158,17 @@ export function generateNextWorkout(
     ),
     need,
     muscleDeficits,
-    muscleSaturation,
+    muscleCeilingSaturation,
     lastSessionMovements,
     weeklyBiasBalance,
     recentMuscleFatigue,
+    overCeiling,
   );
   const rankedSlots = rankSplitSlotIndices(
     split,
     need,
     muscleDeficits,
-    muscleSaturation,
+    muscleCeilingSaturation,
     lastSessionMovements,
     weeklyBiasBalance,
     recentMuscleFatigue,
@@ -1896,13 +2185,30 @@ export function generateNextWorkout(
       ? split.findIndex((candidate) => candidate.id === overrides.forcedSlotId)
       : -1;
   const selectedSlotIndex = forcedSlotIndex >= 0 ? forcedSlotIndex : sessionIndex;
-  const slot = adaptSelectedSlot(
+  const adaptedSlot = adaptSelectedSlot(
     split[selectedSlotIndex],
     activeProfile,
     muscleDeficits,
     recentMuscleFatigue,
     need,
   );
+  // The template slots most likely to still happen this week, in ranked order,
+  // so today doesn't over-reach for volume a later session will carry.
+  const futureSlots = rankedSlots
+    .map((ranked) => ranked.index)
+    .filter((index) => index !== selectedSlotIndex && incompleteIndices.includes(index))
+    .slice(0, Math.max(0, remainingSessions - 1))
+    .map((index) => split[index]);
+  const { slot, composition } = composeSessionSlot(adaptedSlot, futureSlots, {
+    band: weeklyBand,
+    coverage,
+    overCeiling,
+    requiredMovements: forcedSlotIndex >= 0 ? [] : requiredMovements,
+    loggedSessions,
+    remainingSessions,
+    daysPerWeek: activeProfile.daysPerWeek,
+    forced: forcedSlotIndex >= 0,
+  });
   const currentWeekExerciseNames = new Set(
     coverage.workouts.flatMap((workout) =>
       workout.exercises.map((exercise) => exercise.exerciseName),
@@ -2308,6 +2614,16 @@ export function generateNextWorkout(
     });
     s -= Math.min(PLANNER_TUNING.exerciseSelection.overTargetPenaltyCap, overTargetPenalty);
 
+    // Past the band CEILING the muscle is not just closed but should be left
+    // alone; stacked on the capped over-target tier this drops a candidate
+    // below the normal-stage floor while leaving it legal as a least-bad pick.
+    ex.primary.forEach((m) => {
+      if (overCeiling.has(m)) s -= PLANNER_TUNING.composition.overCeilingPrimaryPenalty;
+    });
+    ex.secondary.forEach((m) => {
+      if (overCeiling.has(m)) s -= PLANNER_TUNING.composition.overCeilingSecondaryPenalty;
+    });
+
     s -= Math.min(PLANNER_TUNING.exerciseSelection.recoveryPenaltyCap, recoveryPenalty);
     s -= Math.min(PLANNER_TUNING.exerciseSelection.overlapPenaltyCap, sessionOverlapPenalty);
     if (projectedSessionTotal > sessionFatigueBudget) {
@@ -2433,6 +2749,12 @@ export function generateNextWorkout(
       }
     }
     if (slot.preferredMovements.includes(movement)) s += PLANNER_TUNING.exerciseSelection.preferredMovementBonus;
+    if (directionNeed.size > 0 && (movement === "push" || movement === "pull")) {
+      const direction = directionOf(ex);
+      if (direction && directionNeed.has(`${movement}_${direction}`)) {
+        s += PLANNER_TUNING.exerciseSelection.directionNeedBonus;
+      }
+    }
     if (currentWeekExerciseNames.has(ex.name)) {
       s -=
         activeProfile.goal === "strength"
@@ -3336,6 +3658,17 @@ export function generateNextWorkout(
     }
   }
 
+  // Physique lower accessories serve whichever lower muscles today's slot still
+  // targets — once glutes have closed for the week and composition drops them,
+  // quad/hamstring/adductor work keeps the session a lower session.
+  const lowerTargetedAccessory = (ex: Exercise): boolean =>
+    (["quads", "hamstrings", "adductors"] as MuscleGroup[]).some(
+      (muscle) => hasPrimary(ex, muscle) && (slot.targetPrimaryStimulus[muscle] ?? 0) > 0,
+    );
+  const glutesTargeted = (slot.targetPrimaryStimulus.glutes ?? 0) > 0;
+  const gluteAccessory = (ex: Exercise): boolean =>
+    glutesTargeted && (isGluteBiasedLower(ex) || isDirectGluteFocus(ex));
+
   // 3. First accessory superset — prioritize uncovered movements.
   addSuperset(
     accessoryMovements,
@@ -3349,10 +3682,7 @@ export function generateNextWorkout(
       noHeavyBarbellCircuit(ex) &&
       (activeProfile.goal !== "physique" ||
         (!isChestDominantPush(ex) &&
-          ((lowerBiasSlot &&
-            (isGluteBiasedLower(ex) ||
-              isDirectGluteFocus(ex) ||
-              (hasPrimary(ex, "adductors") && (slot.targetPrimaryStimulus.adductors ?? 0) > 0))) ||
+          ((lowerBiasSlot && (gluteAccessory(ex) || lowerTargetedAccessory(ex))) ||
             (upperBiasSlot &&
               (isBackOrShoulderFocused(ex) ||
                 (armBiasSlot && isDirectArmFocus(ex))))))),
@@ -3366,10 +3696,7 @@ export function generateNextWorkout(
     noHeavyBarbellCircuit(ex) &&
     (activeProfile.goal !== "physique" ||
       ((lowerBiasSlot &&
-        (isGluteBiasedLower(ex) ||
-          isDirectGluteFocus(ex) ||
-          (hasPrimary(ex, "adductors") && (slot.targetPrimaryStimulus.adductors ?? 0) > 0) ||
-          isBackOrShoulderFocused(ex))) ||
+        (gluteAccessory(ex) || lowerTargetedAccessory(ex) || isBackOrShoulderFocused(ex))) ||
         (upperBiasSlot &&
           (isBackOrShoulderFocused(ex) ||
             (armBiasSlot && isDirectArmFocus(ex)) ||
@@ -3957,6 +4284,20 @@ export function generateNextWorkout(
   if (remainingFocus.length > 0) {
     rationale.push(`Still building this slot's focus stimulus: ${remainingFocus.join(", ")}.`);
   }
+  if (composition.loggedSessions > 0 && composition.closes.length > 0) {
+    const gaps = composition.closes
+      .map((muscle) => {
+        const left = Math.max(
+          0,
+          (weeklyBand[muscle]?.floor ?? 0) - (coverage.muscleStats[muscle]?.primaryStimulus ?? 0),
+        );
+        return `${muscle.replace("_", " ")} ${left.toFixed(1)} left`;
+      })
+      .join(", ");
+    rationale.push(
+      `Closing this week's gaps: ${gaps} · ${composition.loggedSessions} of ${activeProfile.daysPerWeek} sessions logged.`,
+    );
+  }
   if (saturatedSupportNote) rationale.push(saturatedSupportNote);
   if (recentFocusStress.length > 0) {
     rationale.push(
@@ -4001,6 +4342,22 @@ export function generateNextWorkout(
       `Hit only once: ${oneDay.map(formatMovement).join(", ")}.`,
     );
   }
+  directionNeed.forEach((key) => {
+    const [pattern, direction] = key.split("_") as ["push" | "pull", "horizontal" | "vertical"];
+    const added = sections.some((section) =>
+      section.exercises.some((exercise) => {
+        const meta = findExerciseByName(exercise.name);
+        return meta !== null && movementOf(meta) === pattern && directionOf(meta) === direction;
+      }),
+    );
+    if (!added) return;
+    const other = direction === "horizontal" ? "vertical" : "horizontal";
+    const example =
+      pattern === "pull"
+        ? direction === "horizontal" ? "a row" : "a pulldown or pull-up"
+        : direction === "horizontal" ? "a horizontal press" : "an overhead press";
+    rationale.push(`${formatMovement(pattern)} work has been all ${other} this week — adding ${example}.`);
+  });
   if (recent.size > 0) {
     // Only claim a muscle was "avoided" if this session's own selected
     // exercises don't actually touch it — recent.size > 0 alone doesn't mean
@@ -4068,11 +4425,16 @@ export function generateNextWorkout(
       slotId: slot.id,
       title: slot.title,
       summary: slot.summary,
-      sessionIndex: selectedSlotIndex + 1,
-      totalSessions: split.length,
+      focusLabel:
+        composition.closes.length > 0
+          ? `Today: ${composition.closes.map((muscle) => muscle.replace("_", " ")).join(", ")}`
+          : null,
+      sessionIndex: Math.min(composition.loggedSessions + 1, activeProfile.daysPerWeek),
+      totalSessions: activeProfile.daysPerWeek,
       targetPrimaryStimulus: slot.targetPrimaryStimulus,
       targetPrimarySets: slot.targetPrimaryStimulus,
     },
+    composition,
     slotRecommendations,
     sections: reorderedSections,
     rationale,

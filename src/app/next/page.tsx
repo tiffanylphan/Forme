@@ -14,7 +14,8 @@ import {
   stashDraft,
 } from "@/lib/generator";
 import { familyOf } from "@/lib/exercise-predicates";
-import { buildMuscleTargetRows } from "@/lib/splits";
+import { buildMuscleTargetRows, muscleTargetStatusLabel } from "@/lib/splits";
+import { getWeeklyTargetBand, type WeeklyTargetBand } from "@/lib/weekly-targets";
 import {
   FOCUSABLE_MUSCLES,
   movementOf,
@@ -252,6 +253,7 @@ const prioritizeRationale = (rationale: string[]): string[] =>
     const score = (line: string): number => {
       let value = 0;
       if (line.includes("This is")) value += 5;
+      if (line.includes("Closing this week")) value += 4.5;
       if (line.includes("Still building")) value += 4;
       if (line.includes("Avoiding muscles")) value += 3;
       if (line.includes("Untouched this week")) value += 2;
@@ -587,11 +589,16 @@ function PlanningCard({
     <section className="rounded-2xl border border-[#E6E3D8] bg-surface px-4 py-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="label-eyebrow">This week&apos;s slot</p>
+          <p className="label-eyebrow">Today&apos;s focus</p>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <h2 className="text-[18px] font-semibold text-text">
               {draft.split.title}
             </h2>
+            {draft.split.focusLabel && (
+              <span className="rounded-full bg-[#F1EFE8] px-2 py-0.5 text-[10px] font-medium text-text-muted">
+                {draft.split.focusLabel}
+              </span>
+            )}
             {(focusedMuscles.length > 0 || focusedMovements.length > 0) && (
               <span className="rounded-full bg-[#E8F0E8] px-2 py-0.5 text-[10px] font-medium text-[#2D5A2D]">
                 {[
@@ -604,6 +611,22 @@ function PlanningCard({
           <p className="mt-1 text-[13px] leading-relaxed text-text-subtle">
             {draft.split.summary}
           </p>
+          {draft.composition && draft.composition.loggedSessions > 0 && (
+            <p className="mt-1 text-[12px] leading-relaxed text-text-subtle">
+              {draft.composition.loggedSessions} session
+              {draft.composition.loggedSessions !== 1 ? "s" : ""} logged this week
+              {draft.composition.covered.length > 0
+                ? ` covered ${draft.composition.covered.map((m) => formatMuscle(m)).join(", ")}`
+                : ""}
+              {draft.composition.closes.length > 0
+                ? ` · today closes ${draft.composition.closes.map((m) => formatMuscle(m)).join(", ")}`
+                : ""}
+              {draft.composition.avoid.length > 0
+                ? ` · leaving ${draft.composition.avoid.map((m) => formatMuscle(m)).join(", ")} alone (over ceiling)`
+                : ""}
+              .
+            </p>
+          )}
           <div className="mt-2 flex items-center gap-2">
             <button
               type="button"
@@ -627,7 +650,7 @@ function PlanningCard({
           </div>
         </div>
         <span className="shrink-0 text-[12px] text-text-subtle">
-          {draft.split.sessionIndex} / {draft.split.totalSessions}
+          Session {draft.split.sessionIndex} of {draft.split.totalSessions} this week
         </span>
       </div>
 
@@ -668,6 +691,7 @@ function PlanningCard({
               ? getWeeklyTargetStimulus(profile, coverage.workouts)
               : (draft.split.targetPrimaryStimulus ?? draft.split.targetPrimarySets)
           }
+          band={profile ? getWeeklyTargetBand(profile) : undefined}
           coverage={coverage}
           embedded
         />
@@ -713,16 +737,18 @@ function RationaleCard({ rationale }: { rationale: string[] }) {
 
 function WeeklyTargetCard({
   targetPrimaryStimulus,
+  band,
   coverage,
   embedded = false,
 }: {
   targetPrimaryStimulus: Partial<Record<MuscleGroup, number>>;
+  band?: WeeklyTargetBand;
   coverage: ReturnType<typeof computeCoverage>;
   embedded?: boolean;
 }) {
   const rows = useMemo(
-    () => buildMuscleTargetRows(targetPrimaryStimulus, coverage),
-    [coverage, targetPrimaryStimulus],
+    () => buildMuscleTargetRows(targetPrimaryStimulus, coverage, band),
+    [band, coverage, targetPrimaryStimulus],
   );
   const [expanded, setExpanded] = useState(false);
 
@@ -735,7 +761,9 @@ function WeeklyTargetCard({
       <div className="mb-2 flex items-center justify-between gap-3">
         <div>
           <p className="label-eyebrow">Weekly target stimulus</p>
-          <p className="mt-0.5 text-[11px] text-text-subtle">Weighted primary stimulus for this slot.</p>
+          <p className="mt-0.5 text-[11px] text-text-subtle">
+            Primary stimulus this week against each muscle&apos;s floor; the ceiling is where the planner backs off.
+          </p>
         </div>
         {rows.length > 3 && (
           <button
@@ -754,15 +782,16 @@ function WeeklyTargetCard({
               <div className="flex items-center gap-2">
                 <MuscleTag muscle={row.muscle} />
                 <span className="text-[11px] text-text-subtle capitalize">
-                  {row.done > row.target
-                    ? "Over target"
-                    : row.remaining === 0
-                    ? "On target"
-                    : `${row.remaining.toFixed(1)} stimulus left`}
+                  {muscleTargetStatusLabel(row)}
                 </span>
               </div>
-              <span className="font-mono text-[12px] text-text">
-                {row.done.toFixed(1)}/{row.target.toFixed(1)}
+              <span className="flex items-baseline gap-1">
+                <span className="font-mono text-[12px] text-text">
+                  {row.done.toFixed(1)}/{row.target.toFixed(1)}
+                </span>
+                {row.ceiling != null && (
+                  <span className="font-mono text-[10px] text-text-subtle">· cap {row.ceiling.toFixed(0)}</span>
+                )}
               </span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-[#ECE8DE]">

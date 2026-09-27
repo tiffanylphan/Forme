@@ -15,8 +15,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isWeightUnit = (value: unknown): value is "lb" | "kg" =>
   value === "lb" || value === "kg";
 
-const isWorkoutSource = (value: unknown): value is Workout["source"] =>
-  value === "manual" || value === "class";
+const normalizeWorkoutSource = (value: unknown): Workout["source"] =>
+  value === "external" || value === "class" ? "external" : "manual";
 
 const isProgressionStatus = (
   value: unknown,
@@ -150,7 +150,7 @@ const normalizeWorkout = (raw: unknown, index: number): Workout | null => {
   return {
     id: workoutId,
     date: raw.date,
-    source: isWorkoutSource(raw.source) ? raw.source : "manual",
+    source: normalizeWorkoutSource(raw.source),
     exercises,
     planSlot:
       isRecord(raw.planSlot) &&
@@ -196,7 +196,7 @@ const normalizeFlattenedWorkouts = (
   return [...groupedWorkouts.entries()].map(([workoutId, workoutRows], workoutIndex) => {
     const firstRow = workoutRows[0];
     const date = typeof firstRow.date === "string" ? firstRow.date : "";
-    const source = isWorkoutSource(firstRow.source) ? firstRow.source : "manual";
+    const source = normalizeWorkoutSource(firstRow.source);
     const notes = typeof firstRow.workout_notes === "string" && firstRow.workout_notes.trim()
       ? firstRow.workout_notes
       : undefined;

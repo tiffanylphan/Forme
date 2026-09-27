@@ -231,15 +231,16 @@ Start here (`splitSelection` saturation family):
 - `splitSelection.saturationMediumThreshold` / `saturationMediumPenalty`
 - `splitSelection.saturationOverTargetThreshold` / `saturationOverTargetPenalty` /
   `saturationOverTargetPenaltyScale`
-- `splitSelection.saturationFilterThreshold` (hard removal from the candidate pool)
-- `splitSelection.saturationOverTargetMajorMuscleThreshold` (what counts as a slot-defining
-  "major" target)
+- `splitSelection.saturationMajorShareOfFloor` / `saturationOverTargetMajorMuscleThreshold`
+  (what counts as a slot-defining "major" muscle)
+- The band ceiling in `src/lib/weekly-targets.ts` (hard removal from the candidate pool
+  happens only when a major muscle is past its ceiling)
 
 What to do:
 
-- Prefer adjusting the graduated penalties; move `saturationFilterThreshold` only as a last
-  resort, and keep it ≥ `saturationOverTargetThreshold` — the band between them is where
-  incidental co-primary volume is arbitrated by score instead of deleting a slot.
+- Prefer adjusting the graduated penalties; they own the whole floor-to-ceiling band, which is
+  where incidental co-primary volume is arbitrated by score instead of deleting a slot. If a
+  slot is being hard-removed too eagerly, the ceiling table is the dial, not a planner knob.
 - The filter is guarded against forcing back-to-back same-bias days; if you see alternation
   break, suspect the guard's inputs (last workout's `planSlot`), not the thresholds.
 
@@ -284,6 +285,36 @@ What to do:
 - Widen `templateShortlistSpread` to pull more templates into the uniform draw. Beware any
   single template bonus/penalty larger than the spread — it makes the draw deterministic (this
   is why the hard-mode template bonus is only 0.75).
+
+### A session ignores what the rest of the week already covered (or over-reacts to it)
+
+Every logged session counts the same whoever programmed it. The selected template slot is
+reshaped by `composeSessionSlot` toward the week's remaining distance to the band floors
+(`src/lib/weekly-targets.ts`), with the template as the prior.
+
+Start here (`composition`):
+
+- `composition.minPriorWeight` / `lastSessionPriorWeight` — how much of the template survives
+  mid-week and on the last session.
+- `composition.newcomerMinTarget` / `focusThreshold` — how readily a muscle the slot never
+  targeted gets added when nothing else will cover it.
+- `composition.lateWeekRemaining` / `lateWeekNeedBoost` — when a zero-day movement pattern
+  becomes a hard requirement of the session.
+- `composition.overCeilingPrimaryPenalty` / `overCeilingSecondaryPenalty` — how hard exercises
+  on a muscle past its ceiling are pushed out.
+
+What to do:
+
+- If the next session still looks like the template after an off-plan week, lower
+  `minPriorWeight` or raise `newcomerMinTarget` tolerance (lower it) — but check
+  `draft.composition.covered` / `.avoid` first: a muscle may simply already be at its floor.
+- If a mid-week session abandons its theme too eagerly, raise `minPriorWeight`. The template
+  share is already a lower bound for every muscle still under its floor, so erosion usually
+  means the muscle was in fact covered by earlier sessions.
+- If the last session of the week piles everything on, raise `lastSessionPriorWeight` or lower
+  `sessionCapMajor`.
+- If a muscle keeps being trained past its ceiling, the ceiling row in the hard-set table is
+  the dial; the penalties only steer within what the anchor/completeness guarantees allow.
 
 ## Safe tuning workflow
 

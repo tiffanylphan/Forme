@@ -129,10 +129,8 @@ const EFFORT_OPTIONS: { value: SessionEffort; label: string }[] = [
 
 const LOG_DRAFT_KEY = "workout.log-draft.v1";
 
-const normalizeWorkoutSource = (source: WorkoutSource): WorkoutSource => {
-  void source;
-  return "manual";
-};
+const normalizeWorkoutSource = (source: WorkoutSource): WorkoutSource =>
+  source === "external" ? "external" : "manual";
 
 type LogDraftSnapshot = {
   workoutId: string;
@@ -321,6 +319,7 @@ export default function LogPage() {
     const savedDraft = loadLogDraft();
     return savedDraft?.defaultUnit ?? "lb";
   });
+  const [source, setSource] = useState<WorkoutSource>(init.source);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const { workouts: allWorkouts } = useWorkouts();
@@ -349,7 +348,7 @@ export default function LogPage() {
     saveLogDraft({
       workoutId,
       date,
-      source: "manual",
+      source,
       exercises,
       planSlot,
       pendingDraft,
@@ -358,7 +357,7 @@ export default function LogPage() {
       isEditing,
       defaultUnit,
     });
-  }, [hydrated, workoutId, date, exercises, planSlot, pendingDraft, notes, sessionEffort, isEditing, defaultUnit]);
+  }, [hydrated, workoutId, date, source, exercises, planSlot, pendingDraft, notes, sessionEffort, isEditing, defaultUnit]);
 
   useEffect(() => {
     if (isEditing) return;
@@ -620,7 +619,9 @@ export default function LogPage() {
     const workout: Workout = {
       id: workoutId,
       date,
-      source: "manual",
+      // A session accepted from a Forme draft is Forme's; anything else keeps
+      // whatever the user marked. Display only — planning never reads it.
+      source: planSlot ? "manual" : source,
       exercises: exercises.map((exercise) => ({
         ...exercise,
         progressionStatus: evaluateProgressionStatus(
@@ -863,6 +864,41 @@ export default function LogPage() {
                 />
               )}
             </div>
+          </div>
+        )}
+
+        {!planSlot && (
+          <div className="mt-4">
+            <label className="label-eyebrow mb-1.5 block">Programmed by</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                aria-pressed={source === "manual"}
+                onClick={() => setSource("manual")}
+                className={
+                  source === "manual"
+                    ? "rounded-full bg-text px-3 py-1.5 text-[12px] font-medium text-white"
+                    : "rounded-full border border-[#E6E3D8] bg-white px-3 py-1.5 text-[12px] font-medium text-text-muted"
+                }
+              >
+                Me
+              </button>
+              <button
+                type="button"
+                aria-pressed={source === "external"}
+                onClick={() => setSource("external")}
+                className={
+                  source === "external"
+                    ? "rounded-full bg-text px-3 py-1.5 text-[12px] font-medium text-white"
+                    : "rounded-full border border-[#E6E3D8] bg-white px-3 py-1.5 text-[12px] font-medium text-text-muted"
+                }
+              >
+                Done outside Forme
+              </button>
+            </div>
+            <p className="mt-1 text-[11px] text-text-subtle">
+              A label for your records — trainer, class, or someone else&apos;s plan. The planner counts every session the same.
+            </p>
           </div>
         )}
 

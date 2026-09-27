@@ -1,5 +1,14 @@
 import type { Coverage } from "./coverage";
+import { PLANNER_TUNING } from "./planner-tuning";
 import type { MovementPattern, MuscleGroup, TrainingProfile, Workout } from "./types";
+import {
+  bandFloors,
+  bandStatus,
+  getWeeklyTargetBand,
+  roundHalf,
+  type BandStatus,
+  type WeeklyTargetBand,
+} from "./weekly-targets";
 
 export type SplitSlot = {
   id: string;
@@ -12,6 +21,9 @@ export type SplitSlot = {
   // override logic so they don't compete with dedicated upper/lower slots.
   supplementalMovements?: MovementPattern[];
   targetPrimaryStimulus: Partial<Record<MuscleGroup, number>>;
+  // Muscles whose share of the weekly floor is large enough to define this
+  // slot's identity; saturation on one of these disqualifies the slot.
+  majorMuscles?: MuscleGroup[];
 };
 
 export const PHYSIQUE_UPPER_A_SLOT: SplitSlot = {
@@ -275,45 +287,80 @@ const baseSplitTemplate = (
   ];
 };
 
-// User-chosen muscle emphasis reshapes the split's baseline targets: "high"
-// scales a muscle's per-slot targets up ~1.5x (and promotes it into the
-// slot's focus list so exercise selection favors it), "low" halves them.
-// The split templates stay the editorial baseline; this is the user's dial.
-const applyMuscleEmphasis = (
+// The editorial templates only decide each slot's SHARE of a muscle's weekly
+// volume; the weekly band decides the volume itself. Every slot target is
+// rescaled so the slot-sum per muscle equals the band floor exactly, with the
+// rounding residual landing on the slot that already leads that muscle.
+const normalizeToBand = (
   split: SplitSlot[],
+  band: WeeklyTargetBand,
   profile: TrainingProfile,
 ): SplitSlot[] => {
-  const emphasis = profile.muscleEmphasis ?? {};
-  const entries = Object.entries(emphasis).filter(([, level]) => level === "high" || level === "low");
-  if (entries.length === 0) return split;
-  return split.map((slot) => {
+  const slotSums: Partial<Record<MuscleGroup, number>> = {};
+  split.forEach((slot) => {
+    (Object.entries(slot.targetPrimaryStimulus) as [MuscleGroup, number][]).forEach(([muscle, target]) => {
+      if (target > 0) slotSums[muscle] = (slotSums[muscle] ?? 0) + target;
+    });
+  });
+
+  const scaled = split.map((slot) => {
     const targets: Partial<Record<MuscleGroup, number>> = {};
     (Object.entries(slot.targetPrimaryStimulus) as [MuscleGroup, number][]).forEach(([muscle, target]) => {
-      const level = emphasis[muscle];
-      const scaled =
-        level === "high"
-          ? Math.max(target + 1, Math.round(target * 1.5))
-          : level === "low"
-            ? Math.round(target * 0.5)
-            : target;
-      if (scaled > 0) targets[muscle] = scaled;
+      if (target <= 0) return;
+      const floor = band[muscle]?.floor;
+      const sum = slotSums[muscle];
+      if (floor === undefined || !sum) {
+        targets[muscle] = target;
+        return;
+      }
+      const share = roundHalf((target * floor) / sum);
+      if (share > 0) targets[muscle] = share;
     });
+    return { ...slot, targetPrimaryStimulus: targets };
+  });
+
+  (Object.keys(slotSums) as MuscleGroup[]).forEach((muscle) => {
+    const floor = band[muscle]?.floor;
+    if (floor === undefined) return;
+    const total = scaled.reduce((acc, slot) => acc + (slot.targetPrimaryStimulus[muscle] ?? 0), 0);
+    const residual = roundHalf(floor - total);
+    if (residual === 0) return;
+    const leader = scaled.reduce((best, slot) =>
+      (slot.targetPrimaryStimulus[muscle] ?? 0) > (best.targetPrimaryStimulus[muscle] ?? 0) ? slot : best,
+    );
+    const adjusted = (leader.targetPrimaryStimulus[muscle] ?? 0) + residual;
+    if (adjusted > 0) leader.targetPrimaryStimulus[muscle] = adjusted;
+    else delete leader.targetPrimaryStimulus[muscle];
+  });
+
+  const emphasis = profile.muscleEmphasis ?? {};
+  const majorThreshold = PLANNER_TUNING.splitSelection.saturationOverTargetMajorMuscleThreshold;
+  const majorShare = PLANNER_TUNING.splitSelection.saturationMajorShareOfFloor;
+  return scaled.map((slot) => {
     const promoted = (Object.keys(emphasis) as MuscleGroup[]).filter(
       (muscle) =>
         emphasis[muscle] === "high" &&
-        (targets[muscle] ?? 0) > 0 &&
+        (slot.targetPrimaryStimulus[muscle] ?? 0) > 0 &&
         !slot.focusMuscles.includes(muscle),
     );
+    // Core rides along on nearly everything and clears its floor early; it must
+    // never be the reason a whole slot is disqualified.
+    const majorMuscles = (Object.keys(slot.targetPrimaryStimulus) as MuscleGroup[]).filter((muscle) => {
+      if (muscle === "core" || muscle === "hip_flexors") return false;
+      const target = slot.targetPrimaryStimulus[muscle] ?? 0;
+      const floor = band[muscle]?.floor;
+      return target >= majorThreshold || (floor !== undefined && floor > 0 && target >= floor * majorShare);
+    });
     return {
       ...slot,
-      targetPrimaryStimulus: targets,
+      majorMuscles,
       focusMuscles: promoted.length > 0 ? [...slot.focusMuscles, ...promoted] : slot.focusMuscles,
     };
   });
 };
 
 export const getSplitTemplate = (profile: TrainingProfile): SplitSlot[] =>
-  applyMuscleEmphasis(baseSplitTemplate(profile), profile);
+  normalizeToBand(baseSplitTemplate(profile), getWeeklyTargetBand(profile), profile);
 
 export const resolveSplitVariants = (
   split: SplitSlot[],
@@ -337,36 +384,31 @@ export const resolveSplitVariants = (
   return split.map((slot, index) => (index === 1 ? upperSlot : slot));
 };
 
+// Weekly floors come from the band, not from the split; the workouts argument
+// is kept so existing call sites don't churn.
 export function getWeeklyTargetStimulus(
   profile: TrainingProfile,
-  workouts: Workout[],
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _workouts: Workout[] = [],
 ): Partial<Record<MuscleGroup, number>> {
-  const split = resolveSplitVariants(getSplitTemplate(profile), profile, workouts);
-  const totals: Partial<Record<MuscleGroup, number>> = {};
-
-  split.forEach((slot) => {
-    Object.entries(slot.targetPrimaryStimulus).forEach(([muscle, sets]) => {
-      if (typeof sets !== "number" || sets <= 0) return;
-      const key = muscle as MuscleGroup;
-      totals[key] = (totals[key] ?? 0) + sets;
-    });
-  });
-
-  return totals;
+  return bandFloors(getWeeklyTargetBand(profile));
 }
 
 export type MuscleTargetRow = {
   muscle: MuscleGroup;
   target: number;
+  ceiling: number | null;
   done: number;
   pct: number;
   remaining: number;
   overPct: number | null;
+  status: BandStatus;
 };
 
 export function buildMuscleTargetRows(
   targetPrimaryStimulus: Partial<Record<MuscleGroup, number>>,
   coverage: Coverage,
+  band?: WeeklyTargetBand,
 ): MuscleTargetRow[] {
   return (Object.entries(targetPrimaryStimulus) as [MuscleGroup, number][])
     .filter(([, target]) => typeof target === "number" && target > 0)
@@ -376,15 +418,33 @@ export function buildMuscleTargetRows(
       const pct = Math.min(100, Math.round((done / target) * 100));
       const remaining = Math.max(0, target - done);
       const overPct = target > 0 && done > target ? Math.round((done / target) * 100) : null;
-      return { muscle, target, done, pct, remaining, overPct };
+      const muscleBand = band?.[muscle];
+      const status: BandStatus = muscleBand
+        ? bandStatus(muscleBand, done)
+        : done > target
+          ? "over"
+          : done >= target
+            ? "in_range"
+            : "below";
+      return { muscle, target, ceiling: muscleBand?.ceiling ?? null, done, pct, remaining, overPct, status };
     });
 }
+
+// One wording for every surface: distance to the floor while under it, position
+// inside the band once past it, and an explicit ceiling call-out when over.
+export const muscleTargetStatusLabel = (row: MuscleTargetRow): string =>
+  row.status === "over"
+    ? `Over ceiling (${Math.round((row.done / (row.ceiling ?? row.target)) * 100)}%)`
+    : row.status === "in_range"
+      ? `In range (${Math.round((row.done / row.target) * 100)}%)`
+      : `${row.remaining.toFixed(1)} left to floor`;
 
 export function getMuscleTargetRows(
   profile: TrainingProfile,
   coverage: Coverage,
 ): MuscleTargetRow[] {
-  return buildMuscleTargetRows(getWeeklyTargetStimulus(profile, coverage.workouts), coverage);
+  const band = getWeeklyTargetBand(profile);
+  return buildMuscleTargetRows(bandFloors(band), coverage, band);
 }
 
 export const getWeeklyTargetSets = getWeeklyTargetStimulus;

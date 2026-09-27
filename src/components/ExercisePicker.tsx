@@ -6,7 +6,7 @@ import { matchesMuscleFilter } from "@/lib/exercise-predicates";
 import { MUSCLE_GROUPS, PATTERNS, EQUIPMENT } from "@/lib/types";
 import type { Equipment, MuscleGroup, Pattern } from "@/lib/types";
 import { formatMuscle, normalizeSearch } from "@/lib/format";
-import type { MuscleTargetRow } from "@/lib/splits";
+import { muscleTargetStatusLabel, type MuscleTargetRow } from "@/lib/splits";
 import { MuscleTag } from "./MuscleTag";
 import { PatternBadge } from "./PatternBadge";
 
@@ -163,7 +163,7 @@ export function ExercisePicker({
             {MUSCLE_GROUPS.map((m) => {
               const state = muscleFilter[m];
               const row = muscleTargetRows?.find((r) => r.muscle === m);
-              const overTarget = row?.overPct != null;
+              const overTarget = row?.status === "over";
               return (
                 <button
                   key={m}
@@ -180,7 +180,7 @@ export function ExercisePicker({
                   {m.replace("_", " ")}
                   {overTarget && (
                     <span
-                      aria-label="over weekly target"
+                      aria-label="over weekly ceiling"
                       className="ml-1 inline-block h-1.5 w-1.5 rounded-full align-middle"
                       style={{ background: state === "include" ? "#fff" : "#C4441F" }}
                     />
@@ -212,15 +212,9 @@ export function ExercisePicker({
               {activeMuscleLegend.map((m) => {
                 const row = muscleTargetRows.find((r) => r.muscle === m);
                 if (!row) return null;
-                const status =
-                  row.overPct != null
-                    ? `Over target (${row.overPct}%)`
-                    : row.remaining === 0
-                      ? "On target"
-                      : `${row.remaining.toFixed(1)} stimulus left`;
                 return (
                   <p key={m} className="text-[11px] text-text-subtle capitalize">
-                    {m.replace("_", " ")} — {status}
+                    {m.replace("_", " ")} — {muscleTargetStatusLabel(row)}
                   </p>
                 );
               })}

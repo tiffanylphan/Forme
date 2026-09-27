@@ -36,10 +36,13 @@ const workouts = normalizeWorkouts(JSON.parse(fs.readFileSync("/tmp/workouts.jso
 const profile: TrainingProfile = { /* match the user's profile */ };
 const draft = generateNextWorkout(workouts, "YYYY-MM-DD", /*seed*/ 42, profile);
 
-console.log("Selected:", draft.split.slotId, draft.split.title);
+console.log("Selected:", draft.split.slotId, draft.split.title, draft.split.focusLabel);
 draft.slotRecommendations.forEach(r =>
   console.log(`  [${r.rank}] ${r.slotId} score=${r.score.toFixed(2)} recommended=${r.isRecommended}`)
 );
+// What composition did to the selected slot: logged/remaining sessions, prior weight,
+// today's targets, and which muscles were covered / avoided / required.
+console.log("Composition:", JSON.stringify(draft.composition, null, 2));
 ```
 
 Run with: `unset NODE_OPTIONS && npx tsx probe-slot.ts`

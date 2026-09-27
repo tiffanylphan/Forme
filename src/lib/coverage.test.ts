@@ -418,3 +418,38 @@ describe("effort-aware coverage", () => {
     );
   });
 });
+
+describe("directionStats", () => {
+  it("splits push and pull by plane with their own hit days", () => {
+    const week: Workout[] = [
+      {
+        id: "d1",
+        date: "2026-05-04",
+        source: "manual",
+        createdAt: 1,
+        updatedAt: 1,
+        exercises: [
+          { id: "a", exerciseName: "Lat pulldown", supersetGroup: null, sets: [{ id: "a1", reps: 10, weight: 80, unit: "lb" }, { id: "a2", reps: 10, weight: 80, unit: "lb" }] },
+          { id: "b", exerciseName: "Barbell bench press", supersetGroup: null, sets: [{ id: "b1", reps: 8, weight: 95, unit: "lb" }] },
+        ],
+      },
+      {
+        id: "d2",
+        date: "2026-05-06",
+        source: "manual",
+        createdAt: 2,
+        updatedAt: 2,
+        exercises: [
+          { id: "c", exerciseName: "Chin-up", supersetGroup: null, sets: [{ id: "c1", reps: 6, weight: null, unit: "lb" }] },
+        ],
+      },
+    ];
+    const coverage = computeCoverage(week, weekContaining("2026-05-04"));
+    expect(coverage.directionStats.pull_vertical?.sets).toBe(3);
+    expect(coverage.directionStats.pull_vertical?.daysHit).toEqual(["2026-05-04", "2026-05-06"]);
+    expect(coverage.directionStats.pull_horizontal).toBeUndefined();
+    expect(coverage.directionStats.push_horizontal?.daysHit).toEqual(["2026-05-04"]);
+    expect(coverage.directionStats.push_vertical).toBeUndefined();
+    expect(coverage.movementStats.pull?.daysHit).toHaveLength(2);
+  });
+});

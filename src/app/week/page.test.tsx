@@ -74,10 +74,11 @@ describe("WeekPage", () => {
     expect(screen.getByText("Top muscle focus")).toBeInTheDocument();
   });
 
-  it("labels a muscle well past its weekly target as over target instead of on target", () => {
-    // 3-day physique split's back target is 7; 12 Cable rows (primaryPerSet 1)
-    // put it at ~171% — well past the point where "On target" stops being
-    // an honest read of the bar.
+  it("labels a muscle past its floor but under its ceiling as in range with its percentage", () => {
+    // 3-day physique beginner back floor is 8.5 (10 sets × 1.0 × 0.85) and the
+    // ceiling is 26; 12 Cable rows (primaryPerSet 1) put it at ~141% of the
+    // floor — inside the band, so the honest read is "in range", with the
+    // percentage so a lifter can see how far past the floor they are.
     useTrainingProfileMock.mockReturnValue({
       ready: true,
       profile: {
@@ -115,8 +116,8 @@ describe("WeekPage", () => {
     });
 
     render(<WeekPage />);
-    expect(screen.getByText("Over target (171%)")).toBeInTheDocument();
-    expect(screen.queryByText("On target")).not.toBeInTheDocument();
+    expect(screen.getByText("In range (141%)")).toBeInTheDocument();
+    expect(screen.queryByText(/Over ceiling/)).not.toBeInTheDocument();
   });
 
   it("recommends adding sets to the lagging side of a push/pull imbalance", () => {
@@ -175,10 +176,10 @@ describe("WeekPage", () => {
   });
 
   it("notes when a set-count imbalance doesn't reflect a real muscle-level gap", () => {
-    // 3-day physique split's only pull-side weekly targets are back (7) and
-    // rear_delts (4) — 7 Cable rows (primaryPerSet 1) and 7 DB reverse flys
-    // (primaryPerSet 0.65) already clear both, while 20 push sets keep the
-    // set-count ratio (20:14 ≈ 1.4:1) past the imbalance threshold.
+    // 3-day physique beginner pull-side floors are back 8.5, rear_delts 3.3 and
+    // biceps 3.3 — 9 Cable rows (primaryPerSet 1), 7 DB reverse flys and 6 curls
+    // (primaryPerSet 0.65) clear all three, while 32 push sets keep the
+    // set-count ratio (32:22 ≈ 1.45:1) past the imbalance threshold.
     useTrainingProfileMock.mockReturnValue({
       ready: true,
       profile: {
@@ -214,7 +215,7 @@ describe("WeekPage", () => {
               id: "e2",
               exerciseName: "Cable row",
               supersetGroup: null,
-              sets: Array.from({ length: 7 }, (_, i) => ({
+              sets: Array.from({ length: 9 }, (_, i) => ({
                 id: `s${i}`,
                 reps: 12,
                 weight: 70,
