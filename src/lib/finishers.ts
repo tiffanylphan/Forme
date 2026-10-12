@@ -121,6 +121,14 @@ export const FINISHER_TEMPLATES: FinisherTemplate[] = [
     requiresHardMode: true,
   },
   {
+    id: "floor_core_trio",
+    label: "floor core trio",
+    exercises: ["Crunch", "Toe touch", "Sit-up"],
+    rounds: 3,
+    repScheme: "15 crunches + 12 toe touches + 10 sit-ups · minimal rest",
+    tags: ["core"],
+  },
+  {
     id: "devil_press_chain",
     label: "devil press chain",
     exercises: ["Devil press", "Mountain climber", "High knees"],

@@ -29,5 +29,9 @@ describe("exercises", () => {
     expect(findExercise("squat to bicep curl")?.name).toBe("DB squat to bicep curl");
     expect(findExercise("DB squat to bicep curl")?.pattern).toBe("squat");
     expect(findExercise("db curtsey lunge")?.name).toBe("DB front rack curtsey lunge");
+    expect(findExercise("crunches")?.name).toBe("Crunch");
+    expect(findExercise("toe touches")?.name).toBe("Toe touch");
+    expect(findExercise("sit ups")?.name).toBe("Sit-up");
+    expect(findExercise("Butterfly sit up")?.name).toBe("Butterfly sit-up");
   });
 });
