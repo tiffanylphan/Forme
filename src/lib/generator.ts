@@ -1199,16 +1199,20 @@ export const composeSessionSlot = (
     const baseShare = Math.min(baseTarget, Math.max(left, tuning.minTarget));
     const muscleBand = band[muscle];
     const cap = muscleBand && isMajorTarget(muscleBand) ? tuning.sessionCapMajor : tuning.sessionCapSupport;
-    let value = clamp(Math.max(baseShare, (1 - priorWeight) * needToday), 0, cap);
+    const value = roundHalf(clamp(Math.max(baseShare, (1 - priorWeight) * needToday), 0, cap));
     const newcomer = baseTarget <= 0;
+    // A support muscle whose whole weekly floor is smaller than the newcomer
+    // threshold (adductors on a strength split) must still be reachable, or
+    // nothing in the week will ever ask for it.
+    const newcomerFloor = Math.min(tuning.newcomerMinTarget, muscleBand?.floor ?? tuning.newcomerMinTarget);
     if (
       newcomer &&
-      (value < tuning.newcomerMinTarget ||
+      (value < newcomerFloor ||
         !COMPOSITION_MOVEMENTS[muscle].some((movement) => allowed.has(movement)))
     ) {
-      value = 0;
+      return;
     }
-    if (value >= tuning.minTarget) today[muscle] = roundHalf(value);
+    if (value >= tuning.minTarget) today[muscle] = value;
   });
 
   // Never hand assembly an empty or trivial target map: when the week has

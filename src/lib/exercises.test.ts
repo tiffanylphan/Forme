@@ -24,5 +24,10 @@ describe("exercises", () => {
     expect(findExercise("DB overhead marches")?.pattern).toBe("carry");
     expect(findExercise("Wall sits with adductor squeeze")?.name).toBe("Wall sit with adductor squeeze");
     expect(findExercise("Banded wall sit")?.name).toBe("Banded wall sit abduction pulses");
+    expect(findExercise("devils press")?.name).toBe("Devil press");
+    expect(findExercise("Devil's press")?.pattern).toBe("conditioning");
+    expect(findExercise("squat to bicep curl")?.name).toBe("DB squat to bicep curl");
+    expect(findExercise("DB squat to bicep curl")?.pattern).toBe("squat");
+    expect(findExercise("db curtsey lunge")?.name).toBe("DB front rack curtsey lunge");
   });
 });
