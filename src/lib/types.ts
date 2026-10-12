@@ -68,7 +68,14 @@ export type Exercise = {
   pattern: Pattern;
   /** Static holds tracked by time (seconds) rather than rep count. */
   tracksDuration?: boolean;
+  /**
+   * Push/pull plane. Inferred from the exercise family when absent
+   * (see directionOf); set explicitly only where inference is wrong.
+   */
+  direction?: PressPullDirection;
 };
+
+export type PressPullDirection = "horizontal" | "vertical";
 
 export type WeightUnit = "lb" | "kg";
 
@@ -133,7 +140,10 @@ export type ExerciseLog = {
   notes?: string;
 };
 
-export type WorkoutSource = "manual" | "class";
+// "external" marks a session programmed outside the app (a trainer, a class,
+// someone else's plan). Display only: the planner treats every logged session
+// identically. Legacy "class" values normalize to "external" on read.
+export type WorkoutSource = "manual" | "external";
 
 /** One-tap post-session effort rating — the user's own read on the session. */
 export type SessionEffort = "easy" | "right" | "brutal";

@@ -13,7 +13,7 @@ import {
   weekContaining,
 } from "@/lib/coverage";
 import { formatMuscle, todayISO } from "@/lib/format";
-import { getMuscleTargetRows, getWeeklyTargetStimulus } from "@/lib/splits";
+import { getMuscleTargetRows, getWeeklyTargetStimulus, muscleTargetStatusLabel } from "@/lib/splits";
 import {
   MOVEMENT_BLURBS,
   MOVEMENT_COLORS,
@@ -346,11 +346,7 @@ export default function WeekPage() {
                       <div className="flex items-center gap-2">
                         <MuscleTag muscle={row.muscle} size="md" />
                         <span className="text-[12px] text-text-subtle">
-                          {row.overPct != null && row.overPct > 120
-                            ? `Over target (${row.overPct}%)`
-                            : row.remaining === 0
-                              ? "On target"
-                              : `${row.remaining.toFixed(1)} stimulus left`}
+                          {muscleTargetStatusLabel(row)}
                         </span>
                       </div>
                       <span className="font-mono text-[13px] text-text">

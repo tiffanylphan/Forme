@@ -91,6 +91,41 @@ describe("LogPage", () => {
     expect(routerPushMock).toHaveBeenCalledWith("/workout/workout-1");
   });
 
+  it("saves a hand-logged workout as done outside Forme when marked", async () => {
+    const user = userEvent.setup();
+    let persistedWorkout: Record<string, unknown> | null = null;
+    popEditWorkoutMock.mockReturnValue({
+      id: "workout-2",
+      date: "2026-05-06",
+      source: "manual" as const,
+      createdAt: 10,
+      updatedAt: 11,
+      exercises: [
+        {
+          id: "ex1",
+          exerciseName: "Cable row",
+          supersetGroup: null,
+          sets: [{ id: "set1", reps: 12, weight: 70, unit: "lb" as const }],
+        },
+      ],
+    });
+    popDraftMock.mockReturnValue(null);
+    upsertWorkoutMock.mockImplementation((savedWorkout) => {
+      persistedWorkout = savedWorkout as Record<string, unknown>;
+    });
+    getWorkoutMock.mockImplementation(() => persistedWorkout);
+
+    render(<LogPage />);
+    await screen.findByText("Edit workout");
+    const outside = screen.getByRole("button", { name: "Done outside Forme" });
+    expect(outside).toHaveAttribute("aria-pressed", "false");
+    await user.click(outside);
+    expect(outside).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByText("Save"));
+
+    expect(upsertWorkoutMock.mock.calls[0][0].source).toBe("external");
+  });
+
   it("restores a saved draft indicator", async () => {
     popEditWorkoutMock.mockReturnValue(null);
     popDraftMock.mockReturnValue(null);

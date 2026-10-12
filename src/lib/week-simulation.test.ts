@@ -4,8 +4,9 @@ import { familyOf } from "./exercise-predicates";
 import { findExercise } from "./exercises";
 import { generateNextWorkout, type WorkoutDraft } from "./generator";
 import { movementOf } from "./movement";
-import { getWeeklyTargetStimulus } from "./splits";
-import type { MuscleGroup, TrainingProfile, Workout } from "./types";
+import { getSplitTemplate, getWeeklyTargetStimulus, resolveSplitVariants } from "./splits";
+import { getWeeklyTargetBand } from "./weekly-targets";
+import type { MovementPattern, MuscleGroup, TrainingProfile, Workout } from "./types";
 
 // This suite simulates a user who follows the generator's recommendation for an
 // entire training week: generate → log the draft verbatim → generate the next
@@ -96,13 +97,21 @@ type SimulatedWeek = {
 const runWeek = (
   activeProfile: TrainingProfile,
   baseSeed: number,
-  options?: { priorWorkouts?: Workout[]; dates?: string[] },
+  options?: { priorWorkouts?: Workout[]; dates?: string[]; externalByDate?: Record<string, Workout[]> },
 ): SimulatedWeek => {
   const dates = options?.dates ?? TRAINING_DATES[activeProfile.daysPerWeek];
   const history = [...(options?.priorWorkouts ?? [])];
   const drafts: WorkoutDraft[] = [];
   const generated: Workout[] = [];
+  // Sessions authored outside the app land in history before the first
+  // generated session on or after their date, as if logged that morning.
+  const pendingExternal = Object.entries(options?.externalByDate ?? {})
+    .flatMap(([date, workouts]) => workouts.map((w) => ({ ...w, date })))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   dates.forEach((date, dayIdx) => {
+    while (pendingExternal.length > 0 && pendingExternal[0].date <= date) {
+      history.push(pendingExternal.shift()!);
+    }
     // Per-day seed offset decorrelates days; distinct createdAt keeps ordering stable.
     const draft = generateNextWorkout(history, date, baseSeed + dayIdx * 101, activeProfile);
     const logged = draftToWorkout(draft, `sim-${baseSeed}-${dayIdx}`, date, 1000 + dayIdx);
@@ -604,5 +613,154 @@ describe("simulated training week", () => {
         });
       });
     }
+  });
+
+  // ---- Deficit-closing against externally programmed sessions ----
+  //
+  // A session someone else programmed (a trainer, a class, a solo day) is just
+  // logged work. Whatever it covered or skipped, the app's remaining sessions
+  // must close the week toward the band floors, stay off muscles already past
+  // their ceilings, and never repeat a template slot. The pool below is drawn
+  // from by seed so no single scenario is privileged.
+  const EXTERNAL_POOL: Array<{ label: string; exercises: { name: string; sets: number }[] }> = [
+    { label: "heavy lower", exercises: [{ name: "Barbell back squat", sets: 5 }, { name: "Leg press", sets: 4 }, { name: "DB walking lunge", sets: 3 }] },
+    { label: "push-heavy upper", exercises: [{ name: "Barbell bench press", sets: 5 }, { name: "DB overhead press", sets: 4 }, { name: "Tricep pushdown", sets: 3 }] },
+    { label: "pull-heavy upper", exercises: [{ name: "Barbell bent-over row", sets: 5 }, { name: "Lat pulldown", sets: 4 }, { name: "DB curl", sets: 3 }] },
+    { label: "mixed circuit", exercises: [{ name: "Goblet squat", sets: 3 }, { name: "Push-up", sets: 3 }, { name: "Cable row", sets: 3 }, { name: "Plank", sets: 3 }] },
+  ];
+  // Wednesday sits between the 4-day profiles' Tue and Thu sessions, so two
+  // app sessions have already happened and two remain when it lands.
+  const EXTERNAL_DATE = "2026-05-06";
+
+  const externalFor = (seed: number, id: string): Workout => {
+    const pick = EXTERNAL_POOL[seed % EXTERNAL_POOL.length];
+    return { ...workout(id, EXTERNAL_DATE, pick.exercises), source: "external" };
+  };
+
+  const nonFinisherPrimary = (draft: WorkoutDraft, date: string): Partial<Record<MuscleGroup, number>> => {
+    const trimmed: WorkoutDraft = { ...draft, sections: draft.sections.filter((s) => s.kind !== "finisher") };
+    return sessionPrimaryStimulus(draftToWorkout(trimmed, "probe", date, 1));
+  };
+
+  const EXTERNAL_PROFILES: Array<[string, TrainingProfile]> = [
+    ["physique4", physique4],
+    ["balanced4", balanced4],
+  ];
+
+  it("still reaches every major floor and every pattern when an external session lands mid-week", () => {
+    for (const [label, activeProfile] of EXTERNAL_PROFILES) {
+      for (const seed of DIRTY_SEEDS) {
+        const external = externalFor(seed, `ext-${seed}`);
+        const sim = runWeek(activeProfile, seed, { externalByDate: { [EXTERNAL_DATE]: [external] } });
+        const rows = coverageRows(sim);
+        rows.forEach((row) => {
+          const floor = row.target >= 4 ? 0.5 : 0.25;
+          expect(
+            row.ratio,
+            `${label} seed ${seed} (+${EXTERNAL_POOL[seed % EXTERNAL_POOL.length].label}): ${row.muscle} ${(row.ratio * 100).toFixed(0)}%\n${coverageTable(sim)}`,
+          ).toBeGreaterThanOrEqual(floor);
+        });
+        const days = (mp: MovementPattern) => sim.coverage.movementStats[mp]?.daysHit.length ?? 0;
+        (["hinge", "push", "pull", "carry_core"] as MovementPattern[]).forEach((mp) => {
+          expect(days(mp), `${label} seed ${seed}: ${mp} never trained`).toBeGreaterThanOrEqual(1);
+        });
+        expect(days("squat") + days("single_leg"), `${label} seed ${seed}: no knee-dominant work`).toBeGreaterThanOrEqual(1);
+        // An external session may legitimately consume a template slot via
+        // inference, after which the app re-scores the whole split — so themes
+        // can recur, but never back-to-back.
+        const slotIds = sim.workouts.map((w) => w.planSlot?.slotId);
+        slotIds.forEach((slotId, i) => {
+          if (i === 0) return;
+          expect(slotId, `${label} seed ${seed}: back-to-back slot ${slotIds.join(" → ")}`).not.toBe(slotIds[i - 1]);
+        });
+      }
+    }
+  });
+
+  it("does not hard-dose a muscle that an external session already pushed past its ceiling", () => {
+    for (const [label, activeProfile] of EXTERNAL_PROFILES) {
+      const band = getWeeklyTargetBand(activeProfile);
+      for (const seed of DIRTY_SEEDS) {
+        // A deliberately oversized external session: whichever pool entry the
+        // seed draws, tripled, so at least one muscle crosses its ceiling.
+        const pick = EXTERNAL_POOL[seed % EXTERNAL_POOL.length];
+        const external: Workout = {
+          ...workout(`big-${seed}`, EXTERNAL_DATE, pick.exercises.map((e) => ({ ...e, sets: e.sets * 3 }))),
+          source: "external",
+        };
+        const dates = TRAINING_DATES[activeProfile.daysPerWeek];
+        const history: Workout[] = [];
+        dates.forEach((date, dayIdx) => {
+          if (external.date <= date && !history.includes(external)) history.push(external);
+          const before = computeCoverage(history, weekContaining(date));
+          const draft = generateNextWorkout(history, date, seed + dayIdx * 101, activeProfile);
+          const added = nonFinisherPrimary(draft, date);
+          (Object.entries(added) as [MuscleGroup, number][]).forEach(([muscle, dose]) => {
+            const ceiling = band[muscle]?.ceiling;
+            if (ceiling === undefined || muscle === "core" || muscle === "hip_flexors") return;
+            const already = before.muscleStats[muscle]?.primaryStimulus ?? 0;
+            if (already < ceiling) return;
+            expect(
+              dose,
+              `${label} seed ${seed} ${date} (+${pick.label}×3): ${muscle} was ${already.toFixed(1)} ≥ ceiling ${ceiling}, session still added ${dose.toFixed(1)}`,
+            ).toBeLessThan(5.5);
+          });
+          const nonFinisher = draft.sections.filter((s) => s.kind !== "finisher").reduce((n, s) => n + s.exercises.length, 0);
+          expect(nonFinisher, `${label} seed ${seed} ${date}: only ${nonFinisher} working exercises`).toBeGreaterThanOrEqual(4);
+          history.push(draftToWorkout(draft, `sim-${seed}-${dayIdx}`, date, 1000 + dayIdx));
+        });
+      }
+    }
+  });
+
+  it("is deterministic with external sessions in the mix", () => {
+    const external = externalFor(2, "ext-det");
+    const a = runWeek(physique4, 424242, { externalByDate: { [EXTERNAL_DATE]: [external] } });
+    const b = runWeek(physique4, 424242, { externalByDate: { [EXTERNAL_DATE]: [external] } });
+    expect(slotSequence(a)).toEqual(slotSequence(b));
+    expect(a.drafts.map(nonFinisherNames)).toEqual(b.drafts.map(nonFinisherNames));
+  });
+
+  // The template is the prior: on a clean week every generated session must
+  // honor its slot's template share for each muscle still under its floor.
+  // Composition may add volume or drop closed muscles; it may not quietly
+  // erode a slot's own theme.
+  it("honors the template share for every open muscle on a clean week", () => {
+    for (const [label, activeProfile] of PROFILE_MATRIX) {
+      const band = getWeeklyTargetBand(activeProfile);
+      for (const seed of HARD_SEEDS) {
+        const dates = TRAINING_DATES[activeProfile.daysPerWeek];
+        const history: Workout[] = [];
+        dates.forEach((date, dayIdx) => {
+          const before = computeCoverage(history, weekContaining(date));
+          const split = resolveSplitVariants(getSplitTemplate(activeProfile), activeProfile, history);
+          const draft = generateNextWorkout(history, date, seed + dayIdx * 101, activeProfile);
+          const base = split.find((slot) => slot.id === draft.split.slotId);
+          expect(base, `${label} seed ${seed} ${date}: unknown slot ${draft.split.slotId}`).toBeDefined();
+          (Object.entries(base!.targetPrimaryStimulus) as [MuscleGroup, number][]).forEach(([muscle, share]) => {
+            const floor = band[muscle]?.floor ?? 0;
+            const left = floor - (before.muscleStats[muscle]?.primaryStimulus ?? 0);
+            if (left <= 0 || (before.muscleStats[muscle]?.primaryStimulus ?? 0) >= (band[muscle]?.ceiling ?? Infinity)) return;
+            expect(
+              draft.split.targetPrimaryStimulus[muscle] ?? 0,
+              `${label} seed ${seed} ${date} ${draft.split.slotId}: ${muscle} share ${share} eroded with ${left.toFixed(1)} still open`,
+            ).toBeGreaterThanOrEqual(Math.min(share, Math.max(left, 1)) - 0.26);
+          });
+          history.push(draftToWorkout(draft, `sim-${seed}-${dayIdx}`, date, 1000 + dayIdx));
+        });
+      }
+    }
+  });
+
+  // Direction balance: with the coarse patterns covered, a clean week should
+  // still touch both planes of pushing and pulling. Statistical — the nudge is
+  // deliberately moderate.
+  it("touches both planes of pushing and pulling most clean weeks (4-day physique)", () => {
+    const directions = ["push_horizontal", "push_vertical", "pull_horizontal", "pull_vertical"] as const;
+    const missing = STAT_SEEDS.filter((seed) => {
+      const sim = simulateWeek("physique4", physique4, seed);
+      return directions.some((key) => (sim.coverage.directionStats[key]?.daysHit.length ?? 0) === 0);
+    });
+    expect(missing.length, `seeds missing a plane: ${missing.join(", ")}`).toBeLessThanOrEqual(2);
   });
 });

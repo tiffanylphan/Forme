@@ -73,10 +73,13 @@ export const PLANNER_TUNING = {
     saturationHighPenalty: 10,
     saturationMediumPenalty: 4,
     saturationOverTargetThreshold: 1.0,
-    saturationFilterThreshold: 1.0,
     saturationOverTargetPenalty: 20,
     saturationOverTargetPenaltyScale: 20,
     saturationOverTargetMajorMuscleThreshold: 4,
+    // A slot "owns" a muscle when its share of the weekly floor is at least this
+    // fraction — the relative counterpart to the absolute threshold above, since
+    // normalized slot shares can sit below 4 while still defining the slot.
+    saturationMajorShareOfFloor: 0.25,
     fullOverlapPenalty: 6,
     partialOverlapPenalty: 3,
     leadThreshold: 1.25,
@@ -171,6 +174,9 @@ export const PLANNER_TUNING = {
     upperPullRowBalanceBonus: 3,
     upperPullSupportBeforeRowPenalty: 3,
     preferredMovementBonus: 0.9,
+    // Once a push/pull pattern is covered for the week, a plane of it still at
+    // zero days (all pulldowns, no rows) nudges matching candidates up.
+    directionNeedBonus: 1.5,
     repeatExercisePenalty: 2.4,
     repeatExerciseStrengthPenalty: 0.6,
     repeatFamilyPenalty: 1.2,
@@ -267,6 +273,24 @@ export const PLANNER_TUNING = {
     homePenalty: 1,
     finisherStressMultiplier: 0.6,
     finisherBudgetPenaltyMultiplier: 0.75,
+  },
+
+  // Deficit-driven session composition: how far the selected template slot is
+  // reshaped toward this week's remaining band deficit as the week fills in.
+  composition: {
+    minPriorWeight: 0.25,
+    lastSessionPriorWeight: 0.15,
+    sessionCapMajor: 12,
+    sessionCapSupport: 4,
+    minTarget: 1,
+    newcomerMinTarget: 2,
+    focusThreshold: 2,
+    maxNewcomerFocus: 2,
+    lateWeekRemaining: 1,
+    lateWeekNeedBoost: 2,
+    overCeilingPrimaryPenalty: 6,
+    overCeilingSecondaryPenalty: 2,
+    minComposedTargetTotal: 6,
   },
 
   // Thresholds for user-facing rationale messaging.

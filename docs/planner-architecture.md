@@ -22,7 +22,9 @@ durable reference.
 |---|---|
 | `src/lib/generator.ts` | The pipeline. `generateNextWorkout` (≈ generator.ts:1707) does everything below. |
 | `src/lib/planner-tuning.ts` | All behavior weights/thresholds (`PLANNER_TUNING`). See §4. |
-| `src/lib/splits.ts` | `SplitSlot` templates per profile, `resolveSplitVariants` (3-day upper A/B flip, splits.ts:318), `getWeeklyTargetStimulus`. |
+| `src/lib/weekly-targets.ts` | **The weekly standard.** `getWeeklyTargetBand(profile)` → per-muscle `{floor, ceiling}` in stimulus units from an evidence-based hard-set table (goal × experience), scaled by `DAYS_SCALE`, `muscleEmphasis` and `sensitiveMuscles`. `bandFloors`, `bandStatus`, `isMajorTarget`. Every deficit, saturation and target row reads from this — never from slot sums. |
+| `src/lib/splits.ts` | `SplitSlot` templates per profile, normalized so each muscle's slot-sum equals its band floor (`normalizeToBand`; templates keep only their *shape*), `majorMuscles` per slot (share ≥ `saturationMajorShareOfFloor` of the floor, or ≥ 4), `resolveSplitVariants` (3-day upper A/B flip), `getWeeklyTargetStimulus` (thin wrapper over `bandFloors`). |
+| `src/lib/exercise-predicates.ts` `directionOf` | Push/pull plane (horizontal / vertical) from an explicit `Exercise.direction` tag or the exercise family; feeds `coverage.directionStats` and the `exerciseSelection.directionNeedBonus` nudge once the coarse pattern is covered. |
 | `src/lib/coverage.ts` | Weekly window (`weekContaining`, Monday-start), `computeCoverage` (muscle/movement stats), `estimateExerciseStimulus` (per-set stimulus by movement class), `distributeRecoveryStress`, `recentMuscleStressWithin` (decayed), **`effortFactor` (new in this change)** — set-level load-aware stimulus scaling: each set's stimulus is scaled by effort relative to the user's heaviest logged weight for that exercise in-window, clamped to [0.7, 1.25], neutral 1.0 for bodyweight/duration/no-reference sets (coverage.ts:204). Weekly coverage — and therefore deficits and saturation — is effort-weighted, not raw set counts. |
 | `src/lib/session-feedback.ts` | **New in this change.** `effortBudgetMultiplier`: maps recent "easy / about right / brutal" session ratings to a fatigue-budget multiplier in [0.85, 1.1]. |
 | `src/lib/periodization.ts` | **New in this change.** `getWeekPhase` (periodization.ts:62): derives a build/deload phase from weekly history (workout count, volume drop ratio, consecutive build weeks, brutal-rating count); `intensityScale` 1.0 in build, 0.75 in deload. |
@@ -52,7 +54,8 @@ assembly phase also mutates shared per-session state (`used`, `claimedFamilies`,
 | `rng` / `finisherRng` | generator.ts:1719–1726 | Two independent mulberry32 streams; `finisherRng` gets **two warm-up draws** (see §5.1). |
 | `split` | generator.ts:1727–1731 | `resolveSplitVariants(getSplitTemplate(profile))` — 3-day physique flips upper A/B based on the last logged upper slot. |
 | `need` | generator.ts:1733–1741 | Per movement pattern: 0 days hit this week → 3, 1 day → 1, 2+ → 0. |
-| `weeklyMuscleTargets` | generator.ts:1745–1750 | Sum of every slot's `targetPrimaryStimulus` per muscle. |
+| `weeklyBand` / `weeklyMuscleTargets` | generator.ts (state derivation) | `getWeeklyTargetBand(profile)` and its `bandFloors` — the weekly standard per muscle. Slot targets are shares of these floors, so the sum of slot targets equals them by construction. |
+| Fresh-cycle start | generator.ts (slot selection) | When nothing is logged in the current cycle (`recentWorkoutsForSlotSelection` empty), the pick is template index 0 — or index 1 when the most recent session of any age already carried index 0's bias — so band magnitudes never reorder day one. |
 | `muscleSaturation` | generator.ts:1751–1758 | `weeklyPrimaryDone / weeklyTarget` per targeted muscle. ≥1.0 = over target. Drives slot filter, near-cap and over-target penalties. |
 | `muscleDeficits` | generator.ts:1759 (`computeMuscleDeficits`, generator.ts:955) | `max(0, weeklyTarget − (primary + secondary stimulus done))`. Note: deficits count secondary stimulus; saturation counts only primary. |
 | `stalledExerciseNames` / `watchedExerciseNames` / `stalledFamilies` | generator.ts:1760–1764, 1941–1950 | From `getStallState` per exercise. |
@@ -68,7 +71,11 @@ assembly phase also mutates shared per-session state (`used`, `claimedFamilies`,
 Slot completion for slotless/manual workouts is *inferred*: `inferCompletedSlotIds`
 (generator.ts:824) scores each workout against each slot (`scoreWorkoutForSlot`,
 generator.ts:695, weights in `PLANNER_TUNING.slotInference`) with confidence-margin guards so an
-ambiguous workout doesn't consume a slot.
+ambiguous workout doesn't consume a slot. That is the intended behaviour for externally
+programmed sessions too: a mixed full-body session someone else wrote must not swallow a template
+slot — it counts through coverage, `loggedSessions`/`remainingSessions`, and composition instead.
+A clearly upper or lower external session does consume the matching slot, which is right ("you
+already did an upper day").
 
 ### 1.2 Slot selection (generator.ts:1846–1904)
 
@@ -81,11 +88,13 @@ getNextSplitSlotIndex  →  maybeOverrideForStalledBias  →  maybeOverrideForCr
 
 1. **`getNextSplitSlotIndex`** (generator.ts:1370)
    - Filters incomplete slots through the **bias-aware saturation filter**:
-     `slotHasOverTargetMajorMuscle` (generator.ts:1354) drops a slot only when a *major* target
-     (≥ `saturationOverTargetMajorMuscleThreshold` = 4) is **decisively** over target
-     (> `saturationFilterThreshold` = 1.0). The graduated penalties in `scoreSplitSlot` own the
-     1.0–1.3× band — filtering at exactly 1.0 previously deleted a quad day because Monday's
-     lunges nudged quads past target.
+     `slotHasOverTargetMajorMuscle` drops a slot only when one of its *major* muscles
+     (`slot.majorMuscles`: share ≥ `saturationMajorShareOfFloor` of the weekly floor, or ≥ 4)
+     is past the band **ceiling** (`overCeiling`). The graduated penalties in `scoreSplitSlot`
+     own the whole floor-to-ceiling band — filtering at the floor previously deleted a quad day
+     because Monday's lunges nudged quads past target. If the filter empties the incomplete
+     pool, the whole split is re-scored (minus the theme just trained) instead of forcing a
+     session onto muscles that should be left alone.
    - **Alternating-bias restore guard** (generator.ts:1388–1403): if the filter leaves only
      slots matching yesterday's bias, the filtered-out opposite-bias slots are restored and the
      penalties arbitrate on score — the filter must never force back-to-back same-bias days.
@@ -107,9 +116,47 @@ getNextSplitSlotIndex  →  maybeOverrideForStalledBias  →  maybeOverrideForCr
    critical-capable slot (+6 preferred-movement bump) actually outscores the base.
 
 Then: `rankSplitSlotIndices` + `buildSlotRecommendations` expose all scores on the draft
-(`draft.slotRecommendations`); `overrides.forcedSlotId` bypasses the pick (generator.ts:1893);
-`adaptSelectedSlot` (generator.ts:982) may rewrite a physique upper slot into a pull-biased
-catch-up slot when lower fatigue is high and the pull deficit leads the press deficit.
+(`draft.slotRecommendations`); `overrides.forcedSlotId` bypasses the pick;
+`adaptSelectedSlot` may steer a physique upper slot toward pull movements and back/rear-delt
+focus when lower fatigue is high and the pull deficit leads the press deficit (it no longer
+rewrites targets); then **`composeSessionSlot`** shapes the selected slot toward the week's
+remaining distance to the band floors.
+
+**Slot selection reads saturation against the ceiling.** `muscleCeilingSaturation`
+(primary ÷ band ceiling) is what `scoreSplitSlot`, the overrides and `rankSplitSlotIndices`
+receive — past the floor a muscle simply stops contributing deficit, and only approaching the
+ceiling actively pushes a whole theme away. `scoreExercise` keeps the floor-based
+`muscleSaturation` for entitlement and overshoot pricing.
+
+**Composition (`composeSessionSlot`).** Inputs: the band, coverage, `overCeiling` (primary ≥
+ceiling), `requiredMovements`, `loggedSessions` (distinct dates logged this week, whoever
+programmed them), `remainingSessions` (= `max(1, daysPerWeek − logged)`), and whether the slot
+was user-forced. Rules, in order:
+
+- Nothing logged and nothing required → the slot passes through untouched (fresh week is
+  byte-identical to the template).
+- Forced slot → keep the theme; only drop muscles past the ceiling (`composition.avoid`).
+- Otherwise, per muscle, distance to floor is measured on **primary** stimulus (like saturation
+  and the UI rows — secondary ride-along must not erase a slot's own theme):
+  `today = max(min(share, left), (1 − priorWeight) × max(left ÷ remaining, left − futureSlots))`,
+  capped at `composition.sessionCapMajor` / `sessionCapSupport`. `priorWeight` =
+  `clamp(1 − logged ÷ daysPerWeek, minPriorWeight, 1)`, or `lastSessionPriorWeight` when
+  `remaining ≤ lateWeekRemaining`. `futureSlots` are the ranked incomplete template slots still
+  expected this week. Muscles at/over floor drop out; muscles over ceiling are avoided; a muscle
+  absent from the base slot is added only when today's value ≥ `newcomerMinTarget` and one of
+  its movements is allowed (or required). If the total falls under `minComposedTargetTotal`, a
+  maintenance dose of the slot's own top muscles is restored.
+- `requiredMovements` (patterns still at zero days with `remaining ≤ lateWeekRemaining`, with
+  squat/single_leg covering each other) are appended to `preferredMovements` and
+  `allowedMovements`, and their `need` is boosted by `lateWeekNeedBoost` before slot selection.
+- `id`, `title` and `summary` are never changed. The composed detail lives in
+  `draft.split.focusLabel` ("Today: …") and `draft.composition`; `sessionIndex` /
+  `totalSessions` are `logged + 1` / `daysPerWeek`.
+
+Assembly also gains: a physique lower slot's accessory gate admits glute work only while glutes
+are still targeted, and any quad/hamstring/adductor work the composed slot targets; and
+`scoreExercise` subtracts `composition.overCeilingPrimaryPenalty` / `overCeilingSecondaryPenalty`
+per over-ceiling muscle on top of the capped over-target tier.
 
 ### 1.3 Session assembly (generator.ts:1952–3833)
 
@@ -285,7 +332,7 @@ scale; the source is authoritative.
 | `saturationMediumThreshold` / `saturationMediumPenalty` | 0.7 / 4 | generator.ts:1128–1129 | |
 | `saturationOverTargetThreshold` / `saturationOverTargetPenalty` / `saturationOverTargetPenaltyScale` | 1.0 / 20 / 20 | generator.ts:1122–1125 | Fires on the max *major* muscle only; 20 + 20×excess easily dominates all deficit bonuses. |
 | `saturationOverTargetMajorMuscleThreshold` | 4 | generator.ts:1115, 1358 | Defines "major" for both the penalty and the hard filter — support targets (glutes: 2 on upper slots) never trigger either. |
-| `saturationFilterThreshold` | 1.0 | generator.ts:1366 | The hard filter. Must stay ≥ `saturationOverTargetThreshold` or the graduated band disappears. Guarded by the alternating-bias restore (generator.ts:1388). |
+| `saturationMajorShareOfFloor` | 0.25 | splits.ts `normalizeToBand` | A slot's share of a muscle's weekly floor at or above this makes the muscle one of the slot's `majorMuscles` (core/hip_flexors excepted). The hard filter fires only when a major muscle is past the band ceiling; the graduated penalties own everything below. Guarded by the alternating-bias restore. |
 | `fullOverlapPenalty` / `partialOverlapPenalty` | 6 / 3 | generator.ts:1139–1140 | Last-session preferred-movement overlap (≥100% / ≥67%). |
 | `leadThreshold` / `leadCatchupBoost` / `leadSameSidePenalty` / `leadCap` | 1.25 / 3 / 2.5 / 8 | generator.ts:1193–1223 | Weekly lower/upper balance correction, capped both ways. |
 | `crossWeekRecencyDays` | 5 | generator.ts:1817 | Days before Monday whose explicit-slot workouts count as done this cycle. Raising it can mark most of the split complete on Monday (the same-week fallback then rescues, generator.ts:1840). |
@@ -382,6 +429,20 @@ penalty growth here can null a whole stage** (§2.1, §5.2).
 | `fatigueBudget.finisherBudgetPenaltyMultiplier` | 0.75 | generator.ts:3757 | Ad-hoc finisher budget-overage penalty. |
 | `rationale.*` (4 knobs) | — | generator.ts:1324, 3849, 3907, 3912, 3916 | User-facing copy thresholds only — **`recentFocusStressThreshold` is also read by `buildSlotRecommendations` for the caution line**, so it's not purely cosmetic. |
 
+### 3.9 `composition` — reshaping the selected slot toward the week's remaining deficit (consumed by `composeSessionSlot`, the late-week need amplifier in state derivation, and `scoreExercise`)
+
+| Knob | Value | Notes / warnings |
+|---|---|---|
+| `minPriorWeight` | 0.25 | Floor on the template's weight mid-week. Lower → sessions drift from their theme sooner. |
+| `lastSessionPriorWeight` | 0.15 | Used when `remaining ≤ lateWeekRemaining`; today chases nearly the whole residual. |
+| `sessionCapMajor` / `sessionCapSupport` | 12 / 4 | Per-muscle per-session cap on composed targets. Must stay ≥ the largest template share (5-day physique quads 11.5) or clean weeks erode. |
+| `minTarget` | 1 | Composed targets below this are dropped. |
+| `newcomerMinTarget` | 2 | A muscle absent from the base slot needs this much to be added. |
+| `focusThreshold` / `maxNewcomerFocus` | 2 / 2 | Newcomers entering `focusMuscles`. |
+| `lateWeekRemaining` / `lateWeekNeedBoost` | 1 / 2 | When zero-day patterns become required and how hard (`need` 3 → 5 flows into every need consumer). |
+| `overCeilingPrimaryPenalty` / `overCeilingSecondaryPenalty` | 6 / 2 | Stacked on the capped over-target tier (8) this lands below the −10 normal-stage floor while staying legal for anchor/completeness guarantees. |
+| `minComposedTargetTotal` | 6 | Below this the slot's own top-3 muscles are restored as a maintenance dose. |
+
 ---
 
 ## 4. Known cascade risks
@@ -430,11 +491,17 @@ into a deterministic pick.
 ### 4.4 Cross-coupled constants
 
 - `hardDoseYesterdayThreshold` (5.5) ↔ week-simulation `HARD_DOSE` (5.5) — must move together.
-- `saturationFilterThreshold` ≥ `saturationOverTargetThreshold`, or the graduated penalty band
-  between them vanishes.
-- Slot `targetPrimaryStimulus` values in splits.ts are the *units* of deficits, saturation, and
-  entitlements — editing a slot target retunes `topDeficitWeight`-style absolute weights and
-  `saturationOverTargetMajorMuscleThreshold`'s notion of "major" (≥4) at the same time.
+- The hard slot filter keys on the band ceiling, the graduated penalties on the floor: keep
+  ceiling ÷ floor comfortably above `saturationOverTargetThreshold` (1.0) or the graduated band
+  vanishes.
+- Band **floors** (weekly-targets.ts) are the *units* of deficits, saturation, and entitlements.
+  Slot `targetPrimaryStimulus` values in splits.ts are normalized *shares* of those floors, so
+  editing a template only moves volume between slots; editing the hard-set table or
+  `DAYS_SCALE` retunes `topDeficitWeight`-style absolute weights at the same time. "Major" is
+  now share-based (`saturationMajorShareOfFloor`, 0.25) with the absolute ≥4 kept as a fallback;
+  core and hip_flexors are never major.
+- Band ceiling ÷ floor must stay ≥ `exerciseSelection.overTargetHighThreshold` (1.25) so the
+  over-target penalty tiers stay ordered below the ceiling (asserted in weekly-targets.test.ts).
 - `estimateExerciseStimulus` per-set values (coverage.ts:156) are the units of *everything*
   (deficits, budgets, hard-dose threshold). `effortFactor` (new) now scales these per set — a
   week of light logged loads reads as less coverage than the same sets at full load.
@@ -474,8 +541,11 @@ explicitly):
 | Compound-family rotation | :353 | No compound family repeated from the previous session. |
 | **48h rules** | :375–408, :554 | A muscle dosed ≥ 5.5 primary (non-finisher) never takes ≥ 5.5 again the next calendar day — including hostile Mon/Tue/Wed schedules (core/hip_flexors exempt). |
 | Dirty-state recovery | :410–491 | Correct remaining slots with priors logged; off-plan manual workouts don't cause slot repeats. |
-| Saturation discipline | :497 | After a 20-set hip-thrust binge, every later session ≤ 7 glute stimulus while still closing other majors ≥ 50%. |
+| Saturation discipline | :497 | After a 20-set hip-thrust binge, every later session ≤ 8.75 glute stimulus (7 × the 1.25 effort ceiling) while still closing other majors ≥ 50%. |
 | Constrained equipment | :533, :585 | Dumbbell weeks: nothing at zero, majors ≥ 40%. Home weeks: every session ≥ 4 non-finisher exercises (**completeness**), two weeks deep. |
+| **External sessions** | "still reaches every major floor…", "does not hard-dose…", "is deterministic with external sessions" | With a random externally-programmed session injected mid-week (drawn from a pool by seed): every major ≥ 50% of floor, support ≥ 25%, every pattern touched (squat/single_leg cover each other), no back-to-back slot repeat; with that session tripled so muscles cross their ceilings, no app session adds ≥ 5.5 primary to a muscle already over ceiling (core/hip_flexors exempt) and every session keeps ≥ 4 working exercises; same seed → same week. |
+| **Template share honored** | "honors the template share for every open muscle" | On a clean week every generated session's target for each muscle still under its floor is ≥ `min(share, left)` (±0.25 rounding) — composition may add or drop, never erode a slot's theme. |
+| Direction balance | "touches both planes of pushing and pulling" | ≤ 2 of 20 clean 4-day physique weeks miss any of the four push/pull planes. |
 | **Keystones** | generator.test.ts:2969 ("re-anchors a slot on its previous week's main lift") | Anchor continuity for a repeated slot; week-simulation's opener-rotation and family-rotation tests bound it from the other side. |
 
 `generator.test.ts` (~3000 lines) holds the scenario fixtures for individual mechanisms

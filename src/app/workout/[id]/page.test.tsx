@@ -46,7 +46,7 @@ describe("WorkoutDetailPage", () => {
         {
           id: "workout-1",
           date: "2026-05-06",
-          source: "manual",
+          source: "external",
           notes: "Felt strong",
           createdAt: 1,
           updatedAt: 1,
@@ -76,6 +76,7 @@ describe("WorkoutDetailPage", () => {
     });
 
     render(<WorkoutDetailPage />);
+    expect(screen.getByText("Outside Forme")).toBeInTheDocument();
     expect(screen.getByText("Cable row")).toBeInTheDocument();
     expect(screen.getByText("Progressed")).toBeInTheDocument();
     expect(screen.getByText("Recent history")).toBeInTheDocument();

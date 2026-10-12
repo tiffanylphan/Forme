@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { findExercise } from "./exercises";
-import { matchesMuscleFilter } from "./exercise-predicates";
+import { directionOf, matchesMuscleFilter } from "./exercise-predicates";
 
 describe("matchesMuscleFilter", () => {
   const legCurl = findExercise("Leg curl")!; // primary: hamstrings, secondary: []
@@ -43,5 +43,31 @@ describe("matchesMuscleFilter", () => {
     expect(
       matchesMuscleFilter(legCurl, { include: ["hamstrings"], exclude: ["glutes"] }),
     ).toBe(true);
+  });
+});
+
+describe("directionOf", () => {
+  const cases: Array<[string, "horizontal" | "vertical" | null]> = [
+    ["Cable row", "horizontal"],
+    ["Barbell bent-over row", "horizontal"],
+    ["Face pull", "horizontal"],
+    ["Lat pulldown", "vertical"],
+    ["Chin-up", "vertical"],
+    ["DB overhead press", "vertical"],
+    ["Barbell bench press", "horizontal"],
+    ["Push-up", "horizontal"],
+    ["DB lateral raise", null],
+    ["Cable curl", null],
+    ["Barbell back squat", null],
+  ];
+  it.each(cases)("%s → %s", (name, expected) => {
+    const ex = findExercise(name);
+    expect(ex, name).toBeDefined();
+    expect(directionOf(ex!)).toBe(expected);
+  });
+
+  it("lets an explicit tag override inference", () => {
+    const ex = { ...findExercise("Cable row")!, direction: "vertical" as const };
+    expect(directionOf(ex)).toBe("vertical");
   });
 });

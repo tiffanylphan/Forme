@@ -1,5 +1,5 @@
 import { findExercise } from "./exercises";
-import { isLowerIsolation } from "./exercise-predicates";
+import { directionOf, isLowerIsolation } from "./exercise-predicates";
 import { movementOf } from "./movement";
 import { MOVEMENT_PATTERNS, MUSCLE_GROUPS, PATTERNS } from "./types";
 import type {
@@ -73,12 +73,18 @@ export type MovementStats = {
   exercises: { name: string; sets: number; date: string }[];
 };
 
+export type DirectionKey = "push_horizontal" | "push_vertical" | "pull_horizontal" | "pull_vertical";
+export type DirectionStats = { daysHit: string[]; sets: number };
+
 export type Coverage = {
   window: WeekWindow;
   workouts: Workout[];
   muscleStats: Partial<Record<MuscleGroup, MuscleStats>>;
   patternStats: Partial<Record<Pattern, PatternStats>>;
   movementStats: Partial<Record<MovementPattern, MovementStats>>;
+  // Push/pull split by plane, so a week of pulldowns with no rows is visible
+  // even though the coarse "pull" pattern reads as covered.
+  directionStats: Partial<Record<DirectionKey, DirectionStats>>;
 };
 
 const emptyMuscleStats = (): MuscleStats => ({
@@ -272,6 +278,7 @@ export function computeCoverage(
   const muscleStats: Partial<Record<MuscleGroup, MuscleStats>> = {};
   const patternStats: Partial<Record<Pattern, PatternStats>> = {};
   const movementStats: Partial<Record<MovementPattern, MovementStats>> = {};
+  const directionStats: Partial<Record<DirectionKey, DirectionStats>> = {};
   const referenceWeights = referenceWeightsByExercise(inWindow);
 
   inWindow.forEach((w) => {
@@ -308,6 +315,14 @@ export function computeCoverage(
         if (!ms.daysHit.includes(w.date)) ms.daysHit.push(w.date);
         ms.exercises.push({ name: logEx.exerciseName, sets, date: w.date });
         movementStats[movement] = ms;
+        const direction = directionOf(meta);
+        if (direction && (movement === "push" || movement === "pull")) {
+          const key: DirectionKey = `${movement}_${direction}`;
+          const ds = directionStats[key] ?? { daysHit: [], sets: 0 };
+          ds.sets += sets;
+          if (!ds.daysHit.includes(w.date)) ds.daysHit.push(w.date);
+          directionStats[key] = ds;
+        }
       }
 
       // Primary muscles count toward "hit days"
@@ -346,6 +361,7 @@ export function computeCoverage(
     muscleStats,
     patternStats,
     movementStats,
+    directionStats,
   };
 }
 

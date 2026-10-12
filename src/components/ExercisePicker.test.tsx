@@ -98,12 +98,12 @@ describe("ExercisePicker", () => {
         onClose={() => {}}
         onPick={() => {}}
         muscleTargetRows={[
-          { muscle: "glutes", target: 17, done: 21.6, pct: 100, remaining: 0, overPct: 127 },
+          { muscle: "glutes", target: 17, ceiling: null, done: 21.6, pct: 100, remaining: 0, overPct: 127, status: "over" },
         ]}
       />,
     );
 
     await user.click(screen.getByTestId("muscle-chip-glutes"));
-    expect(screen.getByText(/Over target \(127%\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Over ceiling \(127%\)/)).toBeInTheDocument();
   });
 });

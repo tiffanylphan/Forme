@@ -1,5 +1,5 @@
 import { movementOf } from "./movement";
-import type { Exercise, GoalMode, MovementPattern, MuscleGroup, TrainingEnvironment } from "./types";
+import type { Exercise, GoalMode, MovementPattern, MuscleGroup, PressPullDirection, TrainingEnvironment } from "./types";
 
 export const COMPOUND_MOVEMENTS: MovementPattern[] = ["squat", "hinge", "push", "pull"];
 export const ACCESSORY_MOVEMENTS: MovementPattern[] = [
@@ -101,6 +101,34 @@ export const familyOf = (ex: Exercise): string => {
   if (name.includes("carry")) return "carry";
   if (ex.pattern === "core") return "core";
   return `${ex.pattern}_${ex.equipment}`;
+};
+
+// Plane of a push or pull. Rows and rear-delt work are horizontal pulls;
+// pulldowns/pull-ups vertical pulls; overhead-type presses vertical pushes;
+// chest-led presses, push-ups, flies and dips horizontal pushes. Isolations
+// and non-push/pull patterns have no direction.
+export const directionOf = (ex: Exercise): PressPullDirection | null => {
+  if (ex.direction) return ex.direction;
+  const movement = movementOf(ex);
+  if (movement !== "push" && movement !== "pull") return null;
+  const family = familyOf(ex);
+  if (family === "row" || family === "rear_delt") return "horizontal";
+  if (family === "vertical_pull") return "vertical";
+  if (family === "vertical_press") return "vertical";
+  if (family === "shoulder_isolation" || family === "biceps_isolation" || family === "triceps_isolation") return null;
+  const name = ex.name.toLowerCase();
+  if (movement === "push") {
+    if (
+      ex.primary.includes("chest") ||
+      /bench|push-up|pushup|fly|dip|floor press|chest press/.test(name)
+    ) {
+      return "horizontal";
+    }
+    if (/pike|handstand|overhead|shoulder press/.test(name)) return "vertical";
+    return null;
+  }
+  if (/pullover|straight-arm/.test(name)) return "vertical";
+  return null;
 };
 
 export const isHeavyEquipment = (ex: Exercise): boolean =>

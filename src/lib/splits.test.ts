@@ -10,6 +10,7 @@ const makeCoverage = (muscleStats: Coverage["muscleStats"]): Coverage => ({
   muscleStats,
   patternStats: {},
   movementStats: {},
+  directionStats: {},
 });
 
 describe("buildMuscleTargetRows", () => {
@@ -19,7 +20,7 @@ describe("buildMuscleTargetRows", () => {
     });
     const rows = buildMuscleTargetRows({ back: 6 }, coverage);
     expect(rows).toEqual([
-      { muscle: "back", target: 6, done: 3, pct: 50, remaining: 3, overPct: null },
+      { muscle: "back", target: 6, ceiling: null, done: 3, pct: 50, remaining: 3, overPct: null, status: "below" },
     ]);
   });
 
@@ -29,7 +30,7 @@ describe("buildMuscleTargetRows", () => {
     });
     const rows = buildMuscleTargetRows({ glutes: 8 }, coverage);
     expect(rows).toEqual([
-      { muscle: "glutes", target: 8, done: 10, pct: 100, remaining: 0, overPct: 125 },
+      { muscle: "glutes", target: 8, ceiling: null, done: 10, pct: 100, remaining: 0, overPct: 125, status: "over" },
     ]);
   });
 
