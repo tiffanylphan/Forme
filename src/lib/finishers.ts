@@ -121,6 +121,15 @@ export const FINISHER_TEMPLATES: FinisherTemplate[] = [
     requiresHardMode: true,
   },
   {
+    id: "devil_press_chain",
+    label: "devil press chain",
+    exercises: ["Devil press", "Mountain climber", "High knees"],
+    rounds: 3,
+    repScheme: "6 devil presses + 20 climbers + 20 high knees · no rest",
+    tags: ["upper", "lower", "conditioning"],
+    requiresHardMode: true,
+  },
+  {
     id: "skater_shuffle",
     label: "skater shuffle",
     exercises: ["Skater hop", "Mountain climber", "High knees"],
